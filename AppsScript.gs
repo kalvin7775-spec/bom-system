@@ -24,14 +24,16 @@ const HEAD = {
   hist :['時間','來源','新增','消失','庫存變動','單價變動','其他','操作者']
 };
 
+var _SS = null, _SH = {}, _SYS = null;
 function ss(){
-  return SHEET_ID ? SpreadsheetApp.openById(SHEET_ID) : SpreadsheetApp.getActiveSpreadsheet();
+  if(!_SS) _SS = SHEET_ID ? SpreadsheetApp.openById(SHEET_ID) : SpreadsheetApp.getActiveSpreadsheet();
+  return _SS;
 }
 
 /* 首次使用：在編輯器選這個函式按「執行」，建立所有工作表並完成授權 */
 function setup(){
   ['items','boms','lines','hist','sys'].forEach(sheet);
-  if(String(sysGet('rev',''))==='') sysSet('rev', 0);
+  if(String(sysGet('rev',''))==='') { sysSet('rev', 0); sysFlush(); }
   const s = ss();
   const d = s.getSheetByName('工作表1');
   if(d && s.getSheets().length > 1 && d.getLastRow() === 0) s.deleteSheet(d);
@@ -40,6 +42,7 @@ function setup(){
 }
 
 function sheet(key){
+  if(_SH[key]) return _SH[key];
   const s = ss();
   let sh = s.getSheetByName(SH[key]);
   if(!sh){
@@ -55,6 +58,7 @@ function sheet(key){
       .setFontWeight('bold').setBackground('#eef2f7');
     sh.setFrozenRows(1);
   }
+  _SH[key] = sh;
   return sh;
 }
 
@@ -77,22 +81,40 @@ function writeRows(key, arr){
   sh.getRange(2,1,data.length,head.length).setValues(data);
 }
 
-/* ---------- 系統設定（rev / settings） ---------- */
-function sysGet(k, dflt){
+/* ---------- 系統設定（rev / settings）：整張表一次讀寫，避免逐格往返 ---------- */
+function sysLoad(){
+  if(_SYS) return _SYS;
   const sh = sheet('sys');
   const last = sh.getLastRow();
-  for(let i=1;i<=last;i++){
-    if(String(sh.getRange(i,1).getValue())===k) return sh.getRange(i,2).getValue();
+  _SYS = {keys:[], map:{}};
+  if(last >= 1){
+    const vals = sh.getRange(1,1,last,2).getValues();
+    for(let i=0;i<vals.length;i++){
+      const k = String(vals[i][0]||'');
+      if(!k) continue;
+      _SYS.keys.push(k);
+      _SYS.map[k] = vals[i][1];
+    }
   }
-  return dflt;
+  return _SYS;
+}
+function sysGet(k, dflt){
+  const c = sysLoad();
+  return (k in c.map) ? c.map[k] : dflt;
 }
 function sysSet(k, v){
+  const c = sysLoad();
+  if(!(k in c.map)) c.keys.push(k);
+  c.map[k] = v;
+  c.dirty = true;
+}
+function sysFlush(){
+  const c = _SYS;
+  if(!c || !c.dirty) return;
   const sh = sheet('sys');
-  const last = sh.getLastRow();
-  for(let i=1;i<=last;i++){
-    if(String(sh.getRange(i,1).getValue())===k){ sh.getRange(i,2).setValue(v); return; }
-  }
-  sh.getRange(last+1,1,1,2).setValues([[k,v]]);
+  const data = c.keys.map(function(k){ return [k, c.map[k]]; });
+  if(data.length) sh.getRange(1,1,data.length,2).setValues(data);
+  c.dirty = false;
 }
 
 /* ---------- 讀取整份資料 ---------- */
@@ -190,6 +212,7 @@ function writeState(st, who){
     sysSet('rev', rev);
     sysSet('updatedAt', Utilities.formatDate(new Date(),'Asia/Taipei','yyyy/MM/dd HH:mm:ss'));
     sysSet('updatedBy', who||'');
+    sysFlush();
     return rev;
   } finally { lock.releaseLock(); }
 }

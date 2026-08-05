@@ -335,8 +335,8 @@ let REV = 0, NET = 'idle', LASTSYNC = '', DIRTY = false, SAVING = false;
 function setNet(s){ NET=s; paintNet(); }
 function paintNet(){
   const el=document.getElementById('netBox'); if(!el) return;
-  const map={idle:['','gray'],load:['連線中…','info'],ok:['已同步','ok'],
-    save:['儲存中…','info'],err:['離線','bad'],conflict:['版本衝突','warn'],local:['本機模式','gray']};
+  const map={idle:['','gray'],load:['讀取雲端中…','info'],ok:['已同步','ok'],
+    save:['儲存中…','info'],err:['雲端連線失敗','bad'],conflict:['版本衝突','warn'],local:['本機模式','gray']};
   const [t,c]=map[NET]||['',''];
   el.innerHTML = CLOUD
     ? `<span class="tag ${c}">${t}${NET==='ok'&&LASTSYNC?' '+LASTSYNC.slice(-8):''}</span>
@@ -345,9 +345,17 @@ function paintNet(){
 }
 async function apiPost(action,payload,extra){
   const body=Object.assign({action:action,payload:payload,pw:PW,who:WHO},extra||{});
-  const res=await fetch(API_URL,{method:'POST',
-    headers:{'Content-Type':'text/plain;charset=utf-8'},body:JSON.stringify(body)});
-  return res.json();
+  let lastErr;
+  /* Apps Script 偶爾會冷啟動或短暫失敗，自動重試一次 */
+  for(let i=0;i<2;i++){
+    try{
+      const res=await fetch(API_URL,{method:'POST',
+        headers:{'Content-Type':'text/plain;charset=utf-8'},body:JSON.stringify(body)});
+      if(!res.ok) throw new Error('HTTP '+res.status);
+      return await res.json();
+    }catch(e){ lastErr=e; if(i===0) await new Promise(r=>setTimeout(r,1200)); }
+  }
+  throw lastErr;
 }
 /* 讀取雲端 → 覆蓋本地 */
 async function pull(silent){
@@ -362,7 +370,9 @@ async function pull(silent){
     REV=d.rev||0; LASTSYNC=d.updatedAt||''; DIRTY=false;
     reindex(); await DB.set('cache',JSON.parse(JSON.stringify({S:S,REV:REV})));
     setNet('ok'); return true;
-  }catch(e){ setNet('err'); return false; }
+  }catch(e){ setNet('err');
+    if(!silent) toast('讀取雲端失敗，顯示的是本機快取資料。可按 ↻ 重試');
+    return false; }
 }
 async function pullNow(){ if(await pull()) { renderAll(); toast('已重新讀取雲端資料'); } }
 /* 寫回雲端 */
