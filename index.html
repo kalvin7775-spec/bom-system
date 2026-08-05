@@ -116,6 +116,7 @@ input[type=file]{display:none}
 <body>
 <header>
   <h1>BOM 管理系統<small id="hdrSub"></small></h1>
+  <span id="netBox"></span>
   <nav>
     <button data-v="dash" class="on">儀表板</button>
     <button data-v="items">料號主檔</button>
@@ -144,6 +145,13 @@ input[type=file]{display:none}
   <div class="dlg-b" id="dlg2Body"></div>
   <div class="dlg-f" id="dlg2Foot"></div>
 </form></dialog>
+<script>
+/* ============================================================
+   雲端同步設定 — 部署後把 API_URL 換成 Apps Script 的 /exec 網址
+   ============================================================ */
+const API_URL = '__API_URL__';
+const CLOUD = API_URL.indexOf('http') === 0;
+</script>
 <script>
 /* ============================================================
    BOM 管理系統 — 單檔版
@@ -176,7 +184,7 @@ function toast(m){const t=$('#toast');t.textContent=m;t.classList.add('on');
 
 function reindex(){IDX={};S.items.forEach(i=>IDX[i.code]=i);
                    BIDX={};S.boms.forEach(b=>BIDX[b.code]=b);}
-async function save(){reindex();await DB.set('state',JSON.parse(JSON.stringify(S)));}
+async function save(){reindex(); await push();}
 const itemOf=c=>IDX[c]||{code:c,name:'（未建檔）',spec:'',unit:'',stock:0,cost:null,supplier:'',note:'',_ghost:1};
 
 /* ---------- BOM 樹狀結構 ---------- */
@@ -314,6 +322,107 @@ const closeDlg2=()=>$('#dlg2').close();
 </script>
 <script>
 /* ============================================================
+   雲端同步層（Google Sheets + Apps Script）
+   ============================================================ */
+const PWKEY='bom_pw_v1', WHOKEY='bom_who_v1';
+const LS={get:k=>{try{return localStorage.getItem(k)||'';}catch(e){return '';}},
+          set:(k,v)=>{try{localStorage.setItem(k,v);}catch(e){}},
+          del:k=>{try{localStorage.removeItem(k);}catch(e){}}};
+let PW = LS.get(PWKEY);
+let WHO = LS.get(WHOKEY);
+let REV = 0, NET = 'idle', LASTSYNC = '', DIRTY = false, SAVING = false;
+
+function setNet(s){ NET=s; paintNet(); }
+function paintNet(){
+  const el=document.getElementById('netBox'); if(!el) return;
+  const map={idle:['','gray'],load:['連線中…','info'],ok:['已同步','ok'],
+    save:['儲存中…','info'],err:['離線','bad'],conflict:['版本衝突','warn'],local:['本機模式','gray']};
+  const [t,c]=map[NET]||['',''];
+  el.innerHTML = CLOUD
+    ? `<span class="tag ${c}">${t}${NET==='ok'&&LASTSYNC?' '+LASTSYNC.slice(-8):''}</span>
+       <button class="btn sm" onclick="pullNow()" title="重新讀取雲端資料">↻</button>`
+    : `<span class="tag gray">本機模式</span>`;
+}
+async function apiPost(action,payload,extra){
+  const body=Object.assign({action:action,payload:payload,pw:PW,who:WHO},extra||{});
+  const res=await fetch(API_URL,{method:'POST',
+    headers:{'Content-Type':'text/plain;charset=utf-8'},body:JSON.stringify(body)});
+  return res.json();
+}
+/* 讀取雲端 → 覆蓋本地 */
+async function pull(silent){
+  if(!CLOUD) return false;
+  setNet('load');
+  try{
+    const d=await apiPost('load',null);
+    if(d.error){ setNet('err'); if(!silent) askPassword(d.error); return false; }
+    S={items:d.items||[],boms:d.boms||[],history:d.history||[],
+       settings:d.settings||{purchaseStop:true},
+       meta:{updatedAt:d.updatedAt||'',updatedBy:d.updatedBy||''}};
+    REV=d.rev||0; LASTSYNC=d.updatedAt||''; DIRTY=false;
+    reindex(); await DB.set('cache',JSON.parse(JSON.stringify({S:S,REV:REV})));
+    setNet('ok'); return true;
+  }catch(e){ setNet('err'); return false; }
+}
+async function pullNow(){ if(await pull()) { renderAll(); toast('已重新讀取雲端資料'); } }
+/* 寫回雲端 */
+async function push(force){
+  if(!CLOUD){ await DB.set('state',JSON.parse(JSON.stringify(S))); return true; }
+  if(SAVING) { DIRTY=true; return false; }
+  SAVING=true; setNet('save');
+  try{
+    const d=await apiPost('save',S,{baseRev:force?null:REV,force:!!force});
+    if(d.conflict){
+      setNet('conflict'); SAVING=false;
+      dialog('雲端資料已被別人更新',`
+        <p>你載入資料後，<b>${esc(d.updatedBy||'其他使用者')}</b> 在
+           <b>${esc(d.updatedAt||'')}</b> 也存過一次（雲端版本 ${d.serverRev}，你的是 ${REV}）。</p>
+        <div class="hint">為避免蓋掉對方的修改，請選擇處理方式。建議先「放棄我的修改並重新載入」，
+          確認對方改了什麼之後再重做一次。</div>`,
+        `<button class="btn danger" type="button" onclick="closeDlg();push(true)">強制覆蓋雲端</button>
+         <button class="btn pri" type="button" onclick="closeDlg();pullNow()">放棄我的修改並重新載入</button>
+         <button class="btn" value="x">稍後再說</button>`);
+      return false;
+    }
+    if(d.error){ setNet('err'); SAVING=false; toast('儲存失敗：'+d.error); return false; }
+    REV=d.rev; LASTSYNC=d.updatedAt||''; DIRTY=false;
+    S.meta.updatedAt=LASTSYNC; S.meta.updatedBy=WHO;
+    await DB.set('cache',JSON.parse(JSON.stringify({S:S,REV:REV})));
+    setNet('ok'); SAVING=false;
+    if(DIRTY){ DIRTY=false; return push(); }
+    return true;
+  }catch(e){ setNet('err'); SAVING=false; toast('無法連線到雲端，資料僅存在本機'); 
+    await DB.set('cache',JSON.parse(JSON.stringify({S:S,REV:REV}))); return false; }
+}
+/* 登入 */
+function askPassword(msg){
+  dialog('連線到 BOM 資料庫',`
+    ${msg?`<div class="hint" style="color:var(--bad);margin-bottom:10px">${esc(msg)}</div>`:''}
+    <div class="fld"><label>你的名字（會記在異動紀錄）</label>
+      <input id="pw_who" value="${esc(WHO)}" placeholder="例：謝嘉元"></div>
+    <div class="fld"><label>共用密碼</label>
+      <input id="pw_pw" type="password" value="${esc(PW)}" placeholder="請向管理者索取"></div>
+    <div class="hint">密碼只存在這台電腦的瀏覽器，之後開啟不用再輸入。</div>`,
+    `<button class="btn pri" type="button" onclick="doLogin()">連線</button>`);
+  setTimeout(()=>document.getElementById('pw_pw')?.focus(),100);
+  const f=e=>{ if(e.key==='Enter'){e.preventDefault();doLogin();} };
+  document.getElementById('pw_pw').onkeydown=f;
+  document.getElementById('pw_who').onkeydown=f;
+}
+async function doLogin(){
+  WHO=document.getElementById('pw_who').value.trim();
+  PW=document.getElementById('pw_pw').value;
+  LS.set(PWKEY,PW); LS.set(WHOKEY,WHO);
+  closeDlg();
+  if(await pull()){ renderAll(); toast('已連線'); }
+}
+function logout(){
+  LS.del(PWKEY); PW='';
+  location.reload();
+}
+</script>
+<script>
+/* ============================================================
    Excel 解析
    ============================================================ */
 const S_=v=>v==null?'':String(v).trim();
@@ -388,12 +497,14 @@ function vDash(){
   if(!items.length && !S.boms.length){
     $('#v-dash').innerHTML=`
     <div class="card" style="border-color:var(--acc)">
-      <h2>歡迎使用 BOM 管理系統<span class="sub">目前還沒有資料</span></h2>
-      <p>這是一份不需要伺服器的單檔系統，資料存在你自己的瀏覽器裡，不會上傳到任何地方。開始使用只要一步：</p>
+      <h2>歡迎使用 BOM 管理系統<span class="sub">${CLOUD?'雲端資料庫目前是空的':'目前還沒有資料'}</span></h2>
+      <p>${CLOUD
+        ?'資料存放在共用的 Google 試算表，所有人看到的是同一份。目前雲端還沒有資料，請由管理者匯入一次：'
+        :'這是一份不需要伺服器的單檔系統，資料存在你自己的瀏覽器裡，不會上傳到任何地方。開始使用只要一步：'}</p>
       <ol style="line-height:2">
         <li>切到上方的 <b>資料管理</b> 分頁</li>
         <li>點 <b>上傳資料庫 Excel</b>，選擇你的資料庫檔（含「料號主檔 / BOM主檔 / BOM明細」三張表）</li>
-        <li>確認差異摘要後套用，之後每次打開這個網址資料都還在</li>
+        <li>確認差異摘要後套用${CLOUD?'，資料會寫入雲端，所有同事都看得到':'，之後每次打開這個網址資料都還在'}</li>
       </ol>
       <div class="row" style="margin-top:12px">
         <button class="btn pri" onclick="go('data')">前往資料管理</button>
@@ -459,9 +570,11 @@ function vDash(){
 /* ============================================================
    料號主檔
    ============================================================ */
-const itemSt={key:'code',dir:1,q:'',f:'all',render:vItems};
+const itemSt={key:'code',dir:1,q:'',f:'all',render:renderItems};
 const SORTKEYS=[['code','品號'],['name','品名'],['stock','庫存'],['cost','單價'],['value','庫存金額'],['supplier','供應商'],['loc','儲位']];
-function vItems(){
+/* 工具列只建一次；排序／篩選／搜尋僅重繪表格，避免重繪時 <select> 被銷毀
+   造成點擊穿透到上方導覽列（macOS 原生下拉選單會疊在選單框上方展開） */
+function itemRows(){
   const q=itemSt.q.toLowerCase().trim();
   let rows=S.items.filter(i=>{
     if(q&&!(`${i.code} ${i.name} ${i.spec} ${i.supplier} ${i.loc}`.toLowerCase().includes(q))) return false;
@@ -475,7 +588,11 @@ function vItems(){
   rows.sort((a,b)=>{const k=itemSt.key;
     if(k==='value') return cmp(val(a),val(b),itemSt.dir);
     return cmp(a[k],b[k],itemSt.dir);});
-  const total=rows.reduce((s,i)=>s+val(i),0);
+  return rows;
+}
+const itemVal=i=>(i.cost||0)*(i.stock||0);
+
+function vItems(){
   $('#v-items').innerHTML=`
   <div class="card">
     <div class="row">
@@ -491,18 +608,37 @@ function vItems(){
     </div>
     <div class="row" style="margin-top:10px">
       <span class="mini">排序</span>
-      <select style="width:150px" id="sortK" onchange="itemSt.key=this.value;vItems()">
-        ${SORTKEYS.map(([k,t])=>`<option value="${k}" ${itemSt.key===k?'selected':''}>${t}</option>`).join('')}
+      <select style="width:150px" id="sortK">
+        ${SORTKEYS.map(([k,t])=>`<option value="${k}">${t}</option>`).join('')}
       </select>
-      <button class="btn sm" onclick="itemSt.dir=-itemSt.dir;vItems()">
-        ${itemSt.dir>0?'▲ 遞增':'▼ 遞減'}</button>
+      <button class="btn sm" id="sortDir"></button>
       <span class="mini mut">也可直接點表頭排序</span>
       <div class="grow"></div>
-      <span class="mini">共 <b>${rows.length}</b> 筆 ／ 全部 ${S.items.length} 筆　庫存總值 <b>${money(total)}</b></span>
+      <span class="mini" id="itemCount"></span>
     </div>
     <div class="hint">點任一列可看明細、用途反查，並可編輯或刪除該料號。</div>
   </div>
-  <div class="tblwrap"><table id="itbl"><thead><tr>
+  <div id="itemTbl"></div>`;
+  /* 工具列事件只綁一次，之後都只重繪表格 */
+  $('#iq').oninput=e=>{itemSt.q=e.target.value;renderItems();};
+  $('#sortK').onchange=e=>{itemSt.key=e.target.value;renderItems();};
+  $('#sortDir').onclick=()=>{itemSt.dir=-itemSt.dir;renderItems();};
+  document.querySelectorAll('#v-items .chip').forEach(c=>c.onclick=()=>{
+    itemSt.f=c.dataset.f;
+    document.querySelectorAll('#v-items .chip').forEach(x=>x.classList.toggle('on',x===c));
+    renderItems();});
+  renderItems();
+}
+
+function renderItems(){
+  const rows=itemRows(), total=rows.reduce((s,i)=>s+itemVal(i),0);
+  const sk=document.getElementById('sortK'); if(sk) sk.value=itemSt.key;
+  const sd=document.getElementById('sortDir');
+  if(sd) sd.textContent=itemSt.dir>0?'▲ 遞增':'▼ 遞減';
+  const cnt=document.getElementById('itemCount');
+  if(cnt) cnt.innerHTML=`共 <b>${rows.length}</b> 筆 ／ 全部 ${S.items.length} 筆　庫存總值 <b>${money(total)}</b>`;
+  const box=document.getElementById('itemTbl'); if(!box) return;
+  box.innerHTML=`<div class="tblwrap"><table id="itbl"><thead><tr>
     <th data-k="code">品號${arrow(itemSt,'code')}</th>
     <th data-k="name">品名${arrow(itemSt,'name')}</th>
     <th data-k="spec">規格${arrow(itemSt,'spec')}</th>
@@ -519,7 +655,7 @@ function vItems(){
       <td class="mono">${esc(i.code)}</td><td>${esc(i.name)}</td><td class="mut">${esc(i.spec)}</td>
       <td class="num">${nf(i.stock)}</td><td class="mut">${esc(i.unit)}</td>
       <td class="num">${i.cost==null||i.cost===''?'<span class="tag gray">未設</span>':nf(i.cost)}</td>
-      <td class="num">${val(i)?nf(Math.round(val(i))):''}</td>
+      <td class="num">${itemVal(i)?nf(Math.round(itemVal(i))):''}</td>
       <td class="num mut">${nf(i.safety)}</td><td class="mut">${esc(i.supplier)}</td>
       <td class="mut">${esc(i.loc)}</td><td class="mut">${esc(i.note)}</td>
       <td class="num" onclick="event.stopPropagation()">
@@ -527,9 +663,6 @@ function vItems(){
         <button class="btn sm danger" onclick="delItem('${esc(i.code)}')">✕</button></td></tr>`).join('')
       ||'<tr><td colspan="12" class="empty">查無資料</td></tr>'}
   </tbody></table></div>`;
-  $('#iq').oninput=e=>{itemSt.q=e.target.value;vItems();
-    const el=$('#iq');el.focus();el.setSelectionRange(el.value.length,el.value.length);};
-  document.querySelectorAll('#v-items .chip').forEach(c=>c.onclick=()=>{itemSt.f=c.dataset.f;vItems();});
   bindSort($('#itbl'),itemSt);
 }
 function showItem(code){
@@ -1082,13 +1215,21 @@ function ordRender(){
    <table><thead><tr><th class="nos">產品 BOM</th><th class="nos" style="width:160px">生產數量</th>
    <th class="nos" style="width:150px">單台成本</th><th class="nos" style="width:70px"></th></tr></thead><tbody>
    ${ORD.map((o,i)=>{const c=BIDX[o.code]?bomCost(BIDX[o.code]).cost:0;return `<tr>
-     <td><select onchange="ORD[${i}].code=this.value;ordRender()">
+     <td><select onchange="ordSet(${i},this.value)">
        ${S.boms.map(b=>`<option value="${esc(b.code)}" ${b.code===o.code?'selected':''}>${esc(b.code)}　${esc(b.name)}</option>`).join('')}
      </select></td>
      <td><input type="number" min="0" step="1" value="${o.qty}" oninput="ORD[${i}].qty=parseFloat(this.value)||0"></td>
-     <td class="num">${money(c)}</td>
+     <td class="num" id="ordCost${i}">${money(c)}</td>
      <td class="num"><button class="btn sm danger" onclick="ordDel(${i})" ${ORD.length<2?'disabled':''}>✕</button></td>
    </tr>`}).join('')}</tbody></table></div>`;
+}
+/* 只更新該列的成本欄，不重建下拉選單本身
+   （重建會讓 macOS 原生下拉關閉時的點擊穿透到底下的元件） */
+function ordSet(i,v){
+  ORD[i].code=v;
+  const c=BIDX[v]?bomCost(BIDX[v]).cost:0;
+  const cell=document.getElementById('ordCost'+i);
+  if(cell) cell.textContent=money(c);
 }
 function ordAdd(){ORD.push({code:S.boms[0]?.code||'',qty:100});ordRender();}
 function ordDel(i){ORD.splice(i,1);ordRender();}
@@ -1599,6 +1740,23 @@ async function applyDB(){
 function vData(){
   const size=(JSON.stringify(S).length/1024).toFixed(0);
   $('#v-data').innerHTML=`
+  ${CLOUD?`<div class="card" style="border-color:var(--ok)"><h2>雲端資料庫
+      <span class="sub">Google 試算表　所有人共用同一份資料</span></h2>
+    <dl class="kv" style="margin-bottom:12px">
+      <dt>連線狀態</dt><dd id="netInfo"></dd>
+      <dt>資料版本</dt><dd>rev ${REV}</dd>
+      <dt>最後更新</dt><dd>${esc(S.meta.updatedAt||'—')}${S.meta.updatedBy?`　by ${esc(S.meta.updatedBy)}`:''}</dd>
+      <dt>你的名字</dt><dd>${esc(WHO||'（未設定）')}</dd>
+    </dl>
+    <div class="row">
+      <button class="btn pri" onclick="pullNow()">重新讀取雲端</button>
+      <button class="btn" onclick="push(true)">強制上傳本機資料</button>
+      <button class="btn" onclick="askPassword()">變更名字／密碼</button>
+      <button class="btn danger" onclick="logout()">登出</button>
+    </div>
+    <div class="hint">任何人在網頁上的修改都會即時寫回 Google 試算表，其他人按「重新讀取雲端」或重新整理就會看到。
+      若兩人同時修改，系統會偵測版本衝突並讓你選擇處理方式。</div>
+  </div>`:''}
   <div class="card" style="border-color:var(--acc)"><h2>資料庫（三張表）
       <span class="sub">料號主檔 ／ BOM主檔 ／ BOM明細</span></h2>
     <div class="row">
@@ -1616,7 +1774,7 @@ function vData(){
   </div>
   <div class="split">
     <div class="card"><h2>備份與還原</h2>
-      <p class="mini">JSON 備份會連同異動紀錄與設定一起帶走，適合整機轉移；日常維護資料請優先用上方的資料庫 Excel。</p>
+      <p class="mini">JSON 備份可整份保存目前資料，適合定期存檔備援。</p>
       <div class="row" style="margin-top:10px">
         <button class="btn pri" onclick="expJSON()">匯出完整備份 (JSON)</button>
         <button class="btn" onclick="impJSON()">匯入備份 (JSON)</button>
@@ -1701,7 +1859,11 @@ function setHdr(){
   $('#hdrSub').textContent=`料號 ${S.items.length}　BOM ${S.boms.length}`+
     (S.meta.updatedAt?`　更新於 ${S.meta.updatedAt}`:'');
 }
-function renderAll(){setHdr();vDash();vItems();vBoms();vMrp();vSync();vData();}
+function renderAll(){setHdr();vDash();vItems();vBoms();vMrp();vSync();vData();paintNet();
+  const n=document.getElementById('netInfo');
+  if(n) n.innerHTML=({idle:'—',load:'連線中…',ok:'<span class="tag ok">已同步</span>',
+    save:'儲存中…',err:'<span class="tag bad">離線（資料僅存本機快取）</span>',
+    conflict:'<span class="tag warn">版本衝突</span>',local:'本機模式'})[NET]||'';}
 function go(v){
   document.querySelectorAll('nav button').forEach(b=>b.classList.toggle('on',b.dataset.v===v));
   document.querySelectorAll('.view').forEach(d=>d.classList.toggle('on',d.id==='v-'+v));
@@ -1712,6 +1874,16 @@ document.querySelectorAll('nav button').forEach(b=>b.onclick=()=>go(b.dataset.v)
 $('#dlgForm').addEventListener('submit',e=>{});
 
 (async function init(){
+  if(CLOUD){
+    try{
+      const c=await DB.get('cache');
+      if(c&&c.S&&c.S.items){ S=c.S; REV=c.REV||0; reindex(); renderAll(); setNet('load'); }
+    }catch(e){}
+    if(!PW){ paintNet(); renderAll(); askPassword(); return; }
+    if(await pull()) renderAll(); else renderAll();
+    paintNet();
+    return;
+  }
   try{
     const saved=await DB.get('state');
     S = (saved&&saved.items&&saved.items.length) ? saved : JSON.parse(JSON.stringify(SEED));
@@ -1719,8 +1891,8 @@ $('#dlgForm').addEventListener('submit',e=>{});
     if(!S.settings) S.settings={purchaseStop:true};
   }catch(e){ S=JSON.parse(JSON.stringify(SEED)); }
   reindex();
-  if(!(await DB.get('state'))) await save();
-  renderAll();
+  if(!(await DB.get('state'))) await DB.set('state',JSON.parse(JSON.stringify(S)));
+  setNet('local'); renderAll();
 })();
 </script>
 </body></html>
