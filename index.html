@@ -437,7 +437,17 @@ async function pullNow(){ if(await pull()) { renderAll(); toast('已重新讀取
 async function push(force){
   if(!CLOUD){ await DB.set('state',JSON.parse(JSON.stringify(S))); return true; }
   if(SAVING) { DIRTY=true; return false; }
+  /* 送出前先確認資料合理，避免把雲端寫空 */
+  if(!S.items || !S.items.length){
+    setNet('err');
+    dialog('已阻止寫入雲端',
+      `<p>目前記憶體中沒有任何料號，若寫回雲端會清空所有人的資料，因此已擋下。</p>
+       <div class="hint">請按 ↻ 重新讀取雲端，或到「資料管理」上傳資料庫 Excel。</div>`);
+    return false;
+  }
   SAVING=true; setNet('save');
+  /* 每次成功寫入前，先把上一版留在本機，萬一出事可還原 */
+  try{ await DB.set('lastGood',JSON.parse(JSON.stringify({S:S,REV:REV,ts:nowts()}))); }catch(e){}
   try{
     const d=await apiPost('save',S,{baseRev:force?null:REV,force:!!force});
     if(d.conflict){
@@ -1933,6 +1943,7 @@ function vData(){
       <button class="btn pri" onclick="pullNow()">重新讀取雲端</button>
       <button class="btn" onclick="push(true)">強制上傳本機資料</button>
       <button class="btn" onclick="askPassword()">變更名字／密碼</button>
+      <button class="btn" onclick="restoreLastGood()">還原本機上一版</button>
       <button class="btn danger" onclick="logout()">登出</button>
     </div>
     <div class="hint">任何人在網頁上的修改都會即時寫回 Google 試算表，其他人按「重新讀取雲端」或重新整理就會看到。
@@ -2020,6 +2031,15 @@ function vData(){
       <button class="btn danger" onclick="wipe()">清空全部資料</button>
     </div>
   </div>`;
+}
+/* 還原本機保存的上一版（雲端出問題時的救援） */
+async function restoreLastGood(){
+  const g=await DB.get('lastGood');
+  if(!g||!g.S||!g.S.items||!g.S.items.length) return dialog('沒有可還原的快照',
+    '<p>本機還沒有留下任何備援快照。</p><div class="hint">每次成功寫入雲端前，系統都會把當時的資料留一份在這台電腦。</div>');
+  if(!confirm(`還原 ${g.ts} 的快照（料號 ${g.S.items.length} 筆、BOM ${g.S.boms.length} 張）並上傳雲端？`)) return;
+  S=g.S; reindex(); await push(true); renderAll();
+  toast('已還原並上傳');
 }
 function expJSON(){
   dl(`BOM系統備份_${new Date().toISOString().slice(0,10).replace(/-/g,'')}.json`,

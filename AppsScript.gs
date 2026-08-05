@@ -181,6 +181,12 @@ function numOrNull(v){
 
 /* ---------- 寫入整份資料 ---------- */
 function writeState(st, who){
+  /* 安全檢查：資料異常時直接拒絕，避免把整份資料清空 */
+  if(!st || !Array.isArray(st.items) || !Array.isArray(st.boms))
+    throw new Error('資料格式不正確，未寫入');
+  const curItems = rows('items').length;
+  if(st.items.length === 0 && curItems > 0)
+    throw new Error('收到 0 筆料號但雲端現有 ' + curItems + ' 筆，已拒絕寫入（避免誤清空）');
   const lock = LockService.getScriptLock();
   lock.waitLock(25000);
   try{
@@ -213,6 +219,7 @@ function writeState(st, who){
     sysSet('updatedAt', Utilities.formatDate(new Date(),'Asia/Taipei','yyyy/MM/dd HH:mm:ss'));
     sysSet('updatedBy', who||'');
     sysFlush();
+    SpreadsheetApp.flush();
     return rev;
   } finally { lock.releaseLock(); }
 }
@@ -247,8 +254,12 @@ function doPost(e){
       return out({conflict:true, serverRev:cur,
                   updatedAt:fmtTS(sysGet('updatedAt','')), updatedBy:String(sysGet('updatedBy',''))});
     }
-    const rev = writeState(st, body.who||'');
-    return out({ok:true, rev:rev, updatedAt:fmtTS(sysGet('updatedAt',''))});
+    try{
+      const rev = writeState(st, body.who||'');
+      return out({ok:true, rev:rev, updatedAt:fmtTS(sysGet('updatedAt',''))});
+    }catch(err){
+      return out({error:'寫入失敗：'+err.message});
+    }
   }
   return out({error:'未知的指令：'+action});
 }
