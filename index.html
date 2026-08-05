@@ -157,7 +157,7 @@ const CLOUD = API_URL.indexOf('http') === 0;
    BOM 管理系統 — 單檔版
    儲存：IndexedDB (bomdb / kv / "state")
    ============================================================ */
-const SEED = {"items":[],"boms":[],"history":[],"meta":{},"settings":{"purchaseStop":true}};
+const SEED = {"items":[],"boms":[],"history":[],"meta":{},"settings":{"costMode":"max"}};
 
 /* ---------- IndexedDB 極簡 KV ---------- */
 const DB=(()=>{let p;
@@ -214,9 +214,18 @@ function lineNos(lines){
 /* 下階來源：BOM 內嵌階層優先，否則引用同名獨立子 BOM
    structural=true 時僅回傳結構下階（供樹狀顯示）；
    否則套用「採購點規則」：本身已有單位成本的組件視為外購件，不再往下展開。 */
+/* 成本規則：
+   buy = 自身單價優先（有價就不再展開下階）
+   sum = 一律下階加總（只有沒下階時才用自身單價）
+   max = 取「自身單價」與「下階加總」較高者，避免少算（預設） */
+function costMode(){
+  const st=SET();
+  if(st.costMode) return st.costMode;
+  return st.purchaseStop===false ? 'sum' : 'max';
+}
 function isBuyPoint(code){
   const it=IDX[code];
-  return !!(SET().purchaseStop && it && it.cost!=null && it.cost!=='' && !isNaN(it.cost));
+  return !!(costMode()!=='sum' && it && it.cost!=null && it.cost!=='' && !isNaN(it.cost));
 }
 function rawKids(node,path){
   if(node.children&&node.children.length) return {kids:node.children,ref:false};
@@ -226,8 +235,42 @@ function rawKids(node,path){
 }
 function kidsOf(node,path,structural){
   const r=rawKids(node,path);
-  if(!structural && r.kids.length && isBuyPoint(node.code)) return {kids:[],ref:false,buy:true};
-  return r;
+  if(structural || !r.kids.length) return r;
+  if(!isBuyPoint(node.code)) return r;
+  if(costMode()==='buy') return {kids:[],ref:false,buy:true};
+  /* max：比較自身單價與下階加總，取高者 */
+  const own=(IDX[node.code].cost||0);
+  const sub=r.kids.reduce((s,k)=>s+subtreeUnit(k,path.concat(node.code)),0);
+  return own>=sub ? {kids:[],ref:false,buy:true} : r;
+}
+/* 子樹單位成本（該節點 qty 個）— 供 max 比較用，不套用 max 規則以免無窮遞迴 */
+function subtreeUnit(node,path){
+  const r=rawKids(node,path);
+  const own=IDX[node.code]&&IDX[node.code].cost!=null?IDX[node.code].cost:null;
+  if(!r.kids.length) return (own||0)*(+node.qty||0);
+  const sub=r.kids.reduce((s,k)=>s+subtreeUnit(k,path.concat(node.code)),0)*(+node.qty||0);
+  if(costMode()==='sum') return sub;
+  return Math.max(own!=null?own*(+node.qty||0):0, sub);
+}
+/* 找出「自身單價 < 下階加總」的組件，提醒使用者確認 */
+function costConflicts(){
+  const out=[];
+  S.boms.forEach(b=>{
+    (function walk(nodes,path){
+      nodes.forEach(n=>{
+        const r=rawKids(n,path); if(!r.kids.length) return;
+        const it=IDX[n.code];
+        if(it && it.cost!=null && it.cost!==''){
+          const sub=r.kids.reduce((s,k)=>s+subtreeUnit(k,path.concat(n.code)),0)/(+n.qty||1);
+          if(sub>it.cost+0.01)
+            out.push({code:n.code,name:it.name,own:it.cost,sub:sub,bom:b.code});
+        }
+        walk(r.kids,path.concat(n.code));
+      });
+    })(buildTree(b),[b.code]);
+  });
+  const seen={};
+  return out.filter(x=>{const k=x.code; if(seen[k])return false; seen[k]=1; return true;});
 }
 /* 展開 BOM：leaf=葉料號總需求, sub=半成品需求, cycles=循環引用 */
 function explode(bomCode,orderQty,opt){
@@ -256,6 +299,20 @@ function explode(bomCode,orderQty,opt){
     });
   })(buildTree(bom),orderQty,[bomCode],1);
   return {leaf,sub,cycles};
+}
+/* 節點小計：此節點「n.qty 個」的材料成本。
+   若該節點自己沒有單價（非外購件），就用下階加總，避免成本少算。 */
+function nodeCost(node,path){
+  const p=path||[];
+  const {kids}=kidsOf(node,p);
+  if(!kids.length) return (itemOf(node.code).cost||0)*(+node.qty||0);
+  const per=kids.reduce((s,k)=>s+nodeCost(k,p.concat(node.code)),0);  // 每 1 個父件
+  return per*(+node.qty||0);
+}
+/* 該品號是否有自己的單價（用來標示成本是加總來的還是自己的） */
+function hasOwnCost(code){
+  const it=IDX[code];
+  return !!(it && it.cost!=null && it.cost!=='' && !isNaN(it.cost));
 }
 /* 單台材料成本 = 展開後葉料號 Σ(用量 × 單價) */
 function bomCost(bom){
@@ -831,7 +888,9 @@ function vBoms(){
     <button class="btn" onclick="masterAdd()">＋ 新增料號主檔品號</button>
     <button class="btn danger" onclick="masterDel()">刪減料號主檔品號</button>
     <div class="grow"></div>
-    <label class="chip ${SET().purchaseStop?'on':''}" onclick="togBuy()">外購件不再展開</label>
+    <span class="mini mut">成本規則</span>
+    ${[['max','取較高者'],['buy','自身單價'],['sum','下階加總']]
+      .map(([k,t])=>`<span class="chip ${costMode()===k?'on':''}" onclick="setCostMode('${k}')">${t}</span>`).join('')}
     <label class="chip ${bomFlat?'on':''}" onclick="bomFlat=!bomFlat;vBoms()">展開後總用量</label>
     <button class="btn" onclick="exportBom()" ${curBom?'':'disabled'}>匯出</button>
     <button class="btn danger" onclick="delBom()" ${curBom?'':'disabled'}>刪除</button>
@@ -881,15 +940,21 @@ function renderBom(){
         const it=itemOf(n.code), open=!collapsed[key];
         const buy=kids.length&&isBuyPoint(n.code); // 外購組件：以本身單價計，子件僅供參考
         const counted=!under&&(!kids.length||buy); // 此列是否列入成本
+        const roll=(kids.length&&!buy&&!under)?nodeCost(n,path):null; // 無自身單價的組件 → 下階加總
         rows.push(`<tr style="${under?'opacity:.62':''}">
           <td class="no ${path.length===1?'lv1':''}" style="padding-left:${9+(path.length-1)*16}px">
             ${kids.length?`<span class="tw" onclick="tog('${key}')">${open?'▾':'▸'}</span>`:'<span class="tw"></span>'}${no}</td>
-          <td class="mono">${esc(n.code)}${ref?' <span class="tag info">引用子BOM</span>':''}${buy?' <span class="tag warn">外購件</span>':''}${under?' <span class="tag gray">參考</span>':''}</td>
+          <td class="mono">${esc(n.code)}${ref?' <span class="tag info">引用子BOM</span>':''}${buy?' <span class="tag warn">外購件</span>':''}${under?' <span class="tag gray">參考</span>':''}${(kids.length&&!buy&&!under&&!hasOwnCost(n.code))?' <span class="tag gray" title="料號主檔未設單價，成本以下階加總">主檔無價</span>':''}</td>
           <td>${esc(n.name||it.name)}</td><td class="mut">${esc(n.spec||it.spec)}</td>
           <td class="num"><b>${nf(n.qty)}</b></td><td class="mut">${esc(n.unit||it.unit)}</td>
           <td class="num">${(kids.length&&!buy)?'<span class="mut">—</span>':nf(it.stock)}</td>
-          <td class="num">${(kids.length&&!buy)?'<span class="mut">—</span>':(it.cost==null?'<span class="tag gray">未設</span>':nf(it.cost))}</td>
-          <td class="num">${counted?money((it.cost||0)*(+n.qty||0)):''}</td>
+          <td class="num">${(kids.length&&!buy)
+              ? (roll!=null?`<span class="mut" title="下階加總">${nf(roll/(+n.qty||1))}</span>`:'<span class="mut">—</span>')
+              : (it.cost==null?'<span class="tag gray">未設</span>':nf(it.cost))}</td>
+          <td class="num">${under?''
+              : (kids.length&&!buy)
+                ? `<span class="mut" title="由下階加總，未重複計入總成本">${money(roll)}<br><span class="mini">下階加總</span></span>`
+                : money((it.cost||0)*(+n.qty||0))}</td>
           <td class="mut">${esc(n.note||it.supplier)}</td>
           <td class="num"><button class="btn sm" onclick="showItem('${esc(n.code)}')">明細</button>
             <button class="btn sm" onclick="editItem('${esc(n.code)}')">編輯</button></td></tr>`);
@@ -907,7 +972,9 @@ function renderBom(){
   box.innerHTML=head+body;
 }
 function tog(k){collapsed[k]=!collapsed[k];renderBom();}
-async function togBuy(){SET().purchaseStop=!SET().purchaseStop;await save();renderAll();}
+async function setCostMode(m){SET().costMode=m;delete SET().purchaseStop;await save();renderAll();
+  toast('成本規則已改為：'+({max:'取較高者',buy:'自身單價優先',sum:'一律下階加總'}[m]));}
+async function togBuy(){setCostMode(costMode()==='sum'?'max':'sum');}
 async function delBom(){
   if(!confirm(`確定刪除 BOM「${curBom}」？`))return;
   S.boms=S.boms.filter(b=>b.code!==curBom); curBom=null; await save(); vBoms(); toast('已刪除');
@@ -994,17 +1061,21 @@ async function importBomFile(){
   const f=await pickFile('.xlsx,.xls'); if(!f)return;
   const wb=await readWB(f); const bs=parseBoms(wb);
   if(!bs.length) return toast('未在檔案中找到可辨識的 BOM 工作表');
-  let add=0,upd=0;
+  let add=0,upd=0,fill=0;
   bs.forEach(b=>{const ix=S.boms.findIndex(x=>x.code===b.code);
     if(ix>=0){S.boms[ix]=b;upd++;}else{S.boms.push(b);add++;}
-    b.lines.forEach(l=>{if(!IDX[l.code]&&!S.items.some(i=>i.code===l.code))
-      S.items.push({code:l.code,name:l.name,spec:l.spec,unit:l.unit,
+    b.lines.forEach(l=>{
+      const ex=S.items.find(i=>i.code===l.code);
+      if(!ex) S.items.push({code:l.code,name:l.name,spec:l.spec,unit:l.unit,
         stock:l._stock==null?0:l._stock, cost:l._cost==null?null:l._cost,
         safety:null,supplier:'',loc:'',lead:'',msb:'',
-        note:'（BOM 匯入自動建檔，庫存與單價取自 BOM 表）'});});
+        note:'（BOM 匯入自動建檔，庫存與單價取自 BOM 表）'});
+      else if((ex.cost==null||ex.cost==='')&&l._cost!=null){
+        ex.cost=l._cost; fill++;
+        ex.note=(ex.note?ex.note+'；':'')+`單價 ${l._cost} 取自 BOM 表`;}});
   });
   await save(); curBom=bs[0].code; vBoms(); vItems();
-  toast(`匯入完成：新增 ${add} 張、更新 ${upd} 張 BOM`);
+  toast(`匯入完成：新增 ${add} 張、更新 ${upd} 張 BOM`+(fill?`，回填 ${fill} 筆單價`:''));
 }
 </script>
 <script>
@@ -1212,14 +1283,16 @@ function vMrp(){
       <div class="grow"></div>
       <label class="chip ${OPT.netting?'on':''}" onclick="OPT.netting=!OPT.netting;vMrp()">扣抵半成品既有庫存</label>
       <label class="chip ${OPT.keepSafety?'on':''}" onclick="OPT.keepSafety=!OPT.keepSafety;vMrp()">保留安全庫存</label>
-      <label class="chip ${SET().purchaseStop?'on':''}" onclick="togBuy()">外購件不再展開</label>
+      <span class="mini mut">成本規則</span>
+      ${[['max','取較高者'],['buy','自身單價'],['sum','下階加總']]
+        .map(([k,t])=>`<span class="chip ${costMode()===k?'on':''}" onclick="setCostMode('${k}')">${t}</span>`).join('')}
       <button class="btn pri" onclick="runMrp()">開始試算</button>
     </div>
     <div class="hint">
       <b>扣抵半成品既有庫存</b>：勾選後，若半成品（如 S03-ORL0001）本身有庫存，會先扣抵，只對不足部分往下展開零件需求；不勾選則一律展開到最底層零件。<br>
       <b>保留安全庫存</b>：勾選後，可用量＝庫存－安全庫存。<br>
-      <b>外購件不再展開</b>：若某組件（如 S02-ME1000007 光纖鏡頭組）在料號總表中已有單位成本，代表整組外購，
-      需求與成本以該組件本身計算，不再往下拆它的子件，避免重複計價。
+      <b>成本規則</b>：組件同時有自身單價與下階明細時要採用哪一邊。預設「取較高者」避免任一邊資料不全造成少算，
+      可在「資料管理」頁看到兩者差異較大的組件清單。
     </div>
   </div>
   <div id="mrpOut"></div>`;
@@ -1682,9 +1755,14 @@ function importLoose(f,wb,kind){
   const bs =(kind==='items')?[]:parseBoms(wb);
   const newIts=its.filter(i=>!IDX[i.code]).length, updIts=its.length-newIts;
   const newBs=bs.filter(b=>!BIDX[b.code]).length, updBs=bs.length-newBs;
-  const autoCodes=[];
+  const autoCodes=[], willFill=[];
   const known=new Set(S.items.map(i=>i.code).concat(its.map(i=>i.code)));
-  bs.forEach(b=>b.lines.forEach(l=>{if(!known.has(l.code)){known.add(l.code);autoCodes.push(l.code);}}));
+  const costOf=c=>{const n=its.find(i=>i.code===c); if(n) return n.cost;
+    const o=IDX[c]; return o?o.cost:undefined;};
+  bs.forEach(b=>b.lines.forEach(l=>{
+    if(!known.has(l.code)){known.add(l.code);autoCodes.push(l.code);}
+    else{const cur=costOf(l.code);
+      if((cur==null||cur==='')&&l._cost!=null) willFill.push(l.code+' → '+l._cost);}}));
   LOOSE={file:f.name,items:its,boms:bs,autoCodes};
   dialog('匯入 '+f.name,`
     <div class="hint" style="margin-bottom:12px">系統判斷這是
@@ -1696,7 +1774,11 @@ function importLoose(f,wb,kind){
       <div class="stat ok"><div class="k">BOM 新增</div><div class="v">${newBs}</div></div>
       <div class="stat"><div class="k">BOM 更新</div><div class="v">${updBs}</div></div>
       <div class="stat ${autoCodes.length?'warn':''}"><div class="k">自動建檔料號</div><div class="v">${autoCodes.length}</div></div>
+      <div class="stat ${willFill.length?'warn':''}"><div class="k">回填單價</div><div class="v">${willFill.length}</div></div>
     </div>
+    ${willFill.length?`<div class="card" style="border-color:#e8c98f"><b style="color:var(--warn)">將回填單價</b>
+      <div class="hint">下列料號在料號總表沒有單價，但 BOM 表上有標價，匯入時會補進料號主檔
+        （不會覆蓋已有的價格）：<br>${willFill.map(esc).join('<br>')}</div></div>`:''}
     ${bs.length?`<div class="dgroup"><h3>BOM</h3><div class="tblwrap" style="max-height:200px">
       <table class="grid"><thead><tr><th class="nos">品號</th><th class="nos">產品名稱</th>
       <th class="nos num">明細行數</th><th class="nos">狀態</th></tr></thead><tbody>
@@ -1721,20 +1803,30 @@ async function applyLoose(){
   let a=0,u=0;
   LOOSE.items.forEach(r=>{const ix=S.items.findIndex(i=>i.code===r.code);
     if(ix>=0){S.items[ix]={...S.items[ix],...r};u++;}else{S.items.push(r);a++;}});
-  let ba=0,bu=0;
+  let ba=0,bu=0, filled=[];
   LOOSE.boms.forEach(b=>{const ix=S.boms.findIndex(x=>x.code===b.code);
     if(ix>=0){S.boms[ix]=b;bu++;}else{S.boms.push(b);ba++;}
-    b.lines.forEach(l=>{if(!S.items.some(i=>i.code===l.code))
-      S.items.push({code:l.code,name:l.name||'',spec:l.spec||'',unit:l.unit||'pcs',
-        stock:l._stock==null?0:l._stock, cost:l._cost==null?null:l._cost,
-        safety:null,supplier:'',lead:'',loc:'',msb:'',
-        note:'（BOM 匯入自動建檔，庫存與單價取自 BOM 表）'});});});
+    b.lines.forEach(l=>{
+      const ex=S.items.find(i=>i.code===l.code);
+      if(!ex){
+        S.items.push({code:l.code,name:l.name||'',spec:l.spec||'',unit:l.unit||'pcs',
+          stock:l._stock==null?0:l._stock, cost:l._cost==null?null:l._cost,
+          safety:null,supplier:'',lead:'',loc:'',msb:'',
+          note:'（BOM 匯入自動建檔，庫存與單價取自 BOM 表）'});
+      }else if((ex.cost==null||ex.cost==='')&&l._cost!=null){
+        /* 料號主檔沒有單價、但 BOM 表上有標價 → 回填，避免成本少算 */
+        ex.cost=l._cost;
+        ex.note=(ex.note?ex.note+'；':'')+`單價 ${l._cost} 取自 BOM 表`;
+        filled.push(l.code);
+      }});});
+  LOOSE.filled=filled;
   S.meta.itemFile=S.meta.itemFile||LOOSE.file;
   if(LOOSE.boms.length) S.meta.bomFile=LOOSE.file;
   S.meta.updatedAt=nowts();
-  const f=LOOSE.file; LOOSE=null; curBom=null; RES=null;
+  const f=LOOSE.file, nf2=filled.length; LOOSE=null; curBom=null; RES=null;
   await save(); closeDlg(); renderAll();
-  toast(`${f} 匯入完成：料號 +${a}/更新 ${u}，BOM +${ba}/更新 ${bu}`);
+  toast(`${f} 匯入完成：料號 +${a}/更新 ${u}，BOM +${ba}/更新 ${bu}`+
+        (nf2?`，回填 ${nf2} 筆單價`:''));
 }
 async function applyDB(){
   if(!DBPEND) return;
@@ -1807,13 +1899,32 @@ function vData(){
       <div class="hint">全部 BOM 會輸出「BOM 清單」總表，以及每張 BOM 的階層明細分頁。</div>
     </div>
   </div>
-  <div class="card"><h2>成本與展開規則</h2>
-    <label class="row" style="cursor:pointer">
-      <input type="checkbox" style="width:auto" ${SET().purchaseStop?'checked':''} onchange="togBuy()">
-      <span>外購件不再展開：品號在料號總表中已有<b>單位成本</b>時，視為整組外購，成本與需求以該品號計算，不再往下拆子件。</span>
-    </label>
-    <div class="hint">關閉此選項會一律展開到最底層零件。原始 Excel 的成本合計同時計入外購組件與其子件，會重複計價；
-      本系統採用上述規則避免重複。</div>
+  <div class="card"><h2>成本計算規則
+      <span class="sub">組件同時有「自身單價」與「下階明細」時要用哪個</span></h2>
+    <div class="chips" style="margin-bottom:10px">
+      ${[['max','取較高者（推薦）'],['buy','自身單價優先'],['sum','一律下階加總']]
+        .map(([k,t])=>`<span class="chip ${costMode()===k?'on':''}" onclick="setCostMode('${k}')">${t}</span>`).join('')}
+    </div>
+    <div class="hint">
+      <b>取較高者</b>：自身單價與下階加總取高的那個，避免任一邊資料不全造成少算。<br>
+      <b>自身單價優先</b>：料號主檔有價就視為整組外購，不再拆下階（適合下階只是參考用）。<br>
+      <b>一律下階加總</b>：只要有下階就往下展開，自身單價不計（適合全部自製）。<br>
+      沒有下階的料號，一律用自身單價；上一階沒有單價時，一律用下階加總。
+    </div>
+    ${(()=>{const c=costConflicts();return c.length?`
+      <div class="card" style="margin-top:12px;border-color:#e8c98f"><b style="color:var(--warn)">
+        ${c.length} 個組件的自身單價低於下階加總，請確認哪個才是實際成本</b>
+        <div class="tblwrap" style="max-height:220px;margin-top:8px"><table class="grid"><thead><tr>
+          <th class="nos">品號</th><th class="nos">品名</th><th class="nos num">自身單價</th>
+          <th class="nos num">下階加總</th><th class="nos num">差額</th><th class="nos">出現於</th>
+          </tr></thead><tbody>${c.map(x=>`<tr>
+            <td class="mono">${esc(x.code)}</td><td>${esc(x.name)}</td>
+            <td class="num">${nf(x.own)}</td><td class="num"><b>${nf(Math.round(x.sub*100)/100)}</b></td>
+            <td class="num" style="color:var(--bad)">${nf(Math.round((x.sub-x.own)*100)/100)}</td>
+            <td class="mono mut">${esc(x.bom)}</td></tr>`).join('')}
+        </tbody></table></div>
+        <div class="hint">若自身單價才是實際採購價，請把該料號的下階從 BOM 移除，或改用「自身單價優先」規則。</div>
+      </div>`:''})()}
   </div>
   <div class="card"><h2>資料來源</h2>
     <dl class="kv">
