@@ -403,14 +403,15 @@ function paintNet(){
 async function apiPost(action,payload,extra){
   const body=Object.assign({action:action,payload:payload,pw:PW,who:WHO},extra||{});
   let lastErr;
-  /* Apps Script 偶爾會冷啟動或短暫失敗，自動重試一次 */
-  for(let i=0;i<2;i++){
+  /* 只有讀取才自動重試；寫入若重試，可能第一次其實已成功而造成假性版本衝突 */
+  const tries = (action==='save') ? 1 : 2;
+  for(let i=0;i<tries;i++){
     try{
       const res=await fetch(API_URL,{method:'POST',
         headers:{'Content-Type':'text/plain;charset=utf-8'},body:JSON.stringify(body)});
       if(!res.ok) throw new Error('HTTP '+res.status);
       return await res.json();
-    }catch(e){ lastErr=e; if(i===0) await new Promise(r=>setTimeout(r,1200)); }
+    }catch(e){ lastErr=e; if(i+1<tries) await new Promise(r=>setTimeout(r,1200)); }
   }
   throw lastErr;
 }
@@ -445,7 +446,7 @@ async function push(force){
         <p>你載入資料後，<b>${esc(d.updatedBy||'其他使用者')}</b> 在
            <b>${esc(d.updatedAt||'')}</b> 也存過一次（雲端版本 ${d.serverRev}，你的是 ${REV}）。</p>
         <div class="hint">為避免蓋掉對方的修改，請選擇處理方式。建議先「放棄我的修改並重新載入」，
-          確認對方改了什麼之後再重做一次。</div>`,
+          確認雲端目前的內容；若你的修改其實已經存進去了，重新載入後就會看到。</div>`,
         `<button class="btn danger" type="button" onclick="closeDlg();push(true)">強制覆蓋雲端</button>
          <button class="btn pri" type="button" onclick="closeDlg();pullNow()">放棄我的修改並重新載入</button>
          <button class="btn" value="x">稍後再說</button>`);
