@@ -476,13 +476,16 @@ function parseBoms(wb){
     const H=(aoa[hr]||[]).map(S_);
     const ci=n=>H.indexOf(n);
     const cLv=ci('階層'),cCode=H.indexOf('品號',ci('階層')),cName=ci('品名'),
-          cSpec=ci('規格'),cQty=ci('用量'),cUnit=ci('單位'),cNote=ci('備註');
+          cSpec=ci('規格'),cQty=ci('用量'),cUnit=ci('單位'),cNote=ci('備註'),
+          cStock=ci('庫存數量'),cCost=ci('單位成本');
     const lines=[];
     for(let i=hr+1;i<aoa.length;i++){
       const r=aoa[i]||[]; const lv=S_(r[cLv]), code=S_(r[cCode]);
       if(!code||!/^\d+$/.test(lv)) continue;
+      /* BOM 表上的庫存／單價一併帶出，供主檔未收錄的料號自動建檔使用 */
       lines.push({level:+lv,code,name:S_(r[cName]),spec:cSpec>=0?S_(r[cSpec]):'',
-        qty:N_(r[cQty])==null?1:N_(r[cQty]),unit:S_(r[cUnit])||'pcs',note:cNote>=0?S_(r[cNote]):''});
+        qty:N_(r[cQty])==null?1:N_(r[cQty]),unit:S_(r[cUnit])||'pcs',note:cNote>=0?S_(r[cNote]):'',
+        _stock:cStock>=0?N_(r[cStock]):null, _cost:cCost>=0?N_(r[cCost]):null});
     }
     if(lines.length) boms.push({id:prod,code:prod,name:pname,spec:pspec,source:sn,lines});
   });
@@ -985,8 +988,10 @@ async function importBomFile(){
   bs.forEach(b=>{const ix=S.boms.findIndex(x=>x.code===b.code);
     if(ix>=0){S.boms[ix]=b;upd++;}else{S.boms.push(b);add++;}
     b.lines.forEach(l=>{if(!IDX[l.code]&&!S.items.some(i=>i.code===l.code))
-      S.items.push({code:l.code,name:l.name,spec:l.spec,unit:l.unit,stock:0,cost:null,
-        safety:null,supplier:'',loc:'',lead:'',msb:'',note:'（BOM 匯入自動建檔）'});});
+      S.items.push({code:l.code,name:l.name,spec:l.spec,unit:l.unit,
+        stock:l._stock==null?0:l._stock, cost:l._cost==null?null:l._cost,
+        safety:null,supplier:'',loc:'',lead:'',msb:'',
+        note:'（BOM 匯入自動建檔，庫存與單價取自 BOM 表）'});});
   });
   await save(); curBom=bs[0].code; vBoms(); vItems();
   toast(`匯入完成：新增 ${add} 張、更新 ${upd} 張 BOM`);
@@ -1695,7 +1700,8 @@ function importLoose(f,wb,kind){
       ${its.slice(0,10).map(i=>`<tr><td class="mono">${esc(i.code)}</td><td>${esc(i.name)}</td>
         <td class="num">${nf(i.stock)}</td><td class="num">${i.cost==null?'—':nf(i.cost)}</td></tr>`).join('')}
       </tbody></table><div class="hint">共 ${its.length} 筆</div></div></div>`:''}
-    ${autoCodes.length?`<div class="hint">BOM 用到但料號總表沒有的品號，會自動建檔（庫存 0、無單價）：
+    ${autoCodes.length?`<div class="hint">BOM 用到但料號總表沒有的品號，會自動建檔
+      （庫存與單價若 BOM 表上有填會一併帶入）：
       ${autoCodes.slice(0,10).map(esc).join('、')}${autoCodes.length>10?' …':''}</div>`:''}`,
     `<button class="btn pri" type="button" onclick="applyLoose()">確認匯入</button>
      <button class="btn" value="x">取消</button>`);
@@ -1709,8 +1715,10 @@ async function applyLoose(){
   LOOSE.boms.forEach(b=>{const ix=S.boms.findIndex(x=>x.code===b.code);
     if(ix>=0){S.boms[ix]=b;bu++;}else{S.boms.push(b);ba++;}
     b.lines.forEach(l=>{if(!S.items.some(i=>i.code===l.code))
-      S.items.push({code:l.code,name:l.name||'',spec:l.spec||'',unit:l.unit||'pcs',stock:0,cost:null,
-        safety:null,supplier:'',lead:'',loc:'',msb:'',note:'（BOM 匯入自動建檔）'});});});
+      S.items.push({code:l.code,name:l.name||'',spec:l.spec||'',unit:l.unit||'pcs',
+        stock:l._stock==null?0:l._stock, cost:l._cost==null?null:l._cost,
+        safety:null,supplier:'',lead:'',loc:'',msb:'',
+        note:'（BOM 匯入自動建檔，庫存與單價取自 BOM 表）'});});});
   S.meta.itemFile=S.meta.itemFile||LOOSE.file;
   if(LOOSE.boms.length) S.meta.bomFile=LOOSE.file;
   S.meta.updatedAt=nowts();

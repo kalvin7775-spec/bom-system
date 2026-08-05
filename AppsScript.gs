@@ -129,7 +129,7 @@ function readState(){
     return {id:bc, code:bc, name:m.name||'', spec:m.spec||'', source:m.source||'', note:m.note||'', lines:ls};
   });
   const history = rows('hist').map(r=>({
-    ts:String(r['時間']||''), file:String(r['來源']||''),
+    ts:fmtTS(r['時間']), file:String(r['來源']||''),
     sum:{added:num(r['新增']), removed:num(r['消失']), stock:num(r['庫存變動']),
          cost:num(r['單價變動']), other:num(r['其他'])},
     by:String(r['操作者']||''), diff:{added:[],removed:[],stock:[],cost:[],other:[],
@@ -140,13 +140,18 @@ function readState(){
   try{ const s = sysGet('settings',''); if(s) settings = JSON.parse(s); }catch(e){}
   return {
     rev: Number(sysGet('rev',0)) || 0,
-    updatedAt: String(sysGet('updatedAt','')),
+    updatedAt: fmtTS(sysGet('updatedAt','')),
     updatedBy: String(sysGet('updatedBy','')),
     items: items, boms: boms, history: history, settings: settings
   };
 }
 
 function num(v){ const n = parseFloat(v); return isNaN(n) ? 0 : n; }
+/* 試算表可能把時間字串自動轉成日期物件，讀回時統一格式化 */
+function fmtTS(v){
+  if(v instanceof Date) return Utilities.formatDate(v,'Asia/Taipei','yyyy/MM/dd HH:mm:ss');
+  return String(v===null||v===undefined?'':v);
+}
 function numOrNull(v){
   if(v===''||v===null||v===undefined) return null;
   const n = parseFloat(v); return isNaN(n) ? null : n;
@@ -217,10 +222,10 @@ function doPost(e){
     if(body.baseRev !== undefined && body.baseRev !== null &&
        Number(body.baseRev) !== cur && !body.force){
       return out({conflict:true, serverRev:cur,
-                  updatedAt:String(sysGet('updatedAt','')), updatedBy:String(sysGet('updatedBy',''))});
+                  updatedAt:fmtTS(sysGet('updatedAt','')), updatedBy:String(sysGet('updatedBy',''))});
     }
     const rev = writeState(st, body.who||'');
-    return out({ok:true, rev:rev, updatedAt:String(sysGet('updatedAt',''))});
+    return out({ok:true, rev:rev, updatedAt:fmtTS(sysGet('updatedAt',''))});
   }
   return out({error:'未知的指令：'+action});
 }
