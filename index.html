@@ -1458,11 +1458,35 @@ function bomDiff(oldB,newB){
   return {added,removed,changed};
 }
 let DBPEND=null;
+/* 自動辨識上傳的 Excel 屬於哪一種格式 */
+function detectFormat(wb){
+  const names=wb.SheetNames.map(n=>n.trim());
+  const has=n=>names.some(x=>x===n||x.includes(n));
+  if(has(DBSHEET.items)&&has(DBSHEET.lines)) return 'db';
+  const bs=parseBoms(wb);
+  const its=parseItems(wb);
+  if(bs.length&&its.length&&its.length>bs.length*3) return 'both';
+  if(bs.length) return 'bom';
+  if(its.length) return 'items';
+  return null;
+}
 async function importDB(){
   const f=await pickFile('.xlsx,.xls'); if(!f) return;
-  let wb; try{wb=await readWB(f);}catch(e){return toast('檔案讀取失敗');}
+  let wb;
+  try{wb=await readWB(f);}
+  catch(e){return dialog('檔案讀取失敗',
+    `<p>無法讀取 <b>${esc(f.name)}</b>。</p>
+     <div class="hint">請確認檔案是 .xlsx 或 .xls，且沒有被 Excel 開著或設密碼保護。</div>`);}
+  const kind=detectFormat(wb);
+  if(kind==='items'||kind==='bom'||kind==='both') return importLoose(f,wb,kind);
+  if(kind!=='db') return dialog('無法辨識檔案格式',
+    `<p>在 <b>${esc(f.name)}</b> 裡找不到可辨識的資料。工作表：${wb.SheetNames.map(esc).join('、')}</p>
+     <div class="hint">系統可接受三種檔案：<br>
+       1. <b>資料庫檔</b> — 含「料號主檔」「BOM主檔」「BOM明細」三張表<br>
+       2. <b>料號總表</b> — 需有「品號」欄位的表<br>
+       3. <b>BOM 檔</b> — 每張工作表含「品號 / 產品名稱」標頭與「項次 / 階層」欄位</div>`);
   const p=parseDB(wb);
-  if(p.error) return toast(p.error);
+  if(p.error) return dialog('資料庫檔格式不符',`<p>${esc(p.error)}</p>`);
   const di=diffItems(S.items,p.items), db=bomDiff(S.boms,p.boms);
   DBPEND={file:f.name,...p,di,db};
   const W=p.warn;
@@ -1494,6 +1518,64 @@ async function importDB(){
     <div class="dgroup">${diffHTML(di,f.name,p.items.length)}</div>`,
     `<button class="btn pri" type="button" onclick="applyDB()">確認套用</button>
      <button class="btn" value="x">取消</button>`);
+}
+/* 直接匯入原始的料號總表 / BOM 檔 */
+let LOOSE=null;
+function importLoose(f,wb,kind){
+  const its=(kind==='bom')?[]:parseItems(wb);
+  const bs =(kind==='items')?[]:parseBoms(wb);
+  const newIts=its.filter(i=>!IDX[i.code]).length, updIts=its.length-newIts;
+  const newBs=bs.filter(b=>!BIDX[b.code]).length, updBs=bs.length-newBs;
+  const autoCodes=[];
+  const known=new Set(S.items.map(i=>i.code).concat(its.map(i=>i.code)));
+  bs.forEach(b=>b.lines.forEach(l=>{if(!known.has(l.code)){known.add(l.code);autoCodes.push(l.code);}}));
+  LOOSE={file:f.name,items:its,boms:bs,autoCodes};
+  dialog('匯入 '+f.name,`
+    <div class="hint" style="margin-bottom:12px">系統判斷這是
+      <b>${kind==='items'?'料號總表':kind==='bom'?'BOM 檔':'料號總表 ＋ BOM 檔'}</b>，
+      將以<b>新增與更新</b>的方式併入現有資料（不會刪除任何既有料號或 BOM）。</div>
+    <div class="stats" style="margin-bottom:14px">
+      <div class="stat ok"><div class="k">料號新增</div><div class="v">${newIts}</div></div>
+      <div class="stat"><div class="k">料號更新</div><div class="v">${updIts}</div></div>
+      <div class="stat ok"><div class="k">BOM 新增</div><div class="v">${newBs}</div></div>
+      <div class="stat"><div class="k">BOM 更新</div><div class="v">${updBs}</div></div>
+      <div class="stat ${autoCodes.length?'warn':''}"><div class="k">自動建檔料號</div><div class="v">${autoCodes.length}</div></div>
+    </div>
+    ${bs.length?`<div class="dgroup"><h3>BOM</h3><div class="tblwrap" style="max-height:200px">
+      <table class="grid"><thead><tr><th class="nos">品號</th><th class="nos">產品名稱</th>
+      <th class="nos num">明細行數</th><th class="nos">狀態</th></tr></thead><tbody>
+      ${bs.map(b=>`<tr><td class="mono">${esc(b.code)}</td><td>${esc(b.name)}</td>
+        <td class="num">${b.lines.length}</td>
+        <td><span class="tag ${BIDX[b.code]?'info':'ok'}">${BIDX[b.code]?'更新':'新增'}</span></td></tr>`).join('')}
+      </tbody></table></div></div>`:''}
+    ${its.length?`<div class="dgroup"><h3>料號（前 10 筆）</h3><div class="tblwrap" style="max-height:200px">
+      <table class="grid"><thead><tr><th class="nos">品號</th><th class="nos">品名</th>
+      <th class="nos num">庫存</th><th class="nos num">單價</th></tr></thead><tbody>
+      ${its.slice(0,10).map(i=>`<tr><td class="mono">${esc(i.code)}</td><td>${esc(i.name)}</td>
+        <td class="num">${nf(i.stock)}</td><td class="num">${i.cost==null?'—':nf(i.cost)}</td></tr>`).join('')}
+      </tbody></table><div class="hint">共 ${its.length} 筆</div></div></div>`:''}
+    ${autoCodes.length?`<div class="hint">BOM 用到但料號總表沒有的品號，會自動建檔（庫存 0、無單價）：
+      ${autoCodes.slice(0,10).map(esc).join('、')}${autoCodes.length>10?' …':''}</div>`:''}`,
+    `<button class="btn pri" type="button" onclick="applyLoose()">確認匯入</button>
+     <button class="btn" value="x">取消</button>`);
+}
+async function applyLoose(){
+  if(!LOOSE) return;
+  let a=0,u=0;
+  LOOSE.items.forEach(r=>{const ix=S.items.findIndex(i=>i.code===r.code);
+    if(ix>=0){S.items[ix]={...S.items[ix],...r};u++;}else{S.items.push(r);a++;}});
+  let ba=0,bu=0;
+  LOOSE.boms.forEach(b=>{const ix=S.boms.findIndex(x=>x.code===b.code);
+    if(ix>=0){S.boms[ix]=b;bu++;}else{S.boms.push(b);ba++;}
+    b.lines.forEach(l=>{if(!S.items.some(i=>i.code===l.code))
+      S.items.push({code:l.code,name:l.name||'',spec:l.spec||'',unit:l.unit||'pcs',stock:0,cost:null,
+        safety:null,supplier:'',lead:'',loc:'',msb:'',note:'（BOM 匯入自動建檔）'});});});
+  S.meta.itemFile=S.meta.itemFile||LOOSE.file;
+  if(LOOSE.boms.length) S.meta.bomFile=LOOSE.file;
+  S.meta.updatedAt=nowts();
+  const f=LOOSE.file; LOOSE=null; curBom=null; RES=null;
+  await save(); closeDlg(); renderAll();
+  toast(`${f} 匯入完成：料號 +${a}/更新 ${u}，BOM +${ba}/更新 ${bu}`);
 }
 async function applyDB(){
   if(!DBPEND) return;
