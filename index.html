@@ -421,7 +421,15 @@ async function pull(silent){
   setNet('load');
   try{
     const d=await apiPost('load',null);
-    if(d.error){ setNet('err'); if(!silent) askPassword(d.error); return false; }
+    if(d.error){
+      setNet('err');
+      if(!silent){
+        if(/密碼/.test(d.error)) askPassword(d.error);
+        else dialog('讀取雲端失敗',`<p>${esc(d.error)}</p>
+          <div class="hint">畫面顯示的是本機快取資料，按上方 ↻ 可重試。</div>`);
+      }
+      return false;
+    }
     S={items:d.items||[],boms:d.boms||[],history:d.history||[],
        settings:d.settings||{purchaseStop:true},
        meta:{updatedAt:d.updatedAt||'',updatedBy:d.updatedBy||''}};
@@ -429,7 +437,7 @@ async function pull(silent){
     reindex(); await DB.set('cache',JSON.parse(JSON.stringify({S:S,REV:REV})));
     setNet('ok'); return true;
   }catch(e){ setNet('err');
-    if(!silent) toast('讀取雲端失敗，顯示的是本機快取資料。可按 ↻ 重試');
+    if(!silent) toast('連不上雲端（'+(e.message||'網路逾時')+'），顯示的是本機快取。可按 ↻ 重試');
     return false; }
 }
 async function pullNow(){ if(await pull()) { renderAll(); toast('已重新讀取雲端資料'); } }
