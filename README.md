@@ -2,7 +2,7 @@
 
 安德斯醫學科技 — 料號庫存、BOM 建立與缺料試算的單檔網頁系統。
 
-**線上使用**：https://KALVIN-HSIEH.github.io/bom-system/
+**線上使用**：https://kalvin7775-spec.github.io/bom-system/
 
 ## 功能
 
