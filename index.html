@@ -958,7 +958,10 @@ function renderBom(){
                 : money((it.cost||0)*(+n.qty||0))}</td>
           <td class="mut">${esc(n.note||it.supplier)}</td>
           <td class="num"><button class="btn sm" onclick="showItem('${esc(n.code)}')">明細</button>
-            <button class="btn sm" onclick="editItem('${esc(n.code)}')">編輯</button></td></tr>`);
+            <button class="btn sm" onclick="editItem('${esc(n.code)}')">編輯</button>
+            ${(kids.length&&!ref&&!BIDX[n.code])
+              ? `<button class="btn sm" title="把這個組件的下階拆成獨立 BOM"
+                   onclick="splitSubBom('${esc(n.code)}')">建 BOM</button>`:''}</td></tr>`);
         if(kids.length&&open) walk(kids,path.concat(n.code),key,under||buy,no);
       });
     })(tree,[bom.code],'r',false,'');
@@ -996,6 +999,73 @@ function exportBom(){
       單位:itemOf(c).unit,庫存:itemOf(c).stock,單價:itemOf(c).cost,小計:(itemOf(c).cost||0)*q}))]
   ],`BOM_${curBom}_${new Date().toISOString().slice(0,10).replace(/-/g,'')}.xlsx`);
 }
+/* ---------- 從現有 BOM 拆出獨立子 BOM ---------- */
+function findNode(bomCode,code){
+  let hit=null;
+  (function walk(nodes,path){
+    nodes.forEach(n=>{
+      if(hit) return;
+      if(n.code===code){hit={node:n,path:path};return;}
+      const r=rawKids(n,path);
+      if(r.kids.length&&!path.includes(n.code)) walk(r.kids,path.concat(n.code));
+    });
+  })(buildTree(BIDX[bomCode]),[bomCode]);
+  return hit;
+}
+/* 把節點的下階攤平成 lines，階層重新從 1 起算 */
+function flattenSub(node){
+  const out=[], base=node.level;
+  (function walk(nodes){
+    nodes.forEach(n=>{
+      out.push({level:Math.max(1,n.level-base),code:n.code,name:n.name,spec:n.spec,
+                qty:n.qty,unit:n.unit,note:n.note});
+      if(n.children&&n.children.length) walk(n.children);
+    });
+  })(node.children||[]);
+  return out;
+}
+function splitSubBom(code){
+  if(BIDX[code]) return toast('此品號已經有獨立 BOM 了');
+  const hit=findNode(curBom,code);
+  if(!hit||!hit.node.children||!hit.node.children.length) return toast('找不到可拆出的下階');
+  const lines=flattenSub(hit.node);
+  const it=itemOf(code);
+  const cost=lines.reduce((s,l)=>s+(itemOf(l.code).cost||0)*(+l.qty||0),0);
+  dialog(`拆出獨立 BOM　${code}`,`
+    <p>將 <b class="mono">${esc(code)}</b>（${esc(hit.node.name||it.name)}）在
+       <b class="mono">${esc(curBom)}</b> 底下的 <b>${lines.length}</b> 行下階，
+       複製成一張獨立的 BOM。</p>
+    <div class="fld"><label>產品名稱</label>
+      <input id="sb_name" value="${esc(hit.node.name||it.name||'')}"></div>
+    <div class="fld"><label>規格</label>
+      <input id="sb_spec" value="${esc(hit.node.spec||it.spec||'')}"></div>
+    <div class="tblwrap" style="max-height:34vh"><table class="grid"><thead><tr>
+      <th class="nos" style="width:80px">階層</th><th class="nos">品號</th><th class="nos">品名</th>
+      <th class="nos num">用量</th><th class="nos">單位</th><th class="nos num">單價</th>
+      </tr></thead><tbody>
+      ${lines.map((l,i)=>`<tr><td class="no">${lineNos(lines)[i]}</td>
+        <td class="mono">${esc(l.code)}</td><td>${esc(l.name||itemOf(l.code).name)}</td>
+        <td class="num">${nf(l.qty)}</td><td class="mut">${esc(l.unit)}</td>
+        <td class="num">${itemOf(l.code).cost==null?'<span class="tag gray">未設</span>':nf(itemOf(l.code).cost)}</td>
+        </tr>`).join('')}
+    </tbody></table></div>
+    <div class="hint">單台材料成本約 <b>${money(cost)}</b>。
+      原本的 ${esc(curBom)} 不會改變 — 它底下已經有這些明細，展開時仍以原本的階層為準，不會重複計算。</div>`,
+    `<button class="btn pri" type="button" onclick="doSplitSubBom('${esc(code)}')">建立 BOM</button>
+     <button class="btn" value="x">取消</button>`);
+}
+async function doSplitSubBom(code){
+  const hit=findNode(curBom,code); if(!hit) return;
+  const lines=flattenSub(hit.node);
+  const src=curBom;
+  S.boms.push({id:code,code:code,
+    name:document.getElementById('sb_name').value.trim()||itemOf(code).name||'',
+    spec:document.getElementById('sb_spec').value.trim()||'',
+    source:`由 ${src} 拆出`, note:'', lines:lines});
+  await save(); closeDlg(); curBom=code; collapsed={}; vBoms(); vDash();
+  toast(`已建立 BOM ${code}（${lines.length} 行）`);
+}
+
 /* ---------- 在 BOM 管理直接維護料號主檔 ---------- */
 function masterAdd(){ editItem(''); }
 let MDEL={q:'',sel:{}};
