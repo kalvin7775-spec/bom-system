@@ -111,6 +111,30 @@ dialog::backdrop{background:rgba(20,24,30,.42)}
 #toast.on{opacity:1}
 .mini{font-size:12px;color:var(--mut)}
 input[type=file]{display:none}
+
+/* ---------- 登入畫面 ---------- */
+#gate{position:fixed;inset:0;background:var(--bg);z-index:500;display:none;
+  overflow:auto;padding:40px 16px}
+#gate.on{display:block}
+.gate-box{max-width:430px;margin:0 auto;background:var(--card);border:1px solid var(--line);
+  border-radius:12px;padding:26px 26px 22px;box-shadow:0 8px 30px rgba(0,0,0,.08)}
+.gate-box h2{margin:0 0 4px;font-size:19px}
+.gate-box .sub{color:var(--mut);font-size:13px;margin-bottom:18px}
+.gate-tabs{display:flex;gap:2px;background:var(--line2);padding:3px;border-radius:8px;margin-bottom:18px}
+.gate-tabs button{flex:1;background:none;border:0;padding:8px;border-radius:6px;cursor:pointer;
+  font-size:13.5px;color:var(--mut);font-family:inherit}
+.gate-tabs button.on{background:var(--card);color:var(--acc);font-weight:600;box-shadow:0 1px 3px rgba(0,0,0,.08)}
+.gate-msg{font-size:13px;padding:9px 11px;border-radius:7px;margin-bottom:14px;line-height:1.6}
+.gate-msg.bad{background:#fdecec;color:#a62222;border:1px solid #f3c6c6}
+.gate-msg.ok{background:#e9f7ee;color:#1a6b38;border:1px solid #bfe3cd}
+.gate-foot{margin-top:16px;padding-top:14px;border-top:1px solid var(--line);
+  font-size:12.5px;color:var(--mut);line-height:1.7}
+.gate-foot a{color:var(--acc);cursor:pointer;text-decoration:underline}
+#meBox{display:flex;align-items:center;gap:7px;font-size:12.5px;color:var(--mut);
+  white-space:nowrap;margin-left:auto}
+#meBox b{color:var(--txt)}
+.ro-banner{background:#fff8e6;border:1px solid #f0dca8;color:#8a6414;
+  padding:9px 13px;border-radius:8px;font-size:13px;margin-bottom:14px;line-height:1.6}
 </style>
 </head>
 <body>
@@ -124,7 +148,9 @@ input[type=file]{display:none}
     <button data-v="mrp">需求試算</button>
     <button data-v="sync">更新比對</button>
     <button data-v="data">資料管理</button>
+    <button data-v="users" id="navUsers" style="display:none">使用者管理</button>
   </nav>
+  <span id="meBox"></span>
 </header>
 <main>
 <div class="view on" id="v-dash"></div>
@@ -133,7 +159,9 @@ input[type=file]{display:none}
 <div class="view" id="v-mrp"></div>
 <div class="view" id="v-sync"></div>
 <div class="view" id="v-data"></div>
+<div class="view" id="v-users"></div>
 </main>
+<div id="gate"><div class="gate-box" id="gateBox"></div></div>
 <div id="toast"></div>
 <dialog id="dlg"><form method="dialog" id="dlgForm">
   <div class="dlg-h"><b id="dlgTitle"></b><button class="btn sm" value="x">關閉</button></div>
@@ -381,13 +409,27 @@ const closeDlg2=()=>$('#dlg2').close();
 /* ============================================================
    雲端同步層（Google Sheets + Apps Script）
    ============================================================ */
-const PWKEY='bom_pw_v1', WHOKEY='bom_who_v1';
+/* PWKEY 用 v2：讓舊版存在瀏覽器裡的共用密碼失效，改版後一律先看到登入畫面 */
+const TKKEY='bom_token_v1', PWKEY='bom_pw_v2', WHOKEY='bom_who_v1';
 const LS={get:k=>{try{return localStorage.getItem(k)||'';}catch(e){return '';}},
           set:(k,v)=>{try{localStorage.setItem(k,v);}catch(e){}},
           del:k=>{try{localStorage.removeItem(k);}catch(e){}}};
-let PW = LS.get(PWKEY);
+let TOKEN = LS.get(TKKEY);          // 個人帳號登入憑證
+let PW = LS.get(PWKEY);             // 過渡期共用密碼（唯讀）
 let WHO = LS.get(WHOKEY);
+let ME = null;                      // {name,email,role,roleName,legacy}
 let REV = 0, NET = 'idle', LASTSYNC = '', DIRTY = false, SAVING = false;
+
+/* 權限 */
+const ROLE_NAME = {admin:'管理員', editor:'編輯', viewer:'唯讀'};
+function myRole(){ return (ME && ME.role) || 'viewer'; }
+function canWrite(){ return !CLOUD || myRole()==='admin' || myRole()==='editor'; }
+function isAdmin(){ return CLOUD && myRole()==='admin'; }
+function denyWrite(){
+  toast(ME && ME.legacy
+    ? '共用密碼為唯讀模式，請註冊個人帳號後由管理員給予編輯權限'
+    : '你的權限為「唯讀」，無法修改資料。請聯絡管理員調整權限');
+}
 
 function setNet(s){ NET=s; paintNet(); }
 function paintNet(){
@@ -401,7 +443,7 @@ function paintNet(){
     : `<span class="tag gray">本機模式</span>`;
 }
 async function apiPost(action,payload,extra){
-  const body=Object.assign({action:action,payload:payload,pw:PW,who:WHO},extra||{});
+  const body=Object.assign({action:action,payload:payload,token:TOKEN,pw:PW,who:WHO},extra||{});
   let lastErr;
   /* 只有讀取才自動重試；寫入若重試，可能第一次其實已成功而造成假性版本衝突 */
   const tries = (action==='save') ? 1 : 2;
@@ -423,13 +465,13 @@ async function pull(silent){
     const d=await apiPost('load',null);
     if(d.error){
       setNet('err');
-      if(!silent){
-        if(/密碼/.test(d.error)) askPassword(d.error);
-        else dialog('讀取雲端失敗',`<p>${esc(d.error)}</p>
-          <div class="hint">畫面顯示的是本機快取資料，按上方 ↻ 可重試。</div>`);
-      }
+      if(d.needLogin){ openGate('login', d.error); return false; }
+      if(!silent) dialog('讀取雲端失敗',`<p>${esc(d.error)}</p>
+        <div class="hint">畫面顯示的是本機快取資料，按上方 ↻ 可重試。</div>`);
       return false;
     }
+    if(d.auth){ ME=d.auth; ME.roleName=ME.roleName||ROLE_NAME[ME.role]||'唯讀';
+                WHO=ME.name||WHO; closeGate(); }
     S={items:d.items||[],boms:d.boms||[],history:d.history||[],
        settings:d.settings||{purchaseStop:true},
        meta:{updatedAt:d.updatedAt||'',updatedBy:d.updatedBy||''}};
@@ -444,6 +486,7 @@ async function pullNow(){ if(await pull()) { renderAll(); toast('已重新讀取
 /* 寫回雲端 */
 async function push(force){
   if(!CLOUD){ await DB.set('state',JSON.parse(JSON.stringify(S))); return true; }
+  if(!canWrite()){ denyWrite(); return false; }
   if(SAVING) { DIRTY=true; return false; }
   /* 送出前先確認資料合理，避免把雲端寫空 */
   if(!S.items || !S.items.length){
@@ -470,7 +513,13 @@ async function push(force){
          <button class="btn" value="x">稍後再說</button>`);
       return false;
     }
-    if(d.error){ setNet('err'); SAVING=false; toast('儲存失敗：'+d.error); return false; }
+    if(d.error){
+      setNet('err'); SAVING=false;
+      if(d.needLogin){ openGate('login', d.error); return false; }
+      if(d.denied){ dialog('無法儲存',`<p>${esc(d.error)}</p>
+        <div class="hint">你在畫面上的修改沒有寫進雲端。重新整理後會回到雲端目前的資料。</div>`); return false; }
+      toast('儲存失敗：'+d.error); return false;
+    }
     REV=d.rev; LASTSYNC=d.updatedAt||''; DIRTY=false;
     S.meta.updatedAt=LASTSYNC; S.meta.updatedBy=WHO;
     await DB.set('cache',JSON.parse(JSON.stringify({S:S,REV:REV})));
@@ -480,31 +529,172 @@ async function push(force){
   }catch(e){ setNet('err'); SAVING=false; toast('無法連線到雲端，資料僅存在本機'); 
     await DB.set('cache',JSON.parse(JSON.stringify({S:S,REV:REV}))); return false; }
 }
-/* 登入 */
-function askPassword(msg){
-  dialog('連線到 BOM 資料庫',`
-    ${msg?`<div class="hint" style="color:var(--bad);margin-bottom:10px">${esc(msg)}</div>`:''}
-    <div class="fld"><label>你的名字（會記在異動紀錄）</label>
-      <input id="pw_who" value="${esc(WHO)}" placeholder="例：謝嘉元"></div>
-    <div class="fld"><label>共用密碼</label>
-      <input id="pw_pw" type="password" value="${esc(PW)}" placeholder="請向管理者索取"></div>
-    <div class="hint">密碼只存在這台電腦的瀏覽器，之後開啟不用再輸入。</div>`,
-    `<button class="btn pri" type="button" onclick="doLogin()">連線</button>`);
-  setTimeout(()=>document.getElementById('pw_pw')?.focus(),100);
-  const f=e=>{ if(e.key==='Enter'){e.preventDefault();doLogin();} };
-  document.getElementById('pw_pw').onkeydown=f;
-  document.getElementById('pw_who').onkeydown=f;
+/* ============================================================
+   登入 / 註冊
+   ============================================================ */
+let GATE_TAB='login', GATE_MSG='', GATE_MSG_OK=false, GATE_BUSY=false;
+
+function openGate(tab,msg,ok){
+  GATE_TAB = tab||'login'; GATE_MSG = msg||''; GATE_MSG_OK = !!ok;
+  document.getElementById('gate').classList.add('on');
+  paintGate();
 }
+function closeGate(){
+  document.getElementById('gate').classList.remove('on');
+  GATE_MSG=''; GATE_BUSY=false;
+}
+function gateTab(t){ GATE_TAB=t; GATE_MSG=''; paintGate(); }
+
+function paintGate(){
+  const msg = GATE_MSG
+    ? `<div class="gate-msg ${GATE_MSG_OK?'ok':'bad'}">${esc(GATE_MSG)}</div>` : '';
+  const tabs = `<div class="gate-tabs">
+    <button type="button" class="${GATE_TAB==='login'?'on':''}"  onclick="gateTab('login')">登入</button>
+    <button type="button" class="${GATE_TAB==='reg'?'on':''}"    onclick="gateTab('reg')">申請帳號</button>
+    <button type="button" class="${GATE_TAB==='legacy'?'on':''}" onclick="gateTab('legacy')">共用密碼</button>
+  </div>`;
+  let body;
+  if(GATE_TAB==='login'){
+    body = `${tabs}${msg}
+      <div class="fld"><label>Email</label>
+        <input id="g_email" type="email" value="${esc(LS.get('bom_last_email'))}" placeholder="you@company.com"></div>
+      <div class="fld"><label>密碼</label>
+        <input id="g_pw" type="password" placeholder="請輸入密碼"></div>
+      <button class="btn pri" type="button" style="width:100%;margin-top:6px"
+        onclick="doLogin()"${GATE_BUSY?' disabled':''}>${GATE_BUSY?'登入中…':'登入'}</button>
+      <div class="gate-foot">還沒有帳號？請按上方「申請帳號」，送出後由管理員核准即可使用。</div>`;
+  }else if(GATE_TAB==='reg'){
+    body = `${tabs}${msg}
+      <div class="fld"><label>姓名（會記在異動紀錄）</label>
+        <input id="r_name" placeholder="例：謝嘉元"></div>
+      <div class="fld"><label>Email（登入帳號）</label>
+        <input id="r_email" type="email" placeholder="you@company.com"></div>
+      <div class="fld"><label>密碼（至少 6 個字元）</label>
+        <input id="r_pw" type="password"></div>
+      <div class="fld"><label>確認密碼</label>
+        <input id="r_pw2" type="password"></div>
+      <button class="btn pri" type="button" style="width:100%;margin-top:6px"
+        onclick="doRegister()"${GATE_BUSY?' disabled':''}>${GATE_BUSY?'建立中…':'建立帳號並登入'}</button>
+      <div class="gate-foot">建立後立即可以使用，預設權限為<b>編輯</b>（可修改料號與 BOM）。
+        管理員可隨時在「使用者管理」頁調整每個帳號的權限。</div>`;
+  }else{
+    body = `${tabs}${msg}
+      <div class="gate-msg" style="background:var(--line2);color:var(--mut);border:1px solid var(--line)">
+        過渡期用的舊共用密碼，登入後<b>只能查看、不能修改</b>資料。建議改用個人帳號。</div>
+      <div class="fld"><label>你的名字</label>
+        <input id="l_who" value="${esc(WHO)}" placeholder="例：謝嘉元"></div>
+      <div class="fld"><label>共用密碼</label>
+        <input id="l_pw" type="password" value="${esc(PW)}" placeholder="請向管理者索取"></div>
+      <button class="btn" type="button" style="width:100%;margin-top:6px"
+        onclick="doLegacy()">以唯讀身分進入</button>
+      <div class="gate-foot">密碼只存在這台電腦的瀏覽器。管理員可在後端把
+        <code>LEGACY_PW_ENABLED</code> 改成 <code>false</code> 停用此入口。</div>`;
+  }
+  document.getElementById('gateBox').innerHTML =
+    `<h2>BOM 管理系統</h2><div class="sub">安德斯醫學科技　料號庫存 · BOM · 缺料試算</div>${body}`;
+  const box = document.getElementById('gateBox');
+  const first = box.querySelector('input:not([value]), input');
+  setTimeout(()=>{ const t=box.querySelector('#g_pw,#r_name,#l_pw'); (t||first)?.focus(); },60);
+  box.querySelectorAll('input').forEach(i=>i.onkeydown=e=>{
+    if(e.key==='Enter'){ e.preventDefault();
+      if(GATE_TAB==='login') doLogin(); else if(GATE_TAB==='reg') doRegister(); else doLegacy(); }
+  });
+}
+
 async function doLogin(){
-  WHO=document.getElementById('pw_who').value.trim();
-  PW=document.getElementById('pw_pw').value;
-  LS.set(PWKEY,PW); LS.set(WHOKEY,WHO);
-  closeDlg();
-  if(await pull()){ renderAll(); toast('已連線'); }
+  if(GATE_BUSY) return;
+  const email=document.getElementById('g_email').value.trim();
+  const pw=document.getElementById('g_pw').value;
+  if(!email||!pw){ GATE_MSG='請輸入 Email 與密碼'; GATE_MSG_OK=false; return paintGate(); }
+  GATE_BUSY=true; paintGate();
+  try{
+    const d=await apiPost('login',null,{email:email,password:pw,token:'',pw:''});
+    GATE_BUSY=false;
+    if(d.error){ GATE_MSG=d.error; GATE_MSG_OK=false; return paintGate(); }
+    TOKEN=d.token; ME=d.profile; ME.roleName=ME.roleName||ROLE_NAME[ME.role]||'唯讀';
+    WHO=ME.name; PW='';
+    LS.set(TKKEY,TOKEN); LS.set(WHOKEY,WHO); LS.set('bom_last_email',email); LS.del(PWKEY);
+    closeGate();
+    if(await pull()) renderAll(); else renderAll();
+    toast('已登入：'+ME.name+'（'+ME.roleName+'）');
+  }catch(e){ GATE_BUSY=false; GATE_MSG='連不上伺服器：'+(e.message||'網路逾時'); GATE_MSG_OK=false; paintGate(); }
 }
+
+async function doRegister(){
+  if(GATE_BUSY) return;
+  const name=document.getElementById('r_name').value.trim();
+  const email=document.getElementById('r_email').value.trim();
+  const pw=document.getElementById('r_pw').value, pw2=document.getElementById('r_pw2').value;
+  if(!name||!email||!pw){ GATE_MSG='姓名、Email 與密碼皆為必填'; GATE_MSG_OK=false; return paintGate(); }
+  if(pw.length<6){ GATE_MSG='密碼至少 6 個字元'; GATE_MSG_OK=false; return paintGate(); }
+  if(pw!==pw2){ GATE_MSG='兩次輸入的密碼不一致'; GATE_MSG_OK=false; return paintGate(); }
+  GATE_BUSY=true; paintGate();
+  try{
+    const d=await apiPost('register',null,{name:name,email:email,password:pw,token:'',pw:''});
+    GATE_BUSY=false;
+    if(d.error){ GATE_MSG=d.error; GATE_MSG_OK=false; return paintGate(); }
+    if(d.token){   /* 註冊完成 → 直接登入 */
+      TOKEN=d.token; ME=d.profile; ME.roleName=ME.roleName||ROLE_NAME[ME.role]||'唯讀';
+      WHO=ME.name; PW='';
+      LS.set(TKKEY,TOKEN); LS.set(WHOKEY,WHO); LS.set('bom_last_email',email); LS.del(PWKEY);
+      closeGate(); if(await pull()) renderAll(); else renderAll();
+      return toast('帳號已建立：'+ME.name+'（'+ME.roleName+'）');
+    }
+    LS.set('bom_last_email',email);
+    GATE_TAB='login'; GATE_MSG=d.message||'帳號已建立，請登入'; GATE_MSG_OK=true; paintGate();
+  }catch(e){ GATE_BUSY=false; GATE_MSG='連不上伺服器：'+(e.message||'網路逾時'); GATE_MSG_OK=false; paintGate(); }
+}
+
+async function doLegacy(){
+  WHO=document.getElementById('l_who').value.trim();
+  PW=document.getElementById('l_pw').value;
+  if(!PW){ GATE_MSG='請輸入共用密碼'; GATE_MSG_OK=false; return paintGate(); }
+  TOKEN=''; LS.del(TKKEY); LS.set(PWKEY,PW); LS.set(WHOKEY,WHO);
+  closeGate();
+  if(await pull()){ renderAll(); toast('已以唯讀身分進入'); }
+}
+
 function logout(){
-  LS.del(PWKEY); PW='';
+  LS.del(TKKEY); LS.del(PWKEY);
+  TOKEN=''; PW=''; ME=null;
   location.reload();
+}
+
+/* 修改自己的密碼 */
+function changeMyPw(){
+  if(!ME || ME.legacy) return toast('共用密碼模式無法修改密碼，請先註冊個人帳號');
+  dialog('變更密碼',`
+    <div class="fld"><label>目前密碼</label><input id="cp_old" type="password"></div>
+    <div class="fld"><label>新密碼（至少 6 個字元）</label><input id="cp_new" type="password"></div>
+    <div class="fld"><label>確認新密碼</label><input id="cp_new2" type="password"></div>`,
+    `<button class="btn pri" type="button" onclick="doChangeMyPw()">確定變更</button>
+     <button class="btn" value="x">取消</button>`);
+}
+async function doChangeMyPw(){
+  const o=document.getElementById('cp_old').value,
+        n=document.getElementById('cp_new').value,
+        n2=document.getElementById('cp_new2').value;
+  if(n.length<6) return toast('新密碼至少 6 個字元');
+  if(n!==n2) return toast('兩次輸入的新密碼不一致');
+  try{
+    const d=await apiPost('changePw',null,{oldPassword:o,newPassword:n});
+    if(d.error) return toast(d.error);
+    closeDlg(); toast('密碼已更新');
+  }catch(e){ toast('連不上伺服器'); }
+}
+
+/* 顯示目前身分 */
+function paintMe(){
+  const el=document.getElementById('meBox'); if(!el) return;
+  if(!CLOUD){ el.innerHTML=''; return; }
+  if(!ME){ el.innerHTML=`<span class="tag bad">未登入</span>
+    <button class="btn sm pri" style="margin:0" onclick="openGate('login')">登入</button>`; return; }
+  const tag = ME.legacy ? '<span class="tag warn">共用密碼·唯讀</span>'
+            : `<span class="tag ${ME.role==='admin'?'ok':(ME.role==='editor'?'info':'gray')}">${esc(ME.roleName||'')}</span>`;
+  el.innerHTML=`<b>${esc(ME.name||'')}</b>${tag}
+    <button class="btn sm" style="margin:0" onclick="logout()">登出</button>`;
+  const nu=document.getElementById('navUsers');
+  if(nu) nu.style.display = isAdmin() ? '' : 'none';
 }
 </script>
 <script>
@@ -921,7 +1111,8 @@ function vBoms(){
 function openBom(code){curBom=code;go('boms');}
 function renderBom(){
   const box=$('#bomBody');
-  if(!curBom){box.innerHTML='<div class="card"><div class="empty">尚無 BOM，請新增或匯入。</div></div>';return;}
+  if(!curBom){box.innerHTML='<div class="card"><div class="empty">尚無 BOM，請新增或匯入。</div></div>';
+    if(typeof applyReadonlyUI==='function') applyReadonlyUI(); return;}
   const bom=BIDX[curBom], ex=explode(curBom,1,{}), c=bomCost(bom);
   const tree=buildTree(bom);
   const leafVal=Object.entries(ex.leaf).reduce((s,[k,q])=>s+(itemOf(k).cost||0)*q,0);
@@ -992,6 +1183,7 @@ function renderBom(){
       </tr></thead><tbody>${rows.join('')}</tbody></table></div>`;
   }
   box.innerHTML=head+body;
+  if(typeof applyReadonlyUI==='function') applyReadonlyUI();
 }
 function tog(k){collapsed[k]=!collapsed[k];renderBom();}
 async function setCostMode(m){SET().costMode=m;delete SET().purchaseStop;await save();renderAll();
@@ -1945,13 +2137,17 @@ function vData(){
       <dt>連線狀態</dt><dd id="netInfo"></dd>
       <dt>資料版本</dt><dd>rev ${REV}</dd>
       <dt>最後更新</dt><dd>${esc(S.meta.updatedAt||'—')}${S.meta.updatedBy?`　by ${esc(S.meta.updatedBy)}`:''}</dd>
-      <dt>你的名字</dt><dd>${esc(WHO||'（未設定）')}</dd>
+      <dt>目前身分</dt><dd>${esc((ME&&ME.name)||WHO||'（未登入）')}
+        ${ME?`<span class="tag ${ME.legacy?'warn':(ME.role==='admin'?'ok':(ME.role==='editor'?'info':'gray'))}">${esc(ME.legacy?'共用密碼·唯讀':(ME.roleName||''))}</span>`:''}
+        ${ME&&ME.email?`<span class="mini">${esc(ME.email)}</span>`:''}</dd>
     </dl>
+    ${canWrite()?'':`<div class="ro-banner">你目前是<b>唯讀</b>權限，可以查詢、試算與匯出，但不能新增或修改資料。
+      ${ME&&ME.legacy?'這是舊共用密碼的過渡模式，請按「登出」後改用個人帳號登入。':'需要編輯權限請聯絡管理員。'}</div>`}
     <div class="row">
       <button class="btn pri" onclick="pullNow()">重新讀取雲端</button>
-      <button class="btn" onclick="push(true)">強制上傳本機資料</button>
-      <button class="btn" onclick="askPassword()">變更名字／密碼</button>
-      <button class="btn" onclick="restoreLastGood()">還原本機上一版</button>
+      ${canWrite()?'<button class="btn" onclick="push(true)">強制上傳本機資料</button>':''}
+      ${ME&&!ME.legacy?'<button class="btn" onclick="changeMyPw()">變更密碼</button>':''}
+      ${canWrite()?'<button class="btn" onclick="restoreLastGood()">還原本機上一版</button>':''}
       <button class="btn danger" onclick="logout()">登出</button>
     </div>
     <div class="hint">任何人在網頁上的修改都會即時寫回 Google 試算表，其他人按「重新讀取雲端」或重新整理就會看到。
@@ -2087,7 +2283,135 @@ function setHdr(){
   $('#hdrSub').textContent=`料號 ${S.items.length}　BOM ${S.boms.length}`+
     (S.meta.updatedAt?`　更新於 ${S.meta.updatedAt}`:'');
 }
-function renderAll(){setHdr();vDash();vItems();vBoms();vMrp();vSync();vData();paintNet();
+
+/* ============================================================
+   使用者管理（僅管理員）
+   ============================================================ */
+let USERS=[], USERS_LOADED=false;
+const ST_NAME={pending:'待審核', active:'啟用中', disabled:'已停用'};
+const ST_TAG ={pending:'warn',   active:'ok',    disabled:'gray'};
+
+async function loadUsers(){
+  if(!isAdmin()) return;
+  try{
+    const d=await apiPost('listUsers',null);
+    if(d.error){ toast(d.error); return; }
+    USERS=d.users||[]; USERS_LOADED=true; vUsers();
+  }catch(e){ toast('讀取使用者清單失敗'); }
+}
+function vUsers(){
+  const el=$('#v-users'); if(!el) return;
+  if(!isAdmin()){ el.innerHTML=''; return; }
+  const recent=USERS.filter(u=>u.id!==(ME&&ME.id)).slice(-3).reverse();
+  const rows=u=>`<tr>
+    <td><b>${esc(u.name||'')}</b><div class="mini">${esc(u.email)}</div></td>
+    <td><select onchange="setUser('${u.id}','role',this.value)" ${u.id===(ME&&ME.id)?'disabled':''}>
+      ${['admin','editor','viewer'].map(r=>`<option value="${r}"${u.role===r?' selected':''}>${ROLE_NAME[r]}</option>`).join('')}
+    </select></td>
+    <td><span class="tag ${ST_TAG[u.status]||'gray'}">${ST_NAME[u.status]||u.status}</span></td>
+    <td class="mini">${esc(u.createdAt||'')}</td>
+    <td class="mini">${esc(u.lastLogin||'—')}</td>
+    <td style="white-space:nowrap">
+      ${u.status==='pending'?`<button class="btn sm pri" onclick="setUser('${u.id}','status','active')">核准</button>`:''}
+      ${u.status==='active'&&u.id!==(ME&&ME.id)?`<button class="btn sm" onclick="setUser('${u.id}','status','disabled')">停用</button>`:''}
+      ${u.status==='disabled'?`<button class="btn sm" onclick="setUser('${u.id}','status','active')">恢復</button>`:''}
+      <button class="btn sm" onclick="resetUserPw('${u.id}')">重設密碼</button>
+      ${u.id!==(ME&&ME.id)?`<button class="btn sm danger" onclick="delUser('${u.id}')">刪除</button>`:''}
+    </td></tr>`;
+  el.innerHTML=`
+  <div class="card"><h2>使用者清單
+      <span class="sub">共 ${USERS.length} 人　管理員 ${USERS.filter(u=>u.role==='admin').length}／編輯 ${USERS.filter(u=>u.role==='editor').length}／唯讀 ${USERS.filter(u=>u.role==='viewer').length}</span></h2>
+    <div class="hint">同事自行註冊後<b>立即可用</b>，預設權限為「編輯」。要限制某人只能看，把角色改成「唯讀」；
+      要暫時停權按「停用」，人離職了按「刪除」。角色下拉一改就即時生效，不用按儲存。</div>
+    ${recent.length?`<div class="hint">最近加入：${recent.map(u=>esc(u.name)+'（'+(ROLE_NAME[u.role]||'')+'）').join('、')}</div>`:''}
+    <div class="row" style="margin-bottom:10px">
+      <button class="btn" onclick="loadUsers()">↻ 重新讀取</button>
+      <div class="grow"></div>
+      <span class="mini">帳號資料存在試算表的「使用者」工作表，密碼以雜湊存放、看不到明碼。</span>
+    </div>
+    <div class="tblwrap"><table><thead><tr><th class="nos">使用者</th><th class="nos">角色</th><th class="nos">狀態</th><th class="nos">建立時間</th><th class="nos">最後登入</th><th class="nos">操作</th></tr></thead>
+      <tbody>${USERS.length?USERS.map(rows).join('')
+        :'<tr><td colspan="6" class="mini">尚未讀取，請按「重新讀取」</td></tr>'}</tbody></table></div>
+  </div>
+  <div class="card"><h2>權限說明</h2>
+    <div class="tblwrap"><table><thead><tr><th class="nos">角色</th><th class="nos">可以做什麼</th></tr></thead><tbody>
+      <tr><td><b>管理員</b></td><td>全部功能，另可調整角色、停用、重設密碼、刪除帳號</td></tr>
+      <tr><td><b>編輯</b>（預設）</td><td>新增／修改料號與 BOM、匯入 Excel、更新比對、需求試算</td></tr>
+      <tr><td><b>唯讀</b></td><td>查詢、需求試算、匯出，所有寫入按鈕會隱藏或被擋下</td></tr>
+    </tbody></table></div>
+    <div class="hint">新註冊者的預設權限由 Apps Script 的 <code>DEFAULT_ROLE</code> 決定，目前是 <code>editor</code>；
+      想改成註冊後只能看，把它改成 <code>viewer</code> 再重新部署即可。<br>
+      舊的共用密碼 <code>endosemio2026</code> 仍可登入，但一律為唯讀。全部同事都改用個人帳號後，
+      把 <code>LEGACY_PW_ENABLED</code> 改成 <code>false</code> 並重新部署即可停用。</div>
+  </div>`;
+}
+async function setUser(id,field,value){
+  const p={id:id}; p[field]=value;
+  try{
+    const d=await apiPost('setUser',null,p);
+    if(d.error){ toast(d.error); return loadUsers(); }
+    toast('已更新'); loadUsers();
+  }catch(e){ toast('連不上伺服器'); }
+}
+function resetUserPw(id){
+  const u=USERS.find(x=>x.id===id); if(!u) return;
+  dialog('重設密碼',`<p>為 <b>${esc(u.name)}</b>（${esc(u.email)}）設定新密碼，設定後請自行告知本人。</p>
+    <div class="fld"><label>新密碼（至少 6 個字元）</label><input id="rp_new" type="password"></div>`,
+    `<button class="btn pri" type="button" onclick="doResetUserPw('${id}')">確定重設</button>
+     <button class="btn" value="x">取消</button>`);
+}
+async function doResetUserPw(id){
+  const n=document.getElementById('rp_new').value;
+  if(n.length<6) return toast('新密碼至少 6 個字元');
+  try{
+    const d=await apiPost('resetPw',null,{id:id,newPassword:n});
+    if(d.error) return toast(d.error);
+    closeDlg(); toast('已重設密碼');
+  }catch(e){ toast('連不上伺服器'); }
+}
+function delUser(id){
+  const u=USERS.find(x=>x.id===id); if(!u) return;
+  dialog('刪除帳號',`<p>確定要刪除 <b>${esc(u.name)}</b>（${esc(u.email)}）的帳號嗎？</p>
+    <div class="hint">刪除後該同事無法登入，過去在異動紀錄留下的姓名不受影響。若只是暫時停權，建議改用「停用」。</div>`,
+    `<button class="btn danger" type="button" onclick="doDelUser('${id}')">確定刪除</button>
+     <button class="btn" value="x">取消</button>`);
+}
+async function doDelUser(id){
+  try{
+    const d=await apiPost('delUser',null,{id:id});
+    if(d.error) return toast(d.error);
+    closeDlg(); toast('已刪除'); loadUsers();
+  }catch(e){ toast('連不上伺服器'); }
+}
+
+/* ---------- 唯讀權限保護：所有會改資料的入口統一攔截 ---------- */
+const WRITE_FNS=['saveItem','editItem','delItem','bulkAdd','bulkSave',
+  'importItemsFile','importDB','applyDB','applyLoose','importBomFile','impJSON',
+  'applySync','syncPick','editBom','saveBom','delBom','dupBom','splitSubBom','doSplitSubBom',
+  'masterAdd','masterDel','masterDelApply','edAdd','edDel','edMv','edLv',
+  'edPickFromMaster','edPickApply','edNewMasterItem','edSaveMasterItem',
+  'setCostMode','resetSeed','wipe','restoreLastGood'];
+function installWriteGuard(){
+  WRITE_FNS.forEach(function(n){
+    const f=window[n];
+    if(typeof f!=='function' || f._guarded) return;
+    const g=function(){ if(!canWrite()){ denyWrite(); return; } return f.apply(this,arguments); };
+    g._guarded=true; window[n]=g;
+  });
+}
+/* 唯讀時把會改資料的按鈕直接藏起來，避免同事白做工 */
+const HIDE_FNS = WRITE_FNS.concat(['newItem']);
+function applyReadonlyUI(){
+  const ro = CLOUD && !canWrite();
+  document.body.classList.toggle('ro', ro);
+  document.querySelectorAll('main [onclick]').forEach(function(el){
+    const m = String(el.getAttribute('onclick')||'').match(/^\s*([A-Za-z0-9_]+)\s*\(/);
+    if(!m) return;
+    if(HIDE_FNS.indexOf(m[1]) < 0) return;
+    el.style.display = ro ? 'none' : '';
+  });
+}
+function renderAll(){setHdr();vDash();vItems();vBoms();vMrp();vSync();vData();vUsers();paintNet();paintMe();applyReadonlyUI();
   const n=document.getElementById('netInfo');
   if(n) n.innerHTML=({idle:'—',load:'連線中…',ok:'<span class="tag ok">已同步</span>',
     save:'儲存中…',err:'<span class="tag bad">離線（資料僅存本機快取）</span>',
@@ -2096,22 +2420,25 @@ function go(v){
   document.querySelectorAll('nav button').forEach(b=>b.classList.toggle('on',b.dataset.v===v));
   document.querySelectorAll('.view').forEach(d=>d.classList.toggle('on',d.id==='v-'+v));
   if(v==='boms') renderBom();
+  if(v==='users' && isAdmin() && !USERS_LOADED) loadUsers();
   window.scrollTo(0,0);
 }
 document.querySelectorAll('nav button').forEach(b=>b.onclick=()=>go(b.dataset.v));
 $('#dlgForm').addEventListener('submit',e=>{});
 
 (async function init(){
+  installWriteGuard();
   if(CLOUD){
     try{
       const c=await DB.get('cache');
       if(c&&c.S&&c.S.items){ S=c.S; REV=c.REV||0; reindex(); renderAll(); setNet('load'); }
     }catch(e){}
-    if(!PW){ paintNet(); renderAll(); askPassword(); return; }
+    if(!TOKEN && !PW){ paintNet(); renderAll(); openGate('login'); return; }
     if(await pull()) renderAll(); else renderAll();
     paintNet();
     return;
   }
+  ME={name:'本機使用者', role:'admin', roleName:'管理員'};
   try{
     const saved=await DB.get('state');
     S = (saved&&saved.items&&saved.items.length) ? saved : JSON.parse(JSON.stringify(SEED));
