@@ -24,14 +24,18 @@ const PASSWORD          = 'endosemio2026';      // 舊的共用密碼
 const LEGACY_PW_ENABLED = true;                 // 全部同事都註冊完後，改成 false 即停用
 /* ================== */
 
-const SH = {items:'料號主檔', boms:'BOM主檔', lines:'BOM明細', hist:'異動紀錄', sys:'系統', users:'使用者'};
+const SH = {items:'料號主檔', boms:'BOM主檔', lines:'BOM明細', hist:'異動紀錄', sys:'系統',
+            users:'使用者', moves:'庫存異動'};
 
 const HEAD = {
   items:['品號','品名','規格','單位','庫存數量','單位成本','安全庫存','供應商','交期','儲位','MSB','備註'],
   boms :['BOM品號','產品名稱','規格','來源','備註'],
   lines:['BOM品號','項次','階層','品號','品名','規格','用量','單位','備註'],
   hist :['時間','來源','新增','消失','庫存變動','單價變動','其他','操作者'],
-  users:['ID','Email','姓名','密碼','角色','狀態','建立時間','最後登入','備註']
+  users:['ID','Email','姓名','密碼','角色','狀態','建立時間','最後登入','備註'],
+  /* 一張單多列；欄位參考「簡易領料紀錄」，另加單頭欄位方便還原成 Word */
+  moves:['單號','日期','類別','倉別','申請部門','異動原因','項次','品號','品名','數量','單位',
+         '異動前庫存','異動後庫存','領用人','填表人','備註','單據備註','建立時間']
 };
 
 /* 角色權限：admin 全部；editor 可讀可寫；viewer 只能讀 */
@@ -47,7 +51,7 @@ function ss(){
 
 /* 首次使用：在編輯器選這個函式按「執行」，建立所有工作表並完成授權 */
 function setup(){
-  ['items','boms','lines','hist','sys','users'].forEach(sheet);
+  ['items','boms','lines','hist','sys','users','moves'].forEach(sheet);
   if(String(sysGet('rev',''))==='') { sysSet('rev', 0); sysFlush(); }
   const s = ss();
   const d = s.getSheetByName('工作表1');
@@ -176,6 +180,7 @@ function readState(){
   let settings = {purchaseStop:true};
   try{ const s = sysGet('settings',''); if(s) settings = JSON.parse(s); }catch(e){}
   return {
+    moves: readMoves(),
     rev: Number(sysGet('rev',0)) || 0,
     updatedAt: fmtTS(sysGet('updatedAt','')),
     updatedBy: String(sysGet('updatedBy','')),
@@ -236,6 +241,107 @@ function writeState(st, who){
     sysFlush();
     SpreadsheetApp.flush();
     return rev;
+  } finally { lock.releaseLock(); }
+}
+
+/* ============================================================
+   庫存異動（入庫／領料／退料單）
+   單號規則：PP + 西元年後2碼 + 月2碼 + 流水3碼，例 PP2608001
+   ============================================================ */
+const MOVE_TYPES = ['入庫','領料','退料'];
+const MOVE_LIMIT = 3000;        /* 回傳給前端的最近筆數上限 */
+
+/* 入庫與退料加庫存，領料扣庫存 */
+function moveSign(type){ return type === '領料' ? -1 : 1; }
+
+function readMoves(){
+  const all = rows('moves');
+  const use = all.length > MOVE_LIMIT ? all.slice(all.length - MOVE_LIMIT) : all;
+  return use.map(function(r){
+    return {no:String(r['單號']||''), date:fmtTS(r['日期']), type:String(r['類別']||''),
+      house:String(r['倉別']||''), dept:String(r['申請部門']||''), reason:String(r['異動原因']||''),
+      seq:num(r['項次']), code:String(r['品號']||''), name:String(r['品名']||''),
+      qty:num(r['數量']), unit:String(r['單位']||'pcs'),
+      before:num(r['異動前庫存']), after:num(r['異動後庫存']),
+      taker:String(r['領用人']||''), by:String(r['填表人']||''),
+      note:String(r['備註']||''), memo:String(r['單據備註']||''), at:fmtTS(r['建立時間'])};
+  });
+}
+
+/* 送出一張單：配單號 → 加減庫存 → 逐列寫入庫存異動 */
+function postOrder(auth, p){
+  if(!canWrite(auth.role))
+    return {error: auth.legacy ? '共用密碼為唯讀模式，無法送出單據。'
+                              : '你的權限為「唯讀」，無法送出單據。', denied:true};
+  const o = (p && p.order) || {};
+  if(MOVE_TYPES.indexOf(o.type) < 0) return {error:'類別必須是入庫／領料／退料'};
+  const lines = (o.lines || []).filter(function(l){
+    return String(l.code||'').trim() !== '' && Number(l.qty) > 0; });
+  if(!lines.length) return {error:'單據沒有有效明細（品號與數量都要填）'};
+
+  const lock = LockService.getScriptLock();
+  lock.waitLock(25000);
+  try{
+    /* --- 取單號 --- */
+    const d = o.date ? new Date(String(o.date).replace(/-/g,'/')) : new Date();
+    const valid = isNaN(d.getTime()) ? new Date() : d;
+    const pfx = 'PP' + Utilities.formatDate(valid,'Asia/Taipei','yyMM');
+    let max = 0;
+    rows('moves').forEach(function(r){
+      const m = String(r['單號']||'').match(/^PP(\d{4})(\d{3})$/);
+      if(m && ('PP'+m[1]) === pfx) max = Math.max(max, parseInt(m[2],10));
+    });
+    const no = pfx + String(max+1).padStart(3,'0');
+    const dateStr = Utilities.formatDate(valid,'Asia/Taipei','yyyy/MM/dd');
+
+    /* --- 讀料號主檔，準備改庫存 --- */
+    const ish = sheet('items');
+    const last = ish.getLastRow();
+    if(last < 2) return {error:'料號主檔沒有資料，無法異動'};
+    const head = ish.getRange(1,1,1,ish.getLastColumn()).getValues()[0].map(String);
+    const cCode = head.indexOf('品號'), cStock = head.indexOf('庫存數量'),
+          cName = head.indexOf('品名'), cUnit = head.indexOf('單位');
+    if(cCode < 0 || cStock < 0) return {error:'料號主檔缺少「品號」或「庫存數量」欄'};
+    const body = ish.getRange(2,1,last-1,head.length).getValues();
+    const idx = {};
+    for(let i=0;i<body.length;i++){
+      const c = String(body[i][cCode]).trim();
+      if(c && !(c in idx)) idx[c] = i;
+    }
+    const missing = [];
+    lines.forEach(function(l){ if(!(String(l.code).trim() in idx)) missing.push(l.code); });
+    if(missing.length) return {error:'下列品號不在料號主檔，請先建檔：' + missing.join('、')};
+
+    /* --- 逐列算庫存並組出要寫的資料 --- */
+    const sign = moveSign(o.type);
+    const now  = nowTS();
+    const out  = [], touched = {};
+    lines.forEach(function(l,i){
+      const code = String(l.code).trim(), r = idx[code];
+      const before = touched[code] !== undefined ? touched[code] : num(body[r][cStock]);
+      const after  = before + sign * Number(l.qty);
+      touched[code] = after;
+      out.push([no, dateStr, o.type, o.house||'', o.dept||'製造部', o.reason||'',
+                i+1, code, (cName>=0?String(body[r][cName]):(l.name||'')),
+                Number(l.qty), (l.unit || (cUnit>=0?String(body[r][cUnit]):'') || 'pcs'),
+                before, after, o.taker||'', auth.name||o.by||'', l.note||'', o.memo||'', now]);
+    });
+    /* --- 寫回庫存 --- */
+    Object.keys(touched).forEach(function(code){
+      ish.getRange(idx[code]+2, cStock+1).setValue(touched[code]);
+    });
+    /* --- 附加到庫存異動 --- */
+    const msh = sheet('moves');
+    msh.getRange(msh.getLastRow()+1, 1, out.length, HEAD.moves.length).setValues(out);
+
+    const rev = (Number(sysGet('rev',0))||0) + 1;
+    sysSet('rev', rev);
+    sysSet('updatedAt', now);
+    sysSet('updatedBy', (auth.name||'') + '（' + o.type + ' ' + no + '）');
+    sysFlush();
+    SpreadsheetApp.flush();
+    return {ok:true, no:no, rev:rev, date:dateStr,
+            stock: Object.keys(touched).map(function(c){ return {code:c, stock:touched[c]}; })};
   } finally { lock.releaseLock(); }
 }
 
@@ -459,6 +565,7 @@ function doPost(e){
                                           email:auth.email, legacy:!!auth.legacy,
                                           roleName: ROLES[auth.role]||'唯讀'});
   if(action === 'changePw')   return out(acChangePw(auth, body));
+  if(action === 'postOrder')  return out(postOrder(auth, body));
   if(action === 'listUsers')  return out(acListUsers(auth));
   if(action === 'setUser')    return out(acSetUser(auth, body));
   if(action === 'resetPw')    return out(acResetPw(auth, body));
