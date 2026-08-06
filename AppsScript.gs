@@ -180,6 +180,7 @@ function readState(){
   let settings = {purchaseStop:true};
   try{ const s = sysGet('settings',''); if(s) settings = JSON.parse(s); }catch(e){}
   return {
+    staff: readStaff(),
     moves: readMoves(),
     rev: Number(sysGet('rev',0)) || 0,
     updatedAt: fmtTS(sysGet('updatedAt','')),
@@ -250,6 +251,43 @@ function writeState(st, who){
    ============================================================ */
 const MOVE_TYPES = ['入庫','領料','退料'];
 const MOVE_LIMIT = 3000;        /* 回傳給前端的最近筆數上限 */
+const DEPTS      = ['製造部','業務部','研發部','品保部','管理部'];
+
+/* ---------- 人員部門對照（依「領料單系統規範」第二節與工作流程指令的暱稱補充表） ---------- */
+const STAFF_DEFAULT = [
+  {name:'方信堯', alias:'金剛', dept:'製造部'},
+  {name:'李芷羚', alias:'芷羚', dept:'製造部'},
+  {name:'林力',   alias:'林力', dept:'製造部'},
+  {name:'睿豪',   alias:'睿豪', dept:'製造部'},
+  {name:'陳佳葳', alias:'佳葳', dept:'業務部'},
+  {name:'羿伶',   alias:'羿伶', dept:'業務部'},
+  {name:'陳匡佑', alias:'YOYO', dept:'研發部'},
+  {name:'謝嘉元', alias:'嘉元', dept:'研發部'},
+  {name:'承儀',   alias:'承儀', dept:'研發部'}
+];
+function readStaff(){
+  try{ const s = sysGet('staff','');
+       if(s){ const a = JSON.parse(s); if(Array.isArray(a)) return a; } }catch(e){}
+  return STAFF_DEFAULT;
+}
+function acSetStaff(auth, p){
+  if(!isAdmin(auth.role)) return {error:'只有管理員可以維護人員部門對照表'};
+  const list = p && p.staff;
+  if(!Array.isArray(list)) return {error:'資料格式不正確'};
+  const clean = [];
+  for(let i=0;i<list.length;i++){
+    const n = String(list[i].name||'').trim();
+    const d = String(list[i].dept||'').trim();
+    if(!n) continue;
+    if(DEPTS.indexOf(d) < 0) return {error:'「'+n+'」的部門不在允許清單中：'+DEPTS.join('／')};
+    clean.push({name:n, alias:String(list[i].alias||'').trim(), dept:d});
+  }
+  sysSet('staff', JSON.stringify(clean));
+  sysSet('updatedAt', nowTS());
+  sysSet('updatedBy', (auth.name||'') + '（更新部門對照表）');
+  sysFlush(); SpreadsheetApp.flush();
+  return {ok:true, staff:clean};
+}
 
 /* 入庫與退料加庫存，領料扣庫存 */
 function moveSign(type){ return type === '領料' ? -1 : 1; }
@@ -273,11 +311,24 @@ function postOrder(auth, p){
   if(!canWrite(auth.role))
     return {error: auth.legacy ? '共用密碼為唯讀模式，無法送出單據。'
                               : '你的權限為「唯讀」，無法送出單據。', denied:true};
-  const o = (p && p.order) || {};
+  let o = (p && p.order) || {};
   if(MOVE_TYPES.indexOf(o.type) < 0) return {error:'類別必須是入庫／領料／退料'};
   const lines = (o.lines || []).filter(function(l){
     return String(l.code||'').trim() !== '' && Number(l.qty) > 0; });
   if(!lines.length) return {error:'單據沒有有效明細（品號與數量都要填）'};
+  /* 規範：一張單最多 24 個品項（Word 模板固定 24 列，不可多頁） */
+  if(lines.length > 24)
+    return {error:'一張單最多 24 個品項，目前 '+lines.length+' 項，請拆成多張單'};
+  if(!String(o.reason||'').trim()) return {error:'「異動原因」必填，會印在 Word 單的表頭'};
+  /* 申請部門沒填就依填表人查人員部門對照表 */
+  let dept = String(o.dept||'').trim();
+  if(!dept){
+    const me = readStaff().find(function(s){
+      return s.name === auth.name || s.alias === auth.name; });
+    dept = me ? me.dept : '';
+  }
+  if(!dept) return {error:'找不到「'+(auth.name||'')+'」的申請部門，請先在「使用者管理 → 人員部門對照表」補上'};
+  o = Object.assign({}, o, {dept:dept});
 
   const lock = LockService.getScriptLock();
   lock.waitLock(25000);
@@ -566,6 +617,7 @@ function doPost(e){
                                           roleName: ROLES[auth.role]||'唯讀'});
   if(action === 'changePw')   return out(acChangePw(auth, body));
   if(action === 'postOrder')  return out(postOrder(auth, body));
+  if(action === 'setStaff')   return out(acSetStaff(auth, body));
   if(action === 'listUsers')  return out(acListUsers(auth));
   if(action === 'setUser')    return out(acSetUser(auth, body));
   if(action === 'resetPw')    return out(acResetPw(auth, body));
