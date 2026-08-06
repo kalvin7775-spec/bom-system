@@ -562,7 +562,7 @@ function paintGate(){
         <input id="g_pw" type="password" placeholder="請輸入密碼"></div>
       <button class="btn pri" type="button" style="width:100%;margin-top:6px"
         onclick="doLogin()"${GATE_BUSY?' disabled':''}>${GATE_BUSY?'登入中…':'登入'}</button>
-      <div class="gate-foot">還沒有帳號？請按上方「申請帳號」，送出後由管理員核准即可使用。</div>`;
+      <div class="gate-foot">還沒有帳號？請按上方「申請帳號」，填完就能直接使用。</div>`;
   }else if(GATE_TAB==='reg'){
     body = `${tabs}${msg}
       <div class="fld"><label>姓名（會記在異動紀錄）</label>
