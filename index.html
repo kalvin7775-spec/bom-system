@@ -1042,6 +1042,7 @@ function renderItems(){
       ||'<tr><td colspan="12" class="empty">查無資料</td></tr>'}
   </tbody></table></div>`;
   bindSort($('#itbl'),itemSt);
+  if(typeof applyReadonlyUI==='function') applyReadonlyUI();
 }
 function showItem(code){
   const i=itemOf(code), used=whereUsed(code);
