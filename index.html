@@ -849,8 +849,58 @@ function vDash(){
 /* ============================================================
    料號主檔
    ============================================================ */
-const itemSt={key:'code',dir:1,q:'',f:'all',render:renderItems};
+const itemSt={key:'code',dir:1,q:'',f:'all',fam:'',cat:'',render:renderItems};
 const SORTKEYS=[['code','品號'],['name','品名'],['stock','庫存'],['cost','單價'],['value','庫存金額'],['supplier','供應商'],['loc','儲位']];
+
+/* ============================================================
+   編碼原則（依「編碼原則20260806.xlsx」）
+   料號 9 碼＝物料類別(1) 材料M／半成品S／成品F
+              ＋系列(1) 包材P／原材R／電子E／膠材G／機構M／客供C／軟韌體S
+              ＋分類(2) ＋流水號(5)
+   S 類與 F 類為「另行編碼」（現有格式如 F01-ORL0101），只帶前綴不自動取號
+   ============================================================ */
+const CODEFAM=[
+  {k:'MP', t:'包材類 (MP)',      auto:true,  cats:[
+    ['01','外箱（紙箱／紙板／插底盒）'],['02','禮盒（印刷彩盒／白盒／塑膠或金屬包裝外盒）'],
+    ['03','標籤'],['04','包裝袋（PE／PP 或其他材質）'],['05','說明書'],['99','其它包材']]},
+  {k:'MR', t:'原材類 (MR)',      auto:true,  cats:[['01','原材料'],['99','其它原材']]},
+  {k:'ME', t:'電子零件類 (ME)',  auto:true,  cats:[
+    ['01','變壓器'],['02','電池'],['03','速接器'],['04','液晶顯示器 (LCD)'],['05','發光二極體 (LED)'],
+    ['06','RCL 零件'],['07','積體電路 (IC)'],['08','印刷電路板 (PCB)'],['09','電路模組 (PCBA)'],
+    ['10','影像模組（光學鏡組＋感光元＋PCBA）'],['11','線材（芯線／排線或其他訊號線）'],
+    ['12','馬達'],['99','其它電子零件']]},
+  {k:'MG', t:'膠材類 (MG)',      auto:true,  cats:[['01','膠材'],['02','液態材料'],['99','貼紙']]},
+  {k:'MM', t:'機構零件類 (MM)',  auto:true,  cats:[
+    ['01','塑膠機構'],['02','金屬機構'],['03','玻璃機構'],['04','矽橡膠軟料機構'],
+    ['05','光學鏡組（光學鏡片／鏡頭模組）'],['99','其它機構']]},
+  {k:'MC', t:'客供料 (MC)',      auto:true,  cats:[['01','炳碩生醫']]},
+  {k:'MS', t:'軟體／韌體 (MS)',  auto:true,  cats:[['01','軟體／韌體']]},
+  {k:'S',  t:'半成品類 (S)',     auto:false, cats:[
+    ['01','廠內加工半成品'],['02','廠外加工半成品'],['03','內視鏡代工廠外包加工半成品']]},
+  {k:'F',  t:'成品類 (F)',       auto:false, cats:[['01','已包裝成品']]}
+];
+const famOf = k => CODEFAM.find(f=>f.k===k);
+/* 分類代碼（MP01、F01…）→ 中文名稱 */
+const CODENAME = (()=>{ const m={};
+  CODEFAM.forEach(f=>f.cats.forEach(([c,n])=>m[f.k+c]=n)); return m; })();
+/* 品號 → 所屬分類前綴（MP01 / F01…），認不出來回空字串 */
+function prefixOf(code){
+  const s=String(code||'').toUpperCase();
+  let m=s.match(/^([MS][PRGEMCS]\d{2})/);   if(m) return m[1];      // 9 碼制 MP01…
+  m=s.match(/^([SF]\d{2})(?=[-\d]|$)/);     if(m) return m[1];      // S03 / F01
+  return '';
+}
+/* 該分類目前有幾筆、最大流水號是多少、下一號碼是什麼 */
+function codeStat(pfx){
+  const f=famOf(pfx.replace(/\d{2}$/,''));
+  const list=S.items.filter(i=>prefixOf(i.code)===pfx);
+  if(!f||!f.auto) return {count:list.length, next:pfx+'-', auto:false, max:''};
+  let max=0, maxCode='';
+  list.forEach(i=>{ const m=String(i.code).match(/^[A-Z]{2}\d{2}(\d{5})$/);
+    if(m){ const n=parseInt(m[1],10); if(n>max){max=n;maxCode=i.code;} } });
+  return {count:list.length, max:maxCode, auto:true,
+          next: pfx + String(max+1).padStart(5,'0')};
+}
 /* 工具列只建一次；排序／篩選／搜尋僅重繪表格，避免重繪時 <select> 被銷毀
    造成點擊穿透到上方導覽列（macOS 原生下拉選單會疊在選單框上方展開） */
 function itemRows(){
@@ -862,6 +912,12 @@ function itemRows(){
     if(itemSt.f==='nocost')return i.cost==null||i.cost==='';
     if(itemSt.f==='ghost')return !!i._ghost||/未收錄/.test(i.note||'');
     return true;
+  }).filter(i=>{
+    if(!itemSt.fam) return true;
+    const p=prefixOf(i.code);
+    if(itemSt.cat) return p===itemSt.fam+itemSt.cat;
+    if(itemSt.fam==='__none') return !p;
+    return p.startsWith(itemSt.fam);
   });
   const val=i=>(i.cost||0)*(i.stock||0);
   rows.sort((a,b)=>{const k=itemSt.key;
@@ -895,6 +951,17 @@ function vItems(){
       <div class="grow"></div>
       <span class="mini" id="itemCount"></span>
     </div>
+    <div class="row" style="margin-top:8px">
+      <span class="mini">品項</span>
+      <select style="width:180px" id="filFam">
+        <option value="">全部品項</option>
+        ${CODEFAM.map(f=>`<option value="${f.k}">${esc(f.t)}</option>`).join('')}
+        <option value="__none">未依編碼原則</option>
+      </select>
+      <select style="width:280px" id="filCat"></select>
+      <button class="btn sm" id="filClr">清除</button>
+      <span class="mini mut" id="filHint"></span>
+    </div>
     <div class="hint">點任一列可看明細、用途反查，並可編輯或刪除該料號。</div>
   </div>
   <div id="itemTbl"></div>`;
@@ -902,11 +969,42 @@ function vItems(){
   $('#iq').oninput=e=>{itemSt.q=e.target.value;renderItems();};
   $('#sortK').onchange=e=>{itemSt.key=e.target.value;renderItems();};
   $('#sortDir').onclick=()=>{itemSt.dir=-itemSt.dir;renderItems();};
+  $('#filFam').onchange=e=>{itemSt.fam=e.target.value;itemSt.cat='';fillCatSel();renderItems();};
+  $('#filCat').onchange=e=>{itemSt.cat=e.target.value;renderItems();};
+  $('#filClr').onclick=()=>{itemSt.fam='';itemSt.cat='';$('#filFam').value='';fillCatSel();renderItems();};
+  fillCatSel();
   document.querySelectorAll('#v-items .chip').forEach(c=>c.onclick=()=>{
     itemSt.f=c.dataset.f;
     document.querySelectorAll('#v-items .chip').forEach(x=>x.classList.toggle('on',x===c));
     renderItems();});
   renderItems();
+}
+
+/* 第二級「分類」下拉，內容隨系列變動，並附上該分類目前筆數 */
+function fillCatSel(){
+  const sel=document.getElementById('filCat'); if(!sel) return;
+  const f=famOf(itemSt.fam);
+  if(!f){ sel.innerHTML='<option value="">—</option>'; sel.disabled=true; updFilHint(); return; }
+  sel.disabled=false;
+  sel.innerHTML='<option value="">全部分類（'+esc(f.t)+'）</option>'+
+    f.cats.map(([c,n])=>{
+      const st=codeStat(f.k+c);
+      return `<option value="${c}">${f.k}${c} ${esc(n)}（${st.count}）</option>`;
+    }).join('');
+  sel.value=itemSt.cat||'';
+  updFilHint();
+}
+/* 只更新提示文字，不動 <select> 本身（重建下拉會讓 macOS 的選單點擊穿透） */
+function updFilHint(){
+  const h=document.getElementById('filHint'); if(!h) return;
+  if(itemSt.fam==='__none'){
+    h.textContent='列出品號不符合編碼原則的料號（含 F01-ORL0101 這類舊格式與 -1 版本號）'; return; }
+  const f=famOf(itemSt.fam);
+  if(f&&itemSt.cat){
+    const st=codeStat(f.k+itemSt.cat);
+    h.textContent = st.auto ? `目前 ${st.count} 筆，最大號 ${st.max||'—'}，下一號 ${st.next}`
+                            : `目前 ${st.count} 筆（此類另行編碼）`;
+  } else h.textContent='';
 }
 
 function renderItems(){
@@ -916,6 +1014,7 @@ function renderItems(){
   if(sd) sd.textContent=itemSt.dir>0?'▲ 遞增':'▼ 遞減';
   const cnt=document.getElementById('itemCount');
   if(cnt) cnt.innerHTML=`共 <b>${rows.length}</b> 筆 ／ 全部 ${S.items.length} 筆　庫存總值 <b>${money(total)}</b>`;
+  updFilHint();
   const box=document.getElementById('itemTbl'); if(!box) return;
   box.innerHTML=`<div class="tblwrap"><table id="itbl"><thead><tr>
     <th data-k="code">品號${arrow(itemSt,'code')}</th>
@@ -970,19 +1069,93 @@ function showItem(code){
      <button class="btn danger" type="button" onclick="delItem('${esc(code)}')">刪除料號</button>
      <button class="btn" value="x">關閉</button>`);
 }
-function itemForm(i){
+function itemForm(i, isNew){
   const f=(k,l,t)=>`<div class="fld"><label>${l}</label>
     <input id="if_${k}" type="${t||'text'}" value="${esc(i[k]==null?'':i[k])}"></div>`;
-  return `<div class="split">
+  const pfx = prefixOf(i.code);
+  const picker = `
+  <div class="card" style="margin-bottom:12px;background:var(--bg);padding:12px">
+    <div class="fld" style="margin-bottom:8px"><label>品項類別${isNew?'（選了會自動帶出下一個品號）':''}</label>
+      <div class="row" style="gap:8px">
+        <select style="width:190px" id="if_fam">
+          <option value="">請選擇系列…</option>
+          ${CODEFAM.map(x=>`<option value="${x.k}"${pfx.startsWith(x.k)&&famOf(x.k)?' selected':''}>${esc(x.t)}</option>`).join('')}
+        </select>
+        <select style="width:300px" id="if_cat"><option value="">—</option></select>
+      </div>
+    </div>
+    <div class="mini mut" id="if_codeHint">依編碼原則：物料類別(1)＋系列(1)＋分類(2)＋流水號(5)，共 9 碼。半成品與成品為另行編碼，只帶前綴。</div>
+  </div>`;
+  return picker + `<div class="split">
     <div>${f('code','品號 *')}${f('name','品名')}${f('spec','規格')}${f('unit','單位')}${f('supplier','供應商')}${f('loc','儲位')}</div>
     <div>${f('stock','庫存數量','number')}${f('cost','單位成本','number')}${f('safety','安全庫存','number')}
       ${f('lead','交期')}${f('msb','MSB')}${f('note','備註')}</div></div>`;
 }
+/* ---------- 品項類別選擇器（新增料號 / BOM 編輯裡建主檔 共用） ----------
+   pre 是欄位 id 前綴：主表單用 'if_'，BOM 編輯的第二層對話框用 'jf_' */
+function pkEl(pre,k){ return document.getElementById(pre+k); }
+
+function pkFillCat(pre){
+  const fs=pkEl(pre,'fam'), cs=pkEl(pre,'cat'), ce=pkEl(pre,'code');
+  if(!fs||!cs) return;
+  const f=famOf(fs.value);
+  if(!f){ cs.innerHTML='<option value="">—</option>'; cs.disabled=true; pkHint(pre); return; }
+  cs.disabled=false;
+  const cur=prefixOf(ce?ce.value:'').slice(f.k.length);
+  cs.innerHTML='<option value="">請選擇分類…</option>'+
+    f.cats.map(([c,n])=>`<option value="${c}"${c===cur?' selected':''}>${f.k}${c} ${esc(n)}</option>`).join('');
+  pkHint(pre);
+}
+/* 依目前選的分類把品號帶進欄位 */
+function pkApplyCode(pre){
+  const fs=pkEl(pre,'fam'), cs=pkEl(pre,'cat'), ce=pkEl(pre,'code');
+  if(!fs||!cs||!ce||!fs.value||!cs.value) return pkHint(pre);
+  const pfx=fs.value+cs.value, st=codeStat(pfx);
+  ce.value=st.next;
+  ce.focus();
+  /* 自動編號時整串選起來方便改；另行編碼時游標停在「F01-」後面直接接著打 */
+  if(st.auto) ce.select(); else ce.setSelectionRange(ce.value.length, ce.value.length);
+  pkHint(pre);
+}
+function pkHint(pre){
+  const h=pkEl(pre,'codeHint'); if(!h) return;
+  const fs=pkEl(pre,'fam'), cs=pkEl(pre,'cat');
+  if(!fs||!cs||!fs.value||!cs.value){
+    h.textContent='依編碼原則：物料類別(1)＋系列(1)＋分類(2)＋流水號(5)，共 9 碼。半成品與成品為另行編碼，只帶前綴。';
+    return; }
+  const pfx=fs.value+cs.value, st=codeStat(pfx);
+  h.innerHTML = st.auto
+    ? `<b>${pfx}　${esc(CODENAME[pfx]||'')}</b>　目前 ${st.count} 筆，最大號 ${st.max||'（尚無）'}　→　下一號 <b>${st.next}</b>`
+    : `<b>${pfx}　${esc(CODENAME[pfx]||'')}</b>　目前 ${st.count} 筆。此類另行編碼，請接著輸入產品代碼（例：${pfx}-ORL0101）`;
+}
+/* 手動改品號時，讓上方兩個下拉跟著反白對應的類別 */
+function pkSyncFromCode(pre){
+  const ce=pkEl(pre,'code'), fs=pkEl(pre,'fam'), cs=pkEl(pre,'cat');
+  if(!ce||!fs||!cs) return;
+  const p=prefixOf(ce.value);
+  const fam=p?CODEFAM.find(f=>p.startsWith(f.k)&&f.cats.some(([c])=>f.k+c===p)):null;
+  if(!fam){ pkHint(pre); return; }
+  if(fs.value!==fam.k){ fs.value=fam.k; pkFillCat(pre); }
+  cs.value=p.slice(fam.k.length);
+  pkHint(pre);
+}
+/* 把選擇器接上事件；isNew 為 true 時把焦點放在系列下拉 */
+function bindCodePicker(pre,isNew){
+  const fs=pkEl(pre,'fam'), cs=pkEl(pre,'cat'), ce=pkEl(pre,'code');
+  if(!fs||!cs) return;
+  fs.onchange=()=>pkFillCat(pre);
+  cs.onchange=()=>pkApplyCode(pre);
+  if(ce) ce.oninput=()=>pkSyncFromCode(pre);
+  pkFillCat(pre);                       /* 編輯既有料號時只反白類別，不覆蓋品號 */
+  if(isNew) setTimeout(()=>fs.focus(),80);
+}
+
 function editItem(code){
   const i=code?{...itemOf(code)}:{code:'',name:'',spec:'',unit:'pcs',stock:0,cost:null,safety:null,supplier:'',loc:'',lead:'',msb:'',note:''};
-  dialog(code?`編輯料號 ${code}`:'新增料號',itemForm(i),
+  dialog(code?`編輯料號 ${code}`:'新增料號',itemForm(i,!code),
     `<button class="btn pri" type="button" onclick="saveItem('${esc(code||'')}')">儲存</button>
      <button class="btn" value="x">取消</button>`);
+  bindCodePicker('if_',!code);
 }
 const newItem=()=>editItem('');
 async function saveItem(orig){
@@ -1507,9 +1680,10 @@ function edNewMasterItem(code,rowIx){
   if(known&&known._ghost){i.name=ED.lines[rowIx]?.name||'';i.spec=ED.lines[rowIx]?.spec||'';
     i.unit=ED.lines[rowIx]?.unit||'pcs';}
   dialog2(code?`建立料號主檔　${code}`:'新建料號主檔品號',
-    itemForm(i).replace(/id="if_/g,'id="jf_'),
+    itemForm(i,!code).replace(/id="if_/g,'id="jf_'),
     `<button class="btn pri" type="button" onclick="edSaveMasterItem(${rowIx==null?'null':rowIx})">建立並帶入</button>
      <button class="btn" value="x">取消</button>`);
+  bindCodePicker('jf_',!code);
 }
 async function edSaveMasterItem(rowIx){
   const g=k=>document.getElementById('jf_'+k).value.trim();
