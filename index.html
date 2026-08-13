@@ -218,7 +218,8 @@ function toast(m){const t=$('#toast');t.textContent=m;t.classList.add('on');
   clearTimeout(t._t);t._t=setTimeout(()=>t.classList.remove('on'),2400);}
 
 function reindex(){IDX={};S.items.forEach(i=>IDX[i.code]=i);
-                   BIDX={};S.boms.forEach(b=>BIDX[b.code]=b);}
+                   BIDX={};S.boms.forEach(b=>BIDX[b.code]=b);
+                   if(typeof rebuildVBom==='function') rebuildVBom();}
 async function save(){reindex(); await push();}
 const itemOf=c=>IDX[c]||{code:c,name:'（未建檔）',spec:'',unit:'',stock:0,cost:null,supplier:'',note:'',_ghost:1};
 
@@ -308,9 +309,48 @@ function costConflicts(){
   return out.filter(x=>{const k=x.code; if(seen[k])return false; seen[k]=1; return true;});
 }
 /* 展開 BOM：leaf=葉料號總需求, sub=半成品需求, cycles=循環引用 */
+/* ============================================================
+   虛擬子 BOM
+   有些組件（例 F01-ORL0001 掛在 F01-ORL0101 底下）在 BOM 明細裡本來就有下階，
+   但還沒被拆成獨立 BOM，所以不在「BOM主檔」裡。這裡把它們也組成可展開的 BOM，
+   讓需求試算能直接選到「任何有下階的料號」。
+   ============================================================ */
+let VBOM={};
+function rebuildVBom(){
+  VBOM={};
+  if(typeof buildTree!=='function' || typeof flattenSub!=='function') return;
+  (S.boms||[]).forEach(b=>{
+    (function walk(nodes){
+      nodes.forEach(n=>{
+        if(n.children && n.children.length){
+          if(!BIDX[n.code] && !VBOM[n.code]){
+            const lines=flattenSub(n);
+            if(lines.length) VBOM[n.code]={
+              id:n.code, code:n.code,
+              name:n.name||(IDX[n.code]&&IDX[n.code].name)||'',
+              spec:n.spec||(IDX[n.code]&&IDX[n.code].spec)||'',
+              source:'掛在 '+b.code+' 底下', note:'', lines:lines,
+              _virtual:true, _from:b.code };
+          }
+          walk(n.children);
+        }
+      });
+    })(buildTree(b));
+  });
+}
+/* 取得可展開的 BOM：先找獨立 BOM，沒有就找虛擬子 BOM */
+function bomOf(code){ return BIDX[code] || VBOM[code] || null; }
+/* 需求試算可選的產品清單＝獨立 BOM ＋ 有下階但未建 BOM 的組件 */
+function mrpProducts(){
+  const a=(S.boms||[]).map(b=>({code:b.code,name:b.name||'',virtual:false}));
+  const bs=Object.keys(VBOM).map(c=>({code:c,name:VBOM[c].name,virtual:true,from:VBOM[c]._from}));
+  bs.sort((x,y)=>x.code<y.code?-1:1);
+  return a.concat(bs);
+}
+
 function explode(bomCode,orderQty,opt){
   opt=opt||{};
-  const bom=BIDX[bomCode]; if(!bom) return null;
+  const bom=bomOf(bomCode); if(!bom) return null;
   const leaf={}, sub=[], cycles=[], pool={};
   const avail=c=>{
     if(!(c in pool)) pool[c]=(itemOf(c).stock||0)-(opt.keepSafety?(itemOf(c).safety||0):0);
@@ -1834,10 +1874,16 @@ function ordRender(){
   document.getElementById('ordRows').innerHTML=`<div class="tblwrap" style="max-height:none">
    <table><thead><tr><th class="nos">產品 BOM</th><th class="nos" style="width:160px">生產數量</th>
    <th class="nos" style="width:150px">單台成本</th><th class="nos" style="width:70px"></th></tr></thead><tbody>
-   ${ORD.map((o,i)=>{const c=BIDX[o.code]?bomCost(BIDX[o.code]).cost:0;return `<tr>
+   ${ORD.map((o,i)=>{const c=bomOf(o.code)?bomCost(bomOf(o.code)).cost:0;
+     const ps=mrpProducts();return `<tr>
      <td><select onchange="ordSet(${i},this.value)">
-       ${S.boms.map(b=>`<option value="${esc(b.code)}" ${b.code===o.code?'selected':''}>${esc(b.code)}　${esc(b.name)}</option>`).join('')}
-     </select></td>
+       <optgroup label="BOM 主檔">
+       ${ps.filter(p=>!p.virtual).map(p=>`<option value="${esc(p.code)}" ${p.code===o.code?'selected':''}>${esc(p.code)}　${esc(p.name)}</option>`).join('')}
+       </optgroup>
+       ${ps.some(p=>p.virtual)?`<optgroup label="有下階但未建獨立 BOM">
+       ${ps.filter(p=>p.virtual).map(p=>`<option value="${esc(p.code)}" ${p.code===o.code?'selected':''}>${esc(p.code)}　${esc(p.name)}（在 ${esc(p.from)} 底下）</option>`).join('')}
+       </optgroup>`:''}
+     </select><div class="mini mut" id="ordNote${i}">${VBOM[o.code]?'下階取自 '+esc(VBOM[o.code]._from)+'，此品號尚未建成獨立 BOM':''}</div></td>
      <td><input type="number" min="0" step="1" value="${o.qty}" oninput="ORD[${i}].qty=parseFloat(this.value)||0"></td>
      <td class="num" id="ordCost${i}">${money(c)}</td>
      <td class="num"><button class="btn sm danger" onclick="ordDel(${i})" ${ORD.length<2?'disabled':''}>✕</button></td>
@@ -1847,9 +1893,11 @@ function ordRender(){
    （重建會讓 macOS 原生下拉關閉時的點擊穿透到底下的元件） */
 function ordSet(i,v){
   ORD[i].code=v;
-  const c=BIDX[v]?bomCost(BIDX[v]).cost:0;
+  const c=bomOf(v)?bomCost(bomOf(v)).cost:0;
   const cell=document.getElementById('ordCost'+i);
   if(cell) cell.textContent=money(c);
+  const note=document.getElementById('ordNote'+i);
+  if(note) note.textContent = VBOM[v] ? ('下階取自 '+VBOM[v]._from+'，此品號尚未建成獨立 BOM') : '';
 }
 function ordAdd(){ORD.push({code:S.boms[0]?.code||'',qty:100});ordRender();}
 function ordDel(i){ORD.splice(i,1);ordRender();}
@@ -1868,13 +1916,13 @@ function runMrp(){
     cycles.push(...ex.cycles);
   });
   RES={leaf,subs:Object.values(subs),cycles,
-       orders:ORD.filter(o=>o.code&&o.qty>0).map(o=>({...o,name:BIDX[o.code]?.name||''})),
+       orders:ORD.filter(o=>o.code&&o.qty>0).map(o=>({...o,name:bomOf(o.code)?.name||''})),
        opt:{...OPT},ts:nowts()};
   renderMrp();
 }
 /* 多產品共用庫存池的展開 */
 function explodeShared(bomCode,qty,opt,pool){
-  const bom=BIDX[bomCode]; if(!bom) return null;
+  const bom=bomOf(bomCode); if(!bom) return null;
   const leaf={},sub=[],cycles=[];
   const avail=c=>{if(!(c in pool))pool[c]=(itemOf(c).stock||0)-(opt.keepSafety?(itemOf(c).safety||0):0);
     return Math.max(0,pool[c]);};
