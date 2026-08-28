@@ -251,8 +251,24 @@ function writeState(st, who){
    產品批序號記錄表（serial.html 使用）
    讀寫整張表；版本號存在「系統」表的 serialRev，與 BOM 的 rev 互不干擾
    ============================================================ */
+/* 批序號有些列沒填「項次」，不能沿用 rows() 以第一欄判斷有無資料，
+   改以「批號/序號」或「產品名稱」有值為準，避免整列被濾掉 */
+function serialRows(){
+  const sh = sheet('serial');
+  const last = sh.getLastRow(), lastC = sh.getLastColumn();
+  if(last < 2) return [];
+  const head = sh.getRange(1,1,1,lastC).getValues()[0].map(String);
+  const vals = sh.getRange(2,1,last-1,lastC).getValues();
+  return vals.map(function(r){
+      const o = {}; head.forEach(function(h,i){ o[h] = r[i]; }); return o;
+    }).filter(function(o){
+      return String(o['批號/序號']||'').trim() !== '' ||
+             String(o['產品名稱']||'').trim() !== '';
+    });
+}
+
 function readSerial(){
-  const list = rows('serial').map(function(r){
+  const list = serialRows().map(function(r){
     return {no:  r['項次']===''||r['項次']===null ? '' : r['項次'],
             date:    fmtCell(r['日期']),
             product: String(r['產品名稱']||''),
@@ -278,7 +294,7 @@ function fmtCell(v){
 
 function writeSerial(list, who){
   if(!Array.isArray(list)) throw new Error('資料格式不正確，未寫入');
-  const cur = rows('serial').length;
+  const cur = serialRows().length;
   if(list.length === 0 && cur > 0)
     throw new Error('收到 0 筆批序號但雲端現有 ' + cur + ' 筆，已拒絕寫入（避免誤清空）');
   const lock = LockService.getScriptLock();
