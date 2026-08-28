@@ -37,7 +37,7 @@ const HEAD = {
   moves:['單號','日期','類別','倉別','申請部門','異動原因','項次','品號','品名','數量','單位',
          '異動前庫存','異動後庫存','領用人','填表人','備註','單據備註','建立時間'],
   /* 產品批序號記錄表：欄位對齊原本的 Excel「產品批序號記錄表」 */
-  serial:['項次','日期','產品名稱','數量','批號/序號','執行者','確認者','用途','備註1']
+  serial:['項次','日期','產品名稱','數量','批號/序號','執行者','確認者','用途','備註1','型號']
 };
 
 /* 角色權限：admin 全部；editor 可讀可寫；viewer 只能讀 */
@@ -253,8 +253,23 @@ function writeState(st, who){
    ============================================================ */
 /* 批序號有些列沒填「項次」，不能沿用 rows() 以第一欄判斷有無資料，
    改以「批號/序號」或「產品名稱」有值為準，避免整列被濾掉 */
+/* 標題列可能是舊版（少「型號」欄），補齊後再讀寫 */
+function ensureSerialHead(){
+  const sh = sheet('serial'), head = HEAD.serial;
+  const lastC = sh.getLastColumn();
+  const cur = lastC ? sh.getRange(1,1,1,lastC).getValues()[0].map(String) : [];
+  let same = cur.length >= head.length;
+  if(same){ for(let i=0;i<head.length;i++){ if(cur[i] !== head[i]){ same = false; break; } } }
+  if(!same){
+    sh.getRange(1,1,1,head.length).setValues([head])
+      .setFontWeight('bold').setBackground('#eef2f7');
+    sh.setFrozenRows(1);
+  }
+  return sh;
+}
+
 function serialRows(){
-  const sh = sheet('serial');
+  const sh = ensureSerialHead();
   const last = sh.getLastRow(), lastC = sh.getLastColumn();
   if(last < 2) return [];
   const head = sh.getRange(1,1,1,lastC).getValues()[0].map(String);
@@ -277,7 +292,8 @@ function readSerial(){
             doer:    String(r['執行者']||''),
             checker: String(r['確認者']||''),
             use:     String(r['用途']||''),
-            note:    String(r['備註1']||'')};
+            note:    String(r['備註1']||''),
+            model:   String(r['型號']||'')};
   });
   return {ok:true, records:list,
           rev: Number(sysGet('serialRev',0))||0,
@@ -300,6 +316,7 @@ function writeSerial(list, who){
   const lock = LockService.getScriptLock();
   lock.waitLock(25000);
   try{
+    ensureSerialHead();
     writeRows('serial', list.map(function(r){
       return {'項次': r.no===undefined||r.no===null?'':r.no,
               '日期': r.date||'',
@@ -309,7 +326,8 @@ function writeSerial(list, who){
               '執行者': r.doer||'',
               '確認者': r.checker||'',
               '用途': r.use||'',
-              '備註1': r.note||''};
+              '備註1': r.note||'',
+              '型號': r.model||''};
     }));
     /* 日期欄一律當文字，避免 202406 被試算表當成數字或日期 */
     const sh = sheet('serial');

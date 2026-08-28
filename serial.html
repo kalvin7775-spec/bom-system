@@ -111,6 +111,14 @@ input[type=file]{display:none}
 .c-m{background:#fdf0d8;color:#8a5a06}
 .c-b{background:#e4ecfb;color:#1a4ea8}
 .c-s{background:#eaf3ea;color:#1a6b38}
+.genbox{margin-top:4px;border:1px dashed var(--line);border-radius:8px;padding:16px;
+  text-align:center;color:var(--mut);font-size:13px;background:#fafbfc}
+.genbox.on{border-style:solid;border-color:#bcd3f7;background:var(--acc-bg);color:var(--txt)}
+.gencode{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:24px;font-weight:600;
+  letter-spacing:2px;color:#14418f;word-break:break-all}
+.genmeta{margin-top:8px;font-size:12.5px;color:var(--mut);line-height:1.9}
+.genmeta .tag{margin-right:8px}
+details summary::-webkit-details-marker{color:var(--mut)}
 /* 登入畫面 */
 #gate{position:fixed;inset:0;background:var(--bg);z-index:500;display:none;overflow:auto;padding:40px 16px}
 #gate.on{display:block}
@@ -425,15 +433,67 @@ function snMatch(rec){
   if(a.month===null) return '';
   return (a.year===b.y && a.month===b.m)?'ok':'diff';
 }
-/* 指定年月，算出下一個還沒被用掉的批次碼 */
+/* 指定年月，算出下一個批次碼：接在當月「已用過的最大字母」之後，
+   不回頭補中間的空缺（空缺可能是已配發但未登錄，補用會撞號） */
 function nextBatch(y,m){
   const yl=yearLetter(y), ml=monthLetter(m);
   if(!yl||!ml) return '';
-  const used={};
+  let max=-1;
   R.forEach(r=>{ const d=decodeSn(r.sn);
-    if(d && d.core[0]===yl && d.core[1]===ml) used[d.core[2]]=1; });
-  for(let i=0;i<25;i++){ const c=String.fromCharCode(65+i); if(!used[c]) return yl+ml+c; }
-  return yl+ml+'Z';
+    if(d && d.core[0]===yl && d.core[1]===ml){
+      const i=d.core.charCodeAt(2)-65;
+      if(i>=0 && i<=25 && i>max) max=i;
+    }});
+  if(max>=25) return '';           /* A–Z 用完 */
+  return yl+ml+String.fromCharCode(65+max+1);
+}
+
+/* 產品型號表 — 依「安德斯內視鏡產品型號樹狀圖 20260820」
+   k: 'B'=批號（3 碼）、'S'=序號（批號 3 碼 + 流水 4 碼） */
+const PRODUCTS=[
+ {g:'人用醫療',f:'插管鏡 ESVBS 1',n:'插管鏡主機',m:'NEOMN-01',k:'S'},
+ {g:'人用醫療',f:'插管鏡 ESVBS 1',n:'插管鏡鏡影像管',m:'NEO400N-01',k:'S'},
+ {g:'人用醫療',f:'喉鏡 LRG-01',n:'喉鏡主機',m:'LRGMN-01',k:'S'},
+ {g:'人用醫療',f:'喉鏡 LRG-01',n:'喉鏡影像管',m:'LRG400N-01',k:'S'},
+ {g:'人用醫療',f:'輸尿管鏡 ESSFUS 1',n:'一次性軟式輸尿管鏡',m:'URS 700-01',k:'B'},
+ {g:'人用醫療',f:'輸尿管鏡 ESSFUS 1',n:'USB 轉接盒',m:'URT 428-01',k:'S'},
+ {g:'人用醫療',f:'五官鏡 ESSA-01',n:'主機',m:'ORL-0011',k:'S'},
+ {g:'人用醫療',f:'五官鏡 ESSA-01',n:'4mm 耳鏡鏡頭',m:'ORL-0012',k:'S'},
+ {g:'人用醫療',f:'五官鏡 ESSA-01',n:'4mm 12cm 硬式鏡頭',m:'CR120400',k:'S'},
+ {g:'人用醫療',f:'五官鏡 ESSA-01',n:'4mm 數位 10cm 軟式鏡頭',m:'CF100400',k:'S'},
+ {g:'人用醫療',f:'五官鏡 ESSA-01',n:'2.2mm 數位軟式鏡頭',m:'CF200220',k:'S'},
+ {g:'人用醫療',f:'五官鏡 ESSA-01',n:'1.65mm 超細數位硬式鏡頭',m:'CR200165',k:'S'},
+ {g:'人用醫療',f:'五官鏡 ESSA-01',n:'鏡頭延長線',m:'CEXT-01',k:'S'},
+ {g:'人用醫療',f:'閉鎖器 BBE',n:'一次性閉鎖器',m:'BBE-01',k:'B'},
+ {g:'人用醫療',f:'閉鎖器 BBE',n:'閉鎖器轉接盒',m:'BBE UAB-01',k:'S'},
+ {g:'獸醫用',f:'五官鏡（獸醫）ESENT-01',n:'便攜式主機',m:'VPD-01',k:'S'},
+ {g:'獸醫用',f:'五官鏡（獸醫）ESENT-01',n:'4mm 耳鏡鏡頭',m:'VCR018400',k:'S'},
+ {g:'獸醫用',f:'五官鏡（獸醫）ESENT-01',n:'4mm 12cm 硬式鏡頭',m:'VCR120400',k:'S'},
+ {g:'獸醫用',f:'五官鏡（獸醫）ESENT-01',n:'4mm 數位 10cm 軟式鏡頭',m:'VCF100400',k:'S'},
+ {g:'獸醫用',f:'五官鏡（獸醫）ESENT-01',n:'2.2mm 數位軟式鏡頭',m:'VCF200220',k:'S'},
+ {g:'獸醫用',f:'五官鏡（獸醫）ESENT-01',n:'1.65mm 超細數位硬式鏡頭',m:'VCR200165',k:'S'},
+ {g:'獸醫用',f:'五官鏡（獸醫）ESENT-01',n:'鏡頭延長線',m:'VCEXT-01',k:'S'},
+ {g:'獸醫用',f:'2.2mm 獸醫 ESPV-01',n:'便攜式主機',m:'VPD-02',k:'S'},
+ {g:'獸醫用',f:'2.2mm 獸醫 ESPV-01',n:'60cm 影像管',m:'IT6022-01',k:'S'},
+ {g:'獸醫用',f:'3.0mm 獸醫 ESSTV-01',n:'3.0mm 工作通道內視鏡',m:'WCE30-01',k:'S'},
+ {g:'獸醫用',f:'3.0mm 獸醫 ESSTV-01',n:'USB 轉接盒',m:'VURT-01',k:'S'}
+];
+const PIDX={}; PRODUCTS.forEach(p=>PIDX[p.m]=p);
+function prodOf(model){ return PIDX[String(model||'').trim()]||null; }
+/* 依產品與數量產生批號／序號 */
+function genSn(model, qty){
+  const p=prodOf(model); if(!p) return null;
+  const d=new Date(), y=d.getFullYear(), m=d.getMonth()+1;
+  const b=nextBatch(y,m);
+  if(!b) return null;
+  const n=Math.max(1, Math.floor(Number(qty)||1));
+  if(p.k==='B') return {batch:b, sn:b, kind:'批號'};
+  if(n===1)     return {batch:b, sn:b+'0001', kind:'序號'};
+  return {batch:b, sn:b+'0001-'+b+String(n).padStart(4,'0'), kind:'序號'};
+}
+function todayYMD(){
+  const d=new Date(), p=n=>(n<10?'0':'')+n;
+  return ''+d.getFullYear()+p(d.getMonth()+1)+p(d.getDate());
 }
 </script>
 
@@ -450,6 +510,7 @@ function normRec(r){
   return {no:(r.no===''||r.no===null||r.no===undefined)?'':r.no,
           date:String(r.date||''), product:String(r.product||''),
           qty:(r.qty===''||r.qty===null||r.qty===undefined)?'':r.qty,
+          model:String(r.model||''),
           sn:String(r.sn||''), doer:String(r.doer||''), checker:String(r.checker||''),
           use:String(r.use||''), note:String(r.note||'')};
 }
@@ -475,7 +536,7 @@ function filtered(){
     if(FY){ const b=parseYM(r.date); if(!b || String(b.y)!==FY) return false; }
     if(FBAD && snMatch(r)!=='diff') return false;
     if(!q) return true;
-    return [r.no,r.date,r.product,r.qty,r.sn,r.doer,r.checker,r.use,r.note]
+    return [r.no,r.date,r.product,r.model,r.qty,r.sn,r.doer,r.checker,r.use,r.note]
       .join(' ').toLowerCase().indexOf(q)>=0;
   });
   const k=SORT.k, dir=SORT.dir;
@@ -489,7 +550,7 @@ function filtered(){
   return out;
 }
 function setSort(k){ if(SORT.k===k) SORT.dir=-SORT.dir; else { SORT.k=k; SORT.dir=1; } vList(); }
-const COLS=[['no','項次'],['date','日期'],['product','產品名稱'],['qty','數量'],
+const COLS=[['no','項次'],['date','日期'],['product','產品名稱'],['model','型號'],['qty','數量'],
             ['sn','批號/序號'],['checker','確認者'],['use','用途'],['note','備註']];
 
 function vList(){
@@ -526,7 +587,8 @@ function vList(){
       checkers.map(c=>'<option'+(FC===c?' selected':'')+'>'+esc(c)+'</option>').join('')+'</select>'+
     '<span class="chip'+(FBAD?' on':'')+'" onclick="FBAD=!FBAD;vList()">只看批號不符</span>'+
     '<button class="btn" onclick="clearFilter()">清除</button>'+
-    (ro?'':'<button class="btn pri" onclick="editRec(-1)">＋ 新增紀錄</button>')+
+    (ro?'':'<button class="btn pri" onclick="openGen()">＋ 產生批序號</button>')+
+    (ro?'':'<button class="btn" onclick="editRec(-1)">手動新增</button>')+
     '<button class="btn" onclick="exportXlsx()">匯出 Excel</button>'+
   '</div></div>'+
   '<div class="tblwrap"><table><thead><tr>'+
@@ -534,7 +596,7 @@ function vList(){
       (SORT.k===c[0]?' <span class="ar">'+(SORT.dir>0?'▲':'▼')+'</span>':'')+'</th>').join('')+
     '<th class="nos"></th></tr></thead><tbody>'+
     (list.length?list.map(r=>rowHTML(r)).join('')
-      :'<tr><td colspan="9"><div class="empty">沒有符合條件的紀錄。</div></td></tr>')+
+      :'<tr><td colspan="10"><div class="empty">沒有符合條件的紀錄。</div></td></tr>')+
   '</tbody></table></div>';
 
   $('#q').oninput=e=>{ Q=e.target.value; const p=e.target.selectionStart; vList();
@@ -555,6 +617,7 @@ function rowHTML(r){
     '<td class="num mut">'+esc(r.no)+'</td>'+
     '<td class="mono">'+esc(fmtDate(r.date))+'</td>'+
     '<td>'+esc(r.product)+'</td>'+
+    '<td class="mono mut">'+esc(r.model)+'</td>'+
     '<td class="num">'+esc(r.qty)+'</td>'+
     '<td class="mono" title="'+esc(tip)+'">'+esc(r.sn)+
       (st==='diff'?' <span class="tag warn" title="批號的年月與日期欄不一致">≠日期</span>':'')+'</td>'+
@@ -577,7 +640,7 @@ let EDIT=-1;
 function editRec(i){
   if(!canWrite()) return denyWrite();
   EDIT=i;
-  const r = i>=0 ? R[i] : {no:nextNo(),date:'',product:'',qty:'',sn:'',doer:'',checker:WHO||'',use:'',note:''};
+  const r = i>=0 ? R[i] : {no:nextNo(),date:'',product:'',model:'',qty:'',sn:'',doer:'',checker:WHO||'',use:'',note:''};
   const products=[...new Set(R.map(x=>x.product).filter(Boolean))].sort((a,b)=>a.localeCompare(b,'zh-Hant'));
   dialog(i>=0?'編輯紀錄　#'+esc(r.no):'新增批序號紀錄',
     '<div class="f2">'+
@@ -585,6 +648,8 @@ function editRec(i){
       '<div class="fld"><label>日期（20260828 或 202608）</label><input id="f_date" value="'+esc(r.date)+'"></div>'+
       '<div class="fld"><label>產品名稱 *</label><input id="f_product" list="plist" value="'+esc(r.product)+'">'+
         '<datalist id="plist">'+products.map(p=>'<option value="'+esc(p)+'">').join('')+'</datalist></div>'+
+      '<div class="fld"><label>型號</label><input id="f_model" list="mlist" value="'+esc(r.model)+'">'+
+        '<datalist id="mlist">'+PRODUCTS.map(p=>'<option value="'+esc(p.m)+'">'+esc(p.n)+'</option>').join('')+'</datalist></div>'+
       '<div class="fld"><label>數量</label><input id="f_qty" value="'+esc(r.qty)+'"></div>'+
       '<div class="fld"><label>批號/序號 *</label><input id="f_sn" value="'+esc(r.sn)+'"></div>'+
       '<div class="fld"><label>確認者</label><input id="f_checker" value="'+esc(r.checker)+'"></div>'+
@@ -626,6 +691,7 @@ async function saveRec(){
   if(!canWrite()) return denyWrite();
   const g=id=>(document.getElementById(id)||{}).value||'';
   const rec=normRec({no:g('f_no').trim(), date:g('f_date').trim(), product:g('f_product').trim(),
+    model:g('f_model').trim(),
     qty:g('f_qty').trim(), sn:g('f_sn').trim(), doer:g('f_doer').trim(),
     checker:g('f_checker').trim(), use:g('f_use').trim(), note:g('f_note').trim()});
   if(!rec.product) return toast('請填產品名稱');
@@ -649,6 +715,78 @@ async function delRecGo(){
   const backup=JSON.parse(JSON.stringify(R));
   R.splice(EDIT,1); closeDlg();
   if(await push()){ renderAll(); toast('已刪除'); } else { R=backup; renderAll(); }
+}
+
+
+/* ---------- 自動產生批序號（只填產品與數量） ---------- */
+function openGen(){
+  if(!canWrite()) return denyWrite();
+  const byGroup={};
+  PRODUCTS.forEach(p=>{ (byGroup[p.g]=byGroup[p.g]||{}); (byGroup[p.g][p.f]=byGroup[p.g][p.f]||[]).push(p); });
+  let opts='<option value="">— 請選擇產品 —</option>';
+  Object.keys(byGroup).forEach(g=>{
+    Object.keys(byGroup[g]).forEach(f=>{
+      opts+='<optgroup label="'+esc(g+'　'+f)+'">'+
+        byGroup[g][f].map(p=>'<option value="'+esc(p.m)+'">'+esc(p.n)+'　'+esc(p.m)+
+          '（'+(p.k==='B'?'批號':'序號')+'）</option>').join('')+'</optgroup>';
+    });
+  });
+  dialog('產生批序號',
+    '<div class="f2">'+
+      '<div class="fld"><label>產品 *</label><select id="g_model">'+opts+'</select></div>'+
+      '<div class="fld"><label>數量 *</label><input id="g_qty" type="number" min="1" step="1" value="1"></div>'+
+    '</div>'+
+    '<div id="g_prev" class="genbox">選擇產品後，這裡會顯示要配發的批號／序號</div>'+
+    '<details style="margin-top:12px"><summary class="mut" style="cursor:pointer;font-size:12.5px">'+
+      '其他欄位（用途、備註、確認者）— 可留空</summary>'+
+      '<div class="f2" style="margin-top:10px">'+
+        '<div class="fld"><label>用途</label><input id="g_use" placeholder="例：研發樣品、訂單、小試產"></div>'+
+        '<div class="fld"><label>確認者</label><input id="g_checker" value="'+esc(WHO||'')+'"></div>'+
+      '</div>'+
+      '<div class="fld"><label>備註</label><textarea id="g_note" rows="2"></textarea></div>'+
+    '</details>',
+    '<button class="btn pri" type="button" id="g_ok" onclick="saveGen()" disabled>產生並儲存</button>'+
+    '<button class="btn" value="x">取消</button>');
+  ['g_model','g_qty'].forEach(id=>{ const el=document.getElementById(id);
+    if(el){ el.onchange=genPreview; el.oninput=genPreview; } });
+  setTimeout(()=>{ const el=document.getElementById('g_model'); if(el) el.focus(); },60);
+  genPreview();
+}
+let GENPEND=null;
+function genPreview(){
+  const box=document.getElementById('g_prev'), ok=document.getElementById('g_ok');
+  if(!box) return;
+  const model=(document.getElementById('g_model')||{}).value||'';
+  const qty=parseInt((document.getElementById('g_qty')||{}).value,10);
+  GENPEND=null; if(ok) ok.disabled=true;
+  if(!model){ box.className='genbox'; box.textContent='選擇產品後，這裡會顯示要配發的批號／序號'; return; }
+  if(!qty||qty<1){ box.className='genbox'; box.textContent='請填寫數量（至少 1）'; return; }
+  const p=prodOf(model), g=genSn(model,qty);
+  if(!g){ box.className='genbox'; box.textContent='無法產生：本月批次碼已用到 Z，請聯絡管理員'; return; }
+  GENPEND={p:p,qty:qty,g:g};
+  if(ok) ok.disabled=false;
+  const d=decodeSn(g.batch);
+  box.className='genbox on';
+  box.innerHTML=
+    '<div class="gencode">'+esc(g.sn)+'</div>'+
+    '<div class="genmeta">'+
+      '<span class="tag '+(p.k==='B'?'warn':'info')+'">'+esc(g.kind)+'</span>'+
+      esc(p.n)+'　'+esc(p.m)+'　×'+qty+'　'+
+      '批號 <b>'+esc(g.batch)+'</b>（'+d.year+' 年 '+d.month+' 月　第 '+esc(d.batch)+' 批）'+
+      (p.k==='B'?'　整批共用一個批號，不編流水序號':'　流水序號 0001'+(qty>1?'–'+String(qty).padStart(4,'0'):''))+
+    '</div>';
+}
+async function saveGen(){
+  if(!canWrite()) return denyWrite();
+  if(!GENPEND) return toast('請先選擇產品與數量');
+  const gv=id=>((document.getElementById(id)||{}).value||'').trim();
+  const {p,qty,g}=GENPEND;
+  const rec=normRec({no:nextNo(), date:todayYMD(), product:p.n, model:p.m, qty:qty,
+    sn:g.sn, doer:'', checker:gv('g_checker'), use:gv('g_use'), note:gv('g_note')});
+  const backup=JSON.parse(JSON.stringify(R));
+  R.push(rec); GENPEND=null; closeDlg();
+  if(await push()){ renderAll(); toast('已配發 '+rec.sn); }
+  else { R=backup; renderAll(); }
 }
 
 /* ---------- 批號規則頁 ---------- */
@@ -675,7 +813,20 @@ function vRule(){
     '</div>'+
     '<div class="hint">部分品項另有前綴（例如 <b>PR</b>BEA0001 的 PR），解析時前綴會被忽略，只看最後 3 個字母。</div>'+
   '</div>'+
-  '<div class="card"><h2>批號查詢 / 產生<span class="sub">輸入批號解析，或選年月取得下一個可用批次</span></h2>'+
+  '<div class="card"><h2>產品型號與編碼方式<span class="sub">依產品型號樹狀圖 20260820</span></h2>'+
+    '<div class="tblwrap" style="max-height:420px"><table><thead><tr>'+
+    '<th class="nos">類別</th><th class="nos">產品線</th><th class="nos">品項</th>'+
+    '<th class="nos">型號</th><th class="nos">編碼</th><th class="nos">範例</th>'+
+    '</tr></thead><tbody>'+
+    PRODUCTS.map(p=>'<tr><td>'+esc(p.g)+'</td><td class="mut">'+esc(p.f)+'</td><td>'+esc(p.n)+'</td>'+
+      '<td class="mono">'+esc(p.m)+'</td>'+
+      '<td><span class="tag '+(p.k==='B'?'warn':'info')+'">'+(p.k==='B'?'批號 3 碼':'序號 7 碼')+'</span></td>'+
+      '<td class="mono mut">'+(p.k==='B'?'CHA':'CHA0001')+'</td></tr>').join('')+
+    '</tbody></table></div>'+
+    '<div class="hint">只有<b>一次性軟式輸尿管鏡（URS 700-01）</b>與<b>一次性閉鎖器（BBE-01）</b>採整批共用的 3 碼批號，'+
+      '其餘品項一律配發 7 碼序號（批號 3 碼 ＋ 流水 4 碼）。</div>'+
+  '</div>'+
+  '<div class="card"><h2>批號查詢 / 產生<span class="sub">輸入批號解析，或選年月取得下一個批次碼</span></h2>'+
     '<div class="row">'+
       '<div style="width:220px"><div class="fld" style="margin:0"><label>解析批號</label>'+
         '<input id="rq" placeholder="例 CHD0003" value=""></div></div>'+
@@ -688,7 +839,7 @@ function vRule(){
       '<div style="width:110px"><div class="fld" style="margin:0"><label>月</label>'+
         '<input id="nm" type="number" value="'+m+'"></div></div>'+
       '<div style="align-self:end;padding-bottom:2px">'+
-        '<button class="btn" onclick="calcNext()">查下一個可用批次</button></div>'+
+        '<button class="btn" onclick="calcNext()">查下一個批次碼</button></div>'+
       '<div style="align-self:end;padding-bottom:2px"><span class="hint" id="nOut" style="margin:0">'+
         '本月批號前 2 碼為 <b>'+yl+ml+'</b></span></div>'+
     '</div>'+
@@ -710,8 +861,8 @@ function calcNext(){
   const y=parseInt($('#ny').value,10), m=parseInt($('#nm').value,10);
   if(isNaN(y)||isNaN(m)||m<1||m>12) return toast('請輸入正確的年與月');
   const c=nextBatch(y,m);
-  $('#nOut').innerHTML = c ? '下一個可用批號：<b>'+esc(c)+'</b>（完整序號例 '+esc(c)+'0001）'
-                           : '這個年月超出批號可表示範圍';
+  $('#nOut').innerHTML = c ? '下一個批號：<b>'+esc(c)+'</b>（完整序號例 '+esc(c)+'0001）'
+                           : '這個年月的批次碼已用到 Z，或超出批號可表示範圍';
 }
 function monthTableHTML(){
   const g={};
@@ -760,12 +911,13 @@ function vData(){
 }
 function xlsxRows(){
   return R.map(r=>({'項次':r.no,'日期':r.date,'產品名稱':r.product,'數量':r.qty,
-    '批號/序號':r.sn,'執行者':r.doer,'確認者':r.checker,'用途':r.use,'備註1':r.note}));
+    '批號/序號':r.sn,'執行者':r.doer,'確認者':r.checker,'用途':r.use,'備註1':r.note,
+    '型號':r.model}));
 }
 function exportXlsx(){
   const ws=XLSX.utils.json_to_sheet(xlsxRows(),
-    {header:['項次','日期','產品名稱','數量','批號/序號','執行者','確認者','用途','備註1']});
-  ws['!cols']=[{wch:6},{wch:11},{wch:22},{wch:7},{wch:26},{wch:9},{wch:9},{wch:24},{wch:34}];
+    {header:['項次','日期','產品名稱','數量','批號/序號','執行者','確認者','用途','備註1','型號']});
+  ws['!cols']=[{wch:6},{wch:11},{wch:22},{wch:7},{wch:26},{wch:9},{wch:9},{wch:24},{wch:34},{wch:13}];
   const wb=XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb,ws,'產品批序號記錄表');
   const d=new Date(), p=n=>(n<10?'0':'')+n;
   XLSX.writeFile(wb,'產品批序號'+d.getFullYear()+p(d.getMonth()+1)+p(d.getDate())+'.xlsx');
@@ -792,7 +944,7 @@ async function doImport(file){
   const col=names=>{ for(const n of names){ const i=H.indexOf(n); if(i>=0) return i; } return -1; };
   const C={no:col(['項次']),date:col(['日期']),product:col(['產品名稱','產品']),qty:col(['數量']),
     sn:col(['批號/序號','批號']),doer:col(['執行者']),checker:col(['確認者']),
-    use:col(['用途']),note:col(['備註1','備註'])};
+    use:col(['用途']),note:col(['備註1','備註']),model:col(['型號'])};
   const S_=v=>{ if(v===null||v===undefined) return '';
     if(v instanceof Date){ const p=n=>(n<10?'0':'')+n;
       return v.getFullYear()+'/'+p(v.getMonth()+1)+'/'+p(v.getDate()); }
@@ -803,7 +955,8 @@ async function doImport(file){
     const r=aoa[i]||[]; const g=k=>C[k]>=0?r[C[k]]:null;
     const code=S_(g('sn')); if(!code) continue;
     list.push(normRec({no:S_(g('no')),date:S_(g('date')),product:S_(g('product')),qty:S_(g('qty')),
-      sn:code,doer:S_(g('doer')),checker:S_(g('checker')),use:S_(g('use')),note:S_(g('note'))}));
+      sn:code,doer:S_(g('doer')),checker:S_(g('checker')),use:S_(g('use')),note:S_(g('note')),
+      model:S_(g('model'))}));
   }
   if(!list.length) return toast('檔案裡沒有可匯入的資料');
   const backup=JSON.parse(JSON.stringify(R));
