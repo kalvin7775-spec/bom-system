@@ -3,7 +3,7 @@
  *  綁定於 Google 試算表（工具 → Apps Script）
  *
  *  資料表（沒有會自動建立）：
- *    料號主檔 / BOM主檔 / BOM明細 / 異動紀錄 / 系統 / 使用者
+ *    料號主檔 / BOM主檔 / BOM明細 / 異動紀錄 / 系統 / 使用者 / 庫存異動 / 產品批序號
  *
  *  部署：部署 → 新增部署作業 → 類型「網頁應用程式」
  *        執行身分：我　　存取權：擁有 Google 帳戶的任何人 或 所有人
@@ -25,7 +25,7 @@ const LEGACY_PW_ENABLED = true;                 // 全部同事都註冊完後�
 /* ================== */
 
 const SH = {items:'料號主檔', boms:'BOM主檔', lines:'BOM明細', hist:'異動紀錄', sys:'系統',
-            users:'使用者', moves:'庫存異動'};
+            users:'使用者', moves:'庫存異動', serial:'產品批序號'};
 
 const HEAD = {
   items:['品號','品名','規格','單位','庫存數量','單位成本','安全庫存','供應商','交期','儲位','MSB','備註'],
@@ -35,7 +35,9 @@ const HEAD = {
   users:['ID','Email','姓名','密碼','角色','狀態','建立時間','最後登入','備註'],
   /* 一張單多列；欄位參考「簡易領料紀錄」，另加單頭欄位方便還原成 Word */
   moves:['單號','日期','類別','倉別','申請部門','異動原因','項次','品號','品名','數量','單位',
-         '異動前庫存','異動後庫存','領用人','填表人','備註','單據備註','建立時間']
+         '異動前庫存','異動後庫存','領用人','填表人','備註','單據備註','建立時間'],
+  /* 產品批序號記錄表：欄位對齊原本的 Excel「產品批序號記錄表」 */
+  serial:['項次','日期','產品名稱','數量','批號/序號','執行者','確認者','用途','備註1']
 };
 
 /* 角色權限：admin 全部；editor 可讀可寫；viewer 只能讀 */
@@ -51,7 +53,7 @@ function ss(){
 
 /* 首次使用：在編輯器選這個函式按「執行」，建立所有工作表並完成授權 */
 function setup(){
-  ['items','boms','lines','hist','sys','users','moves'].forEach(sheet);
+  ['items','boms','lines','hist','sys','users','moves','serial'].forEach(sheet);
   if(String(sysGet('rev',''))==='') { sysSet('rev', 0); sysFlush(); }
   const s = ss();
   const d = s.getSheetByName('工作表1');
@@ -239,6 +241,67 @@ function writeState(st, who){
     sysSet('rev', rev);
     sysSet('updatedAt', Utilities.formatDate(new Date(),'Asia/Taipei','yyyy/MM/dd HH:mm:ss'));
     sysSet('updatedBy', who||'');
+    sysFlush();
+    SpreadsheetApp.flush();
+    return rev;
+  } finally { lock.releaseLock(); }
+}
+
+/* ============================================================
+   產品批序號記錄表（serial.html 使用）
+   讀寫整張表；版本號存在「系統」表的 serialRev，與 BOM 的 rev 互不干擾
+   ============================================================ */
+function readSerial(){
+  const list = rows('serial').map(function(r){
+    return {no:  r['項次']===''||r['項次']===null ? '' : r['項次'],
+            date:    fmtCell(r['日期']),
+            product: String(r['產品名稱']||''),
+            qty: r['數量']===''||r['數量']===null ? '' : r['數量'],
+            sn:      String(r['批號/序號']||''),
+            doer:    String(r['執行者']||''),
+            checker: String(r['確認者']||''),
+            use:     String(r['用途']||''),
+            note:    String(r['備註1']||'')};
+  });
+  return {ok:true, records:list,
+          rev: Number(sysGet('serialRev',0))||0,
+          updatedAt: fmtTS(sysGet('serialAt','')),
+          updatedBy: String(sysGet('serialBy',''))};
+}
+
+/* 日期欄可能被試算表轉成日期物件，也可能是 20240513 / 202406 這種數字，統一轉字串 */
+function fmtCell(v){
+  if(v instanceof Date) return Utilities.formatDate(v,'Asia/Taipei','yyyy/MM/dd');
+  if(typeof v === 'number') return String(Math.round(v));
+  return String(v===null||v===undefined?'':v);
+}
+
+function writeSerial(list, who){
+  if(!Array.isArray(list)) throw new Error('資料格式不正確，未寫入');
+  const cur = rows('serial').length;
+  if(list.length === 0 && cur > 0)
+    throw new Error('收到 0 筆批序號但雲端現有 ' + cur + ' 筆，已拒絕寫入（避免誤清空）');
+  const lock = LockService.getScriptLock();
+  lock.waitLock(25000);
+  try{
+    writeRows('serial', list.map(function(r){
+      return {'項次': r.no===undefined||r.no===null?'':r.no,
+              '日期': r.date||'',
+              '產品名稱': r.product||'',
+              '數量': r.qty===undefined||r.qty===null?'':r.qty,
+              '批號/序號': r.sn||'',
+              '執行者': r.doer||'',
+              '確認者': r.checker||'',
+              '用途': r.use||'',
+              '備註1': r.note||''};
+    }));
+    /* 日期欄一律當文字，避免 202406 被試算表當成數字或日期 */
+    const sh = sheet('serial');
+    if(list.length) sh.getRange(2,2,list.length,1).setNumberFormat('@');
+    const rev = (Number(sysGet('serialRev',0))||0) + 1;
+    sysSet('serialRev', rev);
+    sysSet('serialAt', Utilities.formatDate(new Date(),'Asia/Taipei','yyyy/MM/dd HH:mm:ss'));
+    sysSet('serialBy', who||'');
     sysFlush();
     SpreadsheetApp.flush();
     return rev;
@@ -622,6 +685,28 @@ function doPost(e){
   if(action === 'setUser')    return out(acSetUser(auth, body));
   if(action === 'resetPw')    return out(acResetPw(auth, body));
   if(action === 'delUser')    return out(acDelUser(auth, body));
+
+  if(action === 'loadSerial') return out(readSerial());
+
+  if(action === 'saveSerial'){
+    if(!canWrite(auth.role))
+      return out({error: auth.legacy
+        ? '共用密碼為唯讀模式，無法儲存。請註冊個人帳號並請管理員給予「編輯」權限。'
+        : '你的權限為「唯讀」，無法儲存資料。請聯絡管理員調整權限。', denied:true});
+    const curRev = Number(sysGet('serialRev',0))||0;
+    if(body.baseRev !== undefined && body.baseRev !== null &&
+       Number(body.baseRev) !== curRev && !body.force){
+      return out({conflict:true, serverRev:curRev,
+                  updatedAt:fmtTS(sysGet('serialAt','')),
+                  updatedBy:String(sysGet('serialBy',''))});
+    }
+    try{
+      const rev = writeSerial(body.payload||[], auth.name || body.who || '');
+      return out({ok:true, rev:rev, updatedAt:fmtTS(sysGet('serialAt',''))});
+    }catch(err){
+      return out({error:'寫入失敗：'+err.message});
+    }
+  }
 
   if(action === 'load')
     return out(Object.assign(readState(),

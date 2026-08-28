@@ -1,0 +1,853 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>產品批序號管理 — 安德斯醫學科技</title>
+<link rel="icon" href="data:image/png;base64,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">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<style>
+:root{
+  --bg:#f6f7f9; --panel:#fff; --line:#e3e6ea; --line2:#eef0f3;
+  --txt:#1c2128; --mut:#6b7480; --acc:#1f6feb; --acc-bg:#e8f0fe;
+  --ok:#1a7f4b; --ok-bg:#e6f5ec; --warn:#a8630a; --warn-bg:#fdf3e3;
+  --bad:#c0392b; --bad-bg:#fdecea; --radius:8px;
+  --teal:#3b7d8c; --orange:#e08600;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--txt);
+  font:14px/1.5 -apple-system,"Segoe UI","Noto Sans TC","PingFang TC","Microsoft JhengHei",sans-serif}
+header{background:var(--panel);border-bottom:1px solid var(--line);padding:10px 18px;
+  display:flex;align-items:center;gap:14px;position:sticky;top:0;z-index:50;flex-wrap:wrap}
+h1{font-size:16px;margin:0;font-weight:650;letter-spacing:.3px}
+h1 small{font-weight:400;color:var(--mut);font-size:12px;margin-left:8px}
+.homelink{display:flex;align-items:center;gap:7px;text-decoration:none;color:var(--mut);
+  font-size:12.5px;padding:4px 10px 4px 5px;border:1px solid var(--line);border-radius:99px;
+  white-space:nowrap;transition:.15s}
+.homelink:hover{background:var(--line2);color:var(--txt);border-color:#cfd5db}
+.homelink img{height:20px;width:auto;display:block}
+nav{display:flex;gap:2px;flex:1;flex-wrap:wrap}
+nav button{background:none;border:0;padding:7px 13px;border-radius:6px;cursor:pointer;
+  font-size:13.5px;color:var(--mut);font-family:inherit}
+nav button:hover{background:var(--line2);color:var(--txt)}
+nav button.on{background:var(--acc-bg);color:var(--acc);font-weight:600}
+#meBox{display:flex;align-items:center;gap:7px;font-size:12.5px;color:var(--mut);
+  white-space:nowrap;margin-left:auto}
+#meBox b{color:var(--txt)}
+main{padding:18px;max-width:1600px;margin:0 auto}
+.view{display:none} .view.on{display:block}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);padding:16px;margin-bottom:14px}
+.card>h2{font-size:14px;margin:0 0 12px;font-weight:650}
+.card>h2 .sub{font-weight:400;color:var(--mut);font-size:12px;margin-left:8px}
+.row{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
+.grow{flex:1;min-width:180px}
+input,select,textarea,button{font-family:inherit;font-size:13.5px}
+input[type=text],input[type=search],input[type=number],select,textarea{
+  padding:7px 10px;border:1px solid var(--line);border-radius:6px;background:#fff;color:var(--txt);width:100%}
+input:focus,select:focus,textarea:focus{outline:2px solid var(--acc-bg);border-color:var(--acc)}
+.btn{padding:7px 14px;border:1px solid var(--line);background:#fff;border-radius:6px;cursor:pointer;white-space:nowrap}
+.btn:hover{background:var(--line2)}
+.btn.pri{background:var(--acc);border-color:var(--acc);color:#fff}
+.btn.pri:hover{filter:brightness(1.08)}
+.btn.danger{color:var(--bad);border-color:#f0c3bd}
+.btn.sm{padding:4px 9px;font-size:12.5px}
+.btn:disabled{opacity:.45;cursor:not-allowed}
+.stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin-bottom:14px}
+.stat{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);padding:12px 14px}
+.stat .k{font-size:11.5px;color:var(--mut);letter-spacing:.5px}
+.stat .v{font-size:21px;font-weight:650;margin-top:3px;font-variant-numeric:tabular-nums}
+.stat.warn .v{color:var(--warn)} .stat.ok .v{color:var(--ok)}
+.tblwrap{overflow:auto;border:1px solid var(--line);border-radius:var(--radius);background:#fff;max-height:72vh}
+table{border-collapse:separate;border-spacing:0;width:100%;font-size:13px}
+th{background:#fafbfc;text-align:left;padding:8px 10px;border-bottom:1px solid var(--line);
+  position:sticky;top:0;z-index:2;font-weight:600;white-space:nowrap;cursor:pointer;user-select:none}
+th.nos{cursor:default}
+th .ar{color:var(--acc);font-size:10px}
+td{padding:6px 10px;border-bottom:1px solid var(--line2);vertical-align:top}
+tbody tr:hover{background:#fafbfc}
+.num{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
+.mono{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12.5px;white-space:nowrap}
+.mut{color:var(--mut)}
+.wrapcell{white-space:pre-wrap;word-break:break-word;min-width:150px}
+.tag{display:inline-block;padding:1px 7px;border-radius:99px;font-size:11.5px;white-space:nowrap}
+.tag.ok{background:var(--ok-bg);color:var(--ok)}
+.tag.warn{background:var(--warn-bg);color:var(--warn)}
+.tag.bad{background:var(--bad-bg);color:var(--bad)}
+.tag.info{background:var(--acc-bg);color:var(--acc)}
+.tag.gray{background:var(--line2);color:var(--mut)}
+.empty{padding:40px;text-align:center;color:var(--mut)}
+dialog{border:1px solid var(--line);border-radius:10px;padding:0;max-width:min(760px,94vw);width:100%;
+  box-shadow:0 12px 40px rgba(0,0,0,.18)}
+dialog::backdrop{background:rgba(20,24,30,.42)}
+.dlg-h{padding:13px 18px;border-bottom:1px solid var(--line);display:flex;align-items:center;gap:12px}
+.dlg-h b{font-size:14.5px;flex:1}
+.dlg-b{padding:16px 18px;max-height:70vh;overflow:auto}
+.dlg-f{padding:12px 18px;border-top:1px solid var(--line);display:flex;gap:8px;justify-content:flex-end;background:#fafbfc}
+.fld{margin-bottom:11px}
+.fld label{display:block;font-size:12.5px;color:var(--mut);margin-bottom:4px}
+.f2{display:grid;grid-template-columns:1fr 1fr;gap:0 12px}
+@media(max-width:640px){.f2{grid-template-columns:1fr}}
+.hint{font-size:12px;color:var(--mut);margin-top:6px;line-height:1.7}
+.chips{display:flex;gap:6px;flex-wrap:wrap}
+.chip{padding:4px 10px;border:1px solid var(--line);border-radius:99px;cursor:pointer;font-size:12.5px;background:#fff}
+.chip.on{background:var(--acc-bg);border-color:var(--acc);color:var(--acc);font-weight:600}
+.ro-banner{background:#fff8e6;border:1px solid #f0dca8;color:#8a6414;
+  padding:9px 13px;border-radius:8px;font-size:13px;margin-bottom:14px;line-height:1.6}
+.seed-banner{background:var(--acc-bg);border:1px solid #bcd3f7;color:#14418f;
+  padding:11px 14px;border-radius:8px;font-size:13px;margin-bottom:14px;line-height:1.7}
+#toast{position:fixed;bottom:22px;left:50%;transform:translateX(-50%);background:#1c2128;color:#fff;
+  padding:10px 18px;border-radius:7px;font-size:13.5px;opacity:0;pointer-events:none;transition:.25s;z-index:200}
+#toast.on{opacity:1}
+input[type=file]{display:none}
+.rule{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:12px}
+.rulebox{border:1px solid var(--line);border-radius:8px;padding:12px 14px;background:#fff}
+.rulebox .h{font-size:12px;color:var(--mut);margin-bottom:6px}
+.rulebox .b{font-size:13px;line-height:2.05}
+.rulebox .b i{font-style:normal;display:inline-block;white-space:nowrap;margin-right:12px}
+.codebox{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:22px;letter-spacing:4px;
+  background:#f2f5f8;border:1px solid var(--line);border-radius:8px;padding:14px 16px;text-align:center}
+.codebox span{display:inline-block;padding:0 2px;border-radius:4px}
+.c-y{background:#dfeef2;color:#1d5a68}
+.c-m{background:#fdf0d8;color:#8a5a06}
+.c-b{background:#e4ecfb;color:#1a4ea8}
+.c-s{background:#eaf3ea;color:#1a6b38}
+/* 登入畫面 */
+#gate{position:fixed;inset:0;background:var(--bg);z-index:500;display:none;overflow:auto;padding:40px 16px}
+#gate.on{display:block}
+.gate-box{max-width:430px;margin:0 auto;background:#fff;border:1px solid var(--line);
+  border-radius:12px;padding:26px 26px 22px;box-shadow:0 8px 30px rgba(0,0,0,.08)}
+.gate-box h2{margin:0 0 4px;font-size:19px}
+.gate-box .sub{color:var(--mut);font-size:13px;margin-bottom:18px}
+.gate-tabs{display:flex;gap:2px;background:var(--line2);padding:3px;border-radius:8px;margin-bottom:18px}
+.gate-tabs button{flex:1;background:none;border:0;padding:8px;border-radius:6px;cursor:pointer;
+  font-size:13.5px;color:var(--mut);font-family:inherit}
+.gate-tabs button.on{background:#fff;color:var(--acc);font-weight:600;box-shadow:0 1px 3px rgba(0,0,0,.08)}
+.gate-msg{font-size:13px;padding:9px 11px;border-radius:7px;margin-bottom:14px;line-height:1.6}
+.gate-msg.bad{background:#fdecec;color:#a62222;border:1px solid #f3c6c6}
+.gate-msg.ok{background:#e9f7ee;color:#1a6b38;border:1px solid #bfe3cd}
+.gate-foot{margin-top:16px;padding-top:14px;border-top:1px solid var(--line);
+  font-size:12.5px;color:var(--mut);line-height:1.7}
+.gate-foot a{color:var(--acc);cursor:pointer;text-decoration:underline}
+</style>
+</head>
+<body>
+<header>
+  <a class="homelink" href="index.html" title="回系統入口"><img src="data:image/png;base64,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" alt="安德斯醫學科技">首頁</a>
+  <h1>產品批序號管理<small id="hdrSub"></small></h1>
+  <span id="netBox"></span>
+  <nav>
+    <button data-v="list" class="on">批序號紀錄</button>
+    <button data-v="rule">批號規則</button>
+    <button data-v="data">資料管理</button>
+  </nav>
+  <span id="meBox"></span>
+</header>
+<main>
+  <div class="view on" id="v-list"></div>
+  <div class="view" id="v-rule"></div>
+  <div class="view" id="v-data"></div>
+</main>
+<div id="gate"><div class="gate-box" id="gateBox"></div></div>
+<div id="toast"></div>
+<dialog id="dlg"><form method="dialog" id="dlgForm">
+  <div class="dlg-h"><b id="dlgTitle"></b><button class="btn sm" value="x">關閉</button></div>
+  <div class="dlg-b" id="dlgBody"></div>
+  <div class="dlg-f" id="dlgFoot"></div>
+</form></dialog>
+
+<script>
+/* ============================================================
+   雲端設定 — 與 BOM 系統共用同一個 Apps Script 後端
+   ============================================================ */
+const API_URL = 'https://script.google.com/macros/s/AKfycbzjpoGstBAAPfVpHwQ2dfCMtDw3yfVgtYQuLKbUWFO8sGNRu7Pkk8wOaqZguGkQx7PQxg/exec';
+const CLOUD = API_URL.indexOf('http') === 0;
+</script>
+
+<script>
+/* ============================================================
+   產品批序號管理 — 單檔版
+   雲端：Apps Script（工作表「產品批序號」）
+   本機快取：IndexedDB (serialdb / kv / "cache")
+   ============================================================ */
+
+/* 內建初始資料：2024/05 起的 118 筆，雲端還沒有資料時可一鍵匯入 */
+const SEED = [{"no":1,"date":"20240513","product":"插管鏡管子","qty":35,"sn":"AEA","doer":"","checker":"Kalvin","use":"小試產","note":""},{"no":2,"date":"20240605","product":"插管鏡管子","qty":35,"sn":"AFA","doer":"","checker":"Kalvin","use":"小試產","note":""},{"no":3,"date":"20240702","product":"插管鏡管子","qty":35,"sn":"AGA","doer":"","checker":"Kalvin","use":"小試產","note":""},{"no":4,"date":"20250319","product":"插管鏡主機","qty":10,"sn":"BCA0001~0010","doer":"","checker":"Kalvin","use":"啟鑫","note":""},{"no":5,"date":"20250328","product":"插管鏡主機","qty":10,"sn":"BCB0001~0010","doer":"","checker":"Kalvin","use":"啟鑫","note":""},{"no":6,"date":"20250415","product":"插管鏡主機","qty":10,"sn":"BDA0001~0010","doer":"","checker":"Kalvin","use":"啟鑫","note":""},{"no":7,"date":"20250505","product":"插管鏡管子","qty":10,"sn":"BEA","doer":"","checker":"Kalvin","use":"大試產","note":""},{"no":8,"date":"20250513","product":"插管鏡管子","qty":10,"sn":"BEB","doer":"","checker":"Kalvin","use":"大試產","note":""},{"no":9,"date":"20250528","product":"插管鏡管子","qty":10,"sn":"BEC","doer":"","checker":"Kalvin","use":"大試產","note":""},{"no":10,"date":"20250502","product":"炳碩1000x1000鏡頭模組","qty":100,"sn":"PRBEA0001~0100","doer":"","checker":"Kalvin","use":"","note":""},{"no":11,"date":"20250604","product":"炳碩1000x1000鏡頭模組","qty":2,"sn":"PRBFA0001~0002","doer":"","checker":"Kalvin","use":"小試產","note":""},{"no":12,"date":"202506","product":"喉鏡","qty":90,"sn":"BFB","doer":"","checker":"","use":"Tyvek 1073B","note":""},{"no":13,"date":"202506","product":"喉鏡","qty":20,"sn":"BFC","doer":"","checker":"","use":"LRG400N-01 Camera Tube","note":""},{"no":14,"date":"202506","product":"喉鏡","qty":2,"sn":"BFD0001~BFD0002","doer":"","checker":"","use":"LRGMN-01 Video Bronchoscope","note":""},{"no":15,"date":"202507","product":"耳鏡主機＆鏡頭","qty":"","sn":"BGA","doer":"","checker":"Kalvin","use":"老化測試用批號","note":""},{"no":16,"date":"202507","product":"耳鏡主機＆鏡頭","qty":"","sn":"BGB","doer":"","checker":"Kalvin","use":"老化測試用批號","note":""},{"no":17,"date":"202507","product":"耳鏡主機＆鏡頭","qty":"","sn":"BGC","doer":"","checker":"Kalvin","use":"老化測試用批號","note":""},{"no":18,"date":"202507","product":"輸尿管鏡","qty":20,"sn":"BGD0001~0020","doer":"","checker":"芷羚","use":"滅菌測試用批號","note":""},{"no":19,"date":"202508","product":"輸尿管鏡(指示劑空盒)","qty":34,"sn":"BHA0001~0034","doer":"","checker":"芷羚","use":"泡殼+指示劑","note":""},{"no":20,"date":"202504","product":"輸尿管鏡","qty":1,"sn":"BDB0001","doer":"","checker":"芷羚","use":"色彩分析","note":"working channel壞 裕隆組裝 超詠平板#3 無記憶卡"},{"no":21,"date":"202509","product":"輸尿管鏡","qty":1,"sn":"BIA0001","doer":"","checker":"芷羚","use":"樣品","note":""},{"no":22,"date":"202509","product":"輸尿管鏡","qty":1,"sn":"BIA0002","doer":"","checker":"金剛","use":"ESD測試","note":"先測8600"},{"no":23,"date":"202505","product":"輸尿管鏡轉接盒","qty":1,"sn":"BGE0001","doer":"","checker":"芷羚","use":"","note":""},{"no":24,"date":"202505","product":"輸尿管鏡轉接盒","qty":1,"sn":"BGE0002","doer":"","checker":"芷羚","use":"","note":""},{"no":25,"date":"202509","product":"輸尿管鏡","qty":1,"sn":"BIA0003","doer":"","checker":"芷羚","use":"","note":""},{"no":26,"date":"202509","product":"插管鏡管子","qty":1,"sn":"BIA0004","doer":"","checker":"金剛","use":"","note":""},{"no":27,"date":"202509","product":"插管鏡管子","qty":1,"sn":"BIA0005","doer":"","checker":"金剛","use":"","note":""},{"no":28,"date":"202508","product":"輸尿管鏡","qty":3,"sn":"BHY0001-0003","doer":"","checker":"芷羚","use":"老化測試用批號","note":"1年"},{"no":29,"date":"202508","product":"輸尿管鏡","qty":3,"sn":"BHZ0001-0003","doer":"","checker":"芷羚","use":"老化測試用批號","note":"2年"},{"no":30,"date":"202511","product":"插管鏡管子","qty":"28+2","sn":"BKB0001-0030","doer":"","checker":"芷羚","use":"生物相容性(喉鏡)","note":""},{"no":31,"date":"202506","product":"輸尿管鏡","qty":1,"sn":"BFA0001","doer":"","checker":"芷羚","use":"","note":""},{"no":32,"date":"202506","product":"輸尿管鏡","qty":1,"sn":"BFA0002","doer":"","checker":"芷羚","use":"","note":""},{"no":33,"date":"202511","product":"插管鏡管子","qty":1,"sn":"BKC0001","doer":"","checker":"芷羚","use":"生物相容性(喉鏡) 拍照","note":"30cm"},{"no":34,"date":"202512","product":"耳鏡主機","qty":2,"sn":"BLA0001 BLA0002","doer":"","checker":"芷羚","use":"","note":""},{"no":35,"date":"202512","product":"耳鏡鏡頭","qty":2,"sn":"BLB0001 BLB0002","doer":"","checker":"芷羚","use":"","note":""},{"no":36,"date":"202512","product":"插管鏡管子","qty":5,"sn":"BLC0001-BLC0005","doer":"","checker":"芷羚","use":"","note":""},{"no":37,"date":"202512","product":"耳鏡主機","qty":7,"sn":"BLE0001-BLE0007","doer":"","checker":"芷羚","use":"出貨獸醫","note":""},{"no":38,"date":"202512","product":"耳鏡鏡頭","qty":7,"sn":"BLF0001-BLF0007","doer":"","checker":"芷羚","use":"出貨獸醫","note":""},{"no":39,"date":"202511","product":"插管鏡管子","qty":14,"sn":"BKD","doer":"","checker":"Kalvin","use":"生物相容性樣品12+1條/ 拍照用1條(前封裝後面上con.)","note":"要卡在11月啟鑫試產前 / 新的印刷油墨"},{"no":40,"date":"202601","product":"耳鏡主機","qty":3,"sn":"CAA0001-CAA0003","doer":"","checker":"芷羚","use":"出貨人醫x3","note":""},{"no":41,"date":"202601","product":"耳鏡鏡頭","qty":3,"sn":"CAB0001-CAB0003","doer":"","checker":"芷羚","use":"出貨人醫x3","note":""},{"no":42,"date":"202601","product":"耳鏡鏡頭軟管(20CM)","qty":3,"sn":"CAC0001-CAC0003","doer":"","checker":"金剛","use":"出貨人醫x3","note":""},{"no":43,"date":"202602","product":"耳鏡鏡頭","qty":2,"sn":"CBA0001-CBA0002","doer":"","checker":"芷羚","use":"展示樣品","note":""},{"no":44,"date":"202602","product":"耳鏡主機","qty":2,"sn":"CBB0001-CBB0002","doer":"","checker":"芷羚","use":"展示樣品","note":""},{"no":45,"date":"202602","product":"輸尿管鏡","qty":20,"sn":"CBC0001-CBC0020","doer":"","checker":"芷羚","use":"大量滅菌老化*20","note":"完整功能_BGD改標_CBC0015-0020新製作"},{"no":46,"date":"202602","product":"輸尿管鏡","qty":16,"sn":"CBC0001-CBC0016","doer":"","checker":"CY","use":"大量滅菌 老化/運輸/生物相容性","note":"完整功能_BGD改標_CBC0015-0020新製作 ==> 再改標"},{"no":47,"date":"202602","product":"輸尿管鏡","qty":5,"sn":"CBD0021-CBD0025","doer":"","checker":"CY","use":"大量滅菌 老化/運輸/備用","note":"完整功能_BGD改標_CBC0015-0020新製作 ==> 再改標"},{"no":48,"date":"202602","product":"輸尿管鏡","qty":4,"sn":"CBE0011-CBE0014","doer":"","checker":"CY","use":"大量滅菌 老化/運輸","note":"完整功能_BGD改標_CBC0015-0020新製作 ==> 再改標"},{"no":49,"date":"202602","product":"輸尿管鏡","qty":20,"sn":"CBC0021-CBC0040","doer":"","checker":"金剛","use":"大量滅菌確效*20/50","note":"無功能樣品202510 製作"},{"no":50,"date":"202602","product":"輸尿管鏡","qty":20,"sn":"CBD0001-CBD0020","doer":"","checker":"金剛","use":"大量滅菌確效*20/50","note":"無功能樣品202510 製作"},{"no":51,"date":"202602","product":"輸尿管鏡","qty":10,"sn":"CBE0001-CBE0010","doer":"","checker":"金剛","use":"大量滅菌確效*10/50","note":"無功能樣品202510 製作"},{"no":52,"date":"202602","product":"輸尿管鏡","qty":136,"sn":"CBC0041-CBC0176","doer":"","checker":"金剛","use":"大量滅菌確效*136","note":"IPCD"},{"no":53,"date":"202602","product":"輸尿管鏡","qty":90,"sn":"CBC0207-CBC0296","doer":"","checker":"金剛","use":"軟輸鏡包裝老化確效","note":"90pcs無帳短袋 / 空袋封口"},{"no":54,"date":"202602","product":"輸尿管鏡","qty":60,"sn":"CBC0207-CBC0266","doer":"","checker":"CY","use":"軟輸鏡包裝確效 老化/運輸","note":"無帳短袋 / 空袋封口"},{"no":55,"date":"202602","product":"輸尿管鏡","qty":60,"sn":"CBD0028-CBD0087","doer":"","checker":"CY","use":"軟輸鏡包裝確效 老化/運輸","note":"無帳短袋 / 空袋封口"},{"no":56,"date":"202602","product":"輸尿管鏡","qty":60,"sn":"CBE0018-CBE0077","doer":"","checker":"CY","use":"軟輸鏡包裝確效 老化/運輸","note":"無帳短袋 / 空袋封口"},{"no":57,"date":"202602","product":"喉鏡","qty":1,"sn":"CBF0001","doer":"","checker":"金剛","use":"喉鏡樣品","note":"30cm插管鏡"},{"no":58,"date":"202603","product":"耳鏡主機","qty":1,"sn":"CCZ0001","doer":"","checker":"金剛","use":"早期主板更換/編序號","note":"3DP外殼"},{"no":59,"date":"202603","product":"耳鏡主機","qty":1,"sn":"CCA0001","doer":"","checker":"金剛","use":"台中 補動物醫院","note":"2026/03/13"},{"no":60,"date":"202603","product":"耳鏡鏡頭","qty":1,"sn":"CCA0002","doer":"","checker":"金剛","use":"台中 補動物醫院","note":"2026/03/13"},{"no":61,"date":"202603","product":"耳鏡主機","qty":2,"sn":"CCB0001 -CCB0002","doer":"","checker":"芷羚","use":"樣品","note":"承儀  (主機板本v07) 原送老化後因改需三台一致性改送回 做樣品"},{"no":62,"date":"202603","product":"耳鏡鏡頭","qty":2,"sn":"CCA0003-CCA0004","doer":"","checker":"芷羚","use":"樣品","note":"承儀  (主機板本v07) 原送老化後因改需三台一致性改送回 做樣品"},{"no":63,"date":"202603","product":"耳鏡主機","qty":2,"sn":"CCC0001-CCC0002","doer":"","checker":"芷羚","use":"欣創生醫科技","note":"主機板本v05  5分鐘關機"},{"no":64,"date":"202603","product":"耳鏡鏡頭","qty":2,"sn":"CCD0001-CCD0002","doer":"","checker":"芷羚","use":"欣創生醫科技","note":"主機板本v05  5分鐘關機"},{"no":65,"date":"202603","product":"耳鏡主機","qty":2,"sn":"CCC0003-CCC0004","doer":"","checker":"芷羚","use":"李柏鋒耳鼻喉科診所","note":"主機板本v05  5分鐘關機"},{"no":66,"date":"202603","product":"耳鏡鏡頭","qty":2,"sn":"CCD0003-CCD0004","doer":"","checker":"芷羚","use":"李柏鋒耳鼻喉科診所","note":"主機板本v05  5分鐘關機"},{"no":67,"date":"202603","product":"插管鏡主機","qty":7,"sn":"CCE0001-CCE0007","doer":"","checker":"芷羚","use":"","note":"SGS 清潔確效 (裕隆主機)"},{"no":68,"date":"2026","product":"輸尿管鏡","qty":5,"sn":"CBE0015 CBE0016 CBE0017 CBD0026 CBD0027","doer":"","checker":"芷羚","use":"例行滅菌 艾斯特","note":"承儀x5 CBE0017高低溫測試,wc不通,有維修重新插管插線"},{"no":69,"date":"202604","product":"輸尿管鏡轉接盒","qty":5,"sn":"CDB0001-CDB0005","doer":"","checker":"芷羚","use":"樣品","note":"樣品需求單"},{"no":70,"date":"202604","product":"耳鏡主機","qty":2,"sn":"CDC0001-CDC0002","doer":"","checker":"芷羚","use":"樣品","note":""},{"no":71,"date":"202604","product":"耳鏡主機","qty":4,"sn":"CDC0003-CDC0006","doer":"","checker":"芷羚","use":"樣品","note":""},{"no":72,"date":"202604","product":"耳鏡鏡頭","qty":6,"sn":"CDD0001-CDD0006","doer":"","checker":"芷羚","use":"樣品","note":"01、02樣品需求單"},{"no":73,"date":"202604","product":"耳鏡1.65光纖硬管","qty":3,"sn":"CDE0001-CDE0003","doer":"","checker":"金剛","use":"樣品","note":"01業務樣品02、03樣品需求單"},{"no":74,"date":"202604","product":"耳鏡2.2長管","qty":2,"sn":"CDF0001-CDF0002","doer":"","checker":"金剛","use":"樣品","note":"樣品需求單"},{"no":75,"date":"202604","product":"耳鏡主機","qty":1,"sn":"CDC0007","doer":"","checker":"芷羚","use":"樣品","note":"動物"},{"no":76,"date":"202604","product":"耳鏡鏡頭","qty":1,"sn":"CDD0007","doer":"","checker":"芷羚","use":"樣品","note":"動物"},{"no":77,"date":"202604","product":"輸尿管鏡","qty":2,"sn":"CDE0001-CDE0002","doer":"","checker":"芷羚","use":"樣品","note":"大量組裝教學"},{"no":78,"date":"202604","product":"耳鏡主機","qty":2,"sn":"CDF0001-CDF0002","doer":"","checker":"芷羚","use":"樣品","note":"動物"},{"no":79,"date":"202604","product":"耳鏡鏡頭","qty":2,"sn":"CDG0001-CDG0002","doer":"","checker":"芷羚","use":"樣品","note":"動物"},{"no":80,"date":"202604","product":"輸尿管鏡","qty":5,"sn":"CDH0001-CDH0005","doer":"","checker":"芷羚","use":"樣品","note":"2組備庫存"},{"no":81,"date":"202604","product":"耳鏡主機","qty":9,"sn":"CDI0001-CDI0009","doer":"","checker":"大量","use":"第一批試產","note":"大量"},{"no":82,"date":"202604","product":"耳鏡鏡頭","qty":9,"sn":"CDJ0001-CDJ0009","doer":"","checker":"大量","use":"第一批試產","note":"大量"},{"no":83,"date":"202605","product":"耳鏡主機","qty":20,"sn":"CEA0001-CEA0020","doer":"","checker":"芷羚","use":"訂單 樣品","note":"18 樣品需求單 2台庫存"},{"no":84,"date":"202605","product":"耳鏡鏡頭","qty":20,"sn":"CEB0001-CEB0020","doer":"","checker":"芷羚","use":"訂單 樣品","note":"18 樣品需求單 2台庫存"},{"no":85,"date":"202605","product":"耳鏡主機","qty":3,"sn":"CEC0001-CEC0003","doer":"","checker":"芷羚","use":"訂單","note":"樣品需求單"},{"no":86,"date":"202605","product":"耳鏡鏡頭","qty":3,"sn":"CED0001-CED0003","doer":"","checker":"芷羚","use":"訂單","note":"樣品需求單"},{"no":87,"date":"202605","product":"喉鏡樣品","qty":2,"sn":"CEF0001-CEF0002","doer":"","checker":"金剛","use":"研發樣品","note":"樣品需求單855lx/6870k ; 855lx/8450k"},{"no":88,"date":"202605","product":"耳鏡2.2長管樣品","qty":1,"sn":"CEG0001","doer":"","checker":"金剛","use":"研發樣品","note":"1980lx;8795k"},{"no":89,"date":"202605","product":"耳鏡1.6硬管樣品","qty":2,"sn":"CEH0001-CEH0002","doer":"","checker":"金剛","use":"研發樣品","note":"1150lx/7050k ; 1220lx/6110k"},{"no":90,"date":"202605","product":"輸尿管鏡轉接盒","qty":2,"sn":"CEI0001-CEI0002","doer":"","checker":"睿豪","use":"研發樣品","note":""},{"no":91,"date":"202605","product":"輸尿管鏡","qty":1,"sn":"CDH0004 外貼標 CBD0028","doer":"","checker":"芷羚","use":"低氣壓測試用","note":"承儀5/20"},{"no":92,"date":"202605","product":"耳鏡主機","qty":2,"sn":"CEJ0001-CEJ0002","doer":"","checker":"睿豪","use":"研發樣品","note":"修改SOP而製,修正扭力銀色大顆螺絲3.5N黑色小顆1.2N,包訊號線13.5CM"},{"no":93,"date":"202605","product":"耳鏡主機","qty":2,"sn":"CEK0001-CEK0002","doer":"","checker":"睿豪","use":"研發樣品","note":"修改SOP而製,補拍6PIN纏膠照片前後順序一致性"},{"no":"","date":"202605","product":"插管鏡管子","qty":15,"sn":"CEL","doer":"","checker":"芷羚","use":"小試產","note":"15組大量"},{"no":94,"date":"202606","product":"耳鏡鏡頭","qty":5,"sn":"CFG0001-CFG0005","doer":"","checker":"睿豪","use":"研發樣品","note":"耳鏡鏡頭五組補缺鏡頭的主機"},{"no":95,"date":"202606","product":"輸尿管鏡轉接盒","qty":3,"sn":"CFA0001-CFA0003","doer":"","checker":"睿豪","use":"研發樣品","note":""},{"no":96,"date":"202606","product":"輸尿管鏡","qty":5,"sn":"CFB0001-CFB0005","doer":"","checker":"睿豪","use":"研發樣品","note":""},{"no":97,"date":"202606","product":"耳鏡2.2長管樣品","qty":4,"sn":"CFC0001-CFC0004","doer":"","checker":"睿豪","use":"研發樣品","note":""},{"no":98,"date":"202606","product":"耳鏡1.65長管樣品","qty":4,"sn":"CFD0001-CFD0004","doer":"","checker":"睿豪","use":"研發樣品","note":""},{"no":99,"date":"202606","product":"耳鏡4mm長管樣品","qty":3,"sn":"CFE0001-CFE0003","doer":"","checker":"睿豪","use":"研發樣品","note":""},{"no":100,"date":"202606","product":"耳鏡4mm長管樣品","qty":1,"sn":"CFE0004","doer":"","checker":"睿豪","use":"研發樣品","note":""},{"no":"","date":"202606","product":"輸尿管鏡轉接盒","qty":15,"sn":"CFF","doer":"","checker":"芷羚","use":"小試產","note":"15組大量"},{"no":101,"date":"202607","product":"輸尿管鏡","qty":1,"sn":"CGZ0001","doer":"","checker":"金剛","use":"研發樣品","note":""},{"no":102,"date":"202607","product":"耳鏡鏡頭","qty":1,"sn":"CGA0001","doer":"","checker":"金剛","use":"研發樣品","note":"耳鏡4m45cm長管9734sensor; pmi樣品拆解改裝"},{"no":103,"date":"202607","product":"耳鏡主機","qty":1,"sn":"CHA0001","doer":"","checker":"芷羚","use":"","note":"2孔改三孔(人醫版本)"},{"no":104,"date":"202607","product":"耳鏡2.2長管樣品","qty":1,"sn":"CGB0001","doer":"","checker":"金剛","use":"研發樣品","note":"2.2x40cm加長版樣品 1017lx ; 6220k"},{"no":105,"date":"202608","product":"耳鏡鏡頭","qty":1,"sn":"CHB0001","doer":"","checker":"芷羚","use":"研發樣品","note":"色溫5000K"},{"no":106,"date":"202608","product":"閉鎖器","qty":"","sn":"CHI","doer":"","checker":"CYK","use":"","note":"閉鎖器滅菌_待補資訊"},{"no":107,"date":"202608","product":"閉鎖器","qty":"","sn":"CHJ","doer":"","checker":"CYK","use":"","note":"閉鎖器滅菌_待補資訊"},{"no":108,"date":"202608","product":"閉鎖器","qty":"","sn":"CHK","doer":"","checker":"CYK","use":"","note":"閉鎖器滅菌_待補資訊"},{"no":109,"date":"202608","product":"ORL 4.0x12cm光纖硬管影像模組","qty":3,"sn":"CHD0001-CHD0003","doer":"","checker":"睿豪","use":"訂單","note":"O202607002"},{"no":110,"date":"202608","product":"ORL鏡頭延長線","qty":1,"sn":"CHE0001","doer":"","checker":"金剛","use":"訂單","note":"O202607002"},{"no":111,"date":"202608","product":"插管鏡影像管","qty":5,"sn":"CHF0001-CHF0005","doer":"","checker":"金剛","use":"研發樣品","note":""},{"no":112,"date":"202608","product":"喉鏡影像管","qty":6,"sn":"CHG0001-CHG0006","doer":"","checker":"金剛","use":"研發樣品","note":""},{"no":113,"date":"202608","product":"閉鎖器轉接盒","qty":2,"sn":"CHH0001-CHH0002","doer":"","checker":"Kalvin","use":"研發樣品","note":"電性安規版本"},{"no":114,"date":"202608","product":"ORL鏡頭延長線","qty":1,"sn":"CHL0001","doer":"","checker":"金剛","use":"研發樣品","note":"替換O202607002損壞的延長線"},{"no":115,"date":"202608","product":"輸尿管鏡轉接盒","qty":2,"sn":"CHM0001~CHM0002","doer":"","checker":"Kalvin","use":"研發樣品","note":"電性安規版本"},{"no":116,"date":"202608","product":"輸尿管鏡","qty":3,"sn":"CHN","doer":"","checker":"睿豪","use":"研發樣品","note":""}];
+
+const $ = s => document.querySelector(s);
+function esc(s){ return String(s===null||s===undefined?'':s)
+  .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+function nowts(){
+  const d=new Date(), p=n=>(n<10?'0':'')+n;
+  return d.getFullYear()+'/'+p(d.getMonth()+1)+'/'+p(d.getDate())+' '+
+         p(d.getHours())+':'+p(d.getMinutes())+':'+p(d.getSeconds());
+}
+let TOASTT;
+function toast(m){ const t=$('#toast'); t.textContent=m; t.classList.add('on');
+  clearTimeout(TOASTT); TOASTT=setTimeout(()=>t.classList.remove('on'),2600); }
+function dialog(title,bodyHTML,footHTML){
+  $('#dlgTitle').textContent=title; $('#dlgBody').innerHTML=bodyHTML;
+  $('#dlgFoot').innerHTML=footHTML||'<button class="btn" value="x">關閉</button>';
+  const d=$('#dlg'); if(!d.open) d.showModal();
+}
+function closeDlg(){ const d=$('#dlg'); if(d.open) d.close(); }
+
+/* ---------- IndexedDB 極簡 KV ---------- */
+const DB=(()=>{ let p;
+  const open=()=>p||(p=new Promise((res,rej)=>{
+    const r=indexedDB.open('serialdb',1);
+    r.onupgradeneeded=()=>r.result.createObjectStore('kv');
+    r.onsuccess=()=>res(r.result); r.onerror=()=>rej(r.error);
+  }));
+  const tx=async(mode,fn)=>{ const db=await open();
+    return new Promise((res,rej)=>{ const t=db.transaction('kv',mode);
+      const rq=fn(t.objectStore('kv')); rq.onsuccess=()=>res(rq.result); rq.onerror=()=>rej(rq.error); }); };
+  return { get:k=>tx('readonly',s=>s.get(k)), set:(k,v)=>tx('readwrite',s=>s.put(v,k)) };
+})();
+</script>
+
+<script>
+/* ============================================================
+   登入 / 權限 / 雲端同步（與 BOM 系統共用同一組憑證）
+   ============================================================ */
+const TKKEY='bom_token_v1', PWKEY='bom_pw_v2', WHOKEY='bom_who_v1';
+const LS={get:k=>{try{return localStorage.getItem(k)||'';}catch(e){return '';}},
+          set:(k,v)=>{try{localStorage.setItem(k,v);}catch(e){}},
+          del:k=>{try{localStorage.removeItem(k);}catch(e){}}};
+let TOKEN=LS.get(TKKEY), PW=LS.get(PWKEY), WHO=LS.get(WHOKEY);
+let ME=null, REV=0, NET='idle', LASTSYNC='', SAVING=false;
+const ROLE_NAME={admin:'管理員', editor:'編輯', viewer:'唯讀'};
+function myRole(){ return (ME&&ME.role)||'viewer'; }
+function canWrite(){ return !CLOUD || myRole()==='admin' || myRole()==='editor'; }
+function denyWrite(){ toast(ME&&ME.legacy
+  ? '共用密碼為唯讀模式，請註冊個人帳號後由管理員給予編輯權限'
+  : '你的權限為「唯讀」，無法修改資料。請聯絡管理員調整權限'); }
+
+function setNet(s){ NET=s; paintNet(); }
+function paintNet(){
+  const el=$('#netBox'); if(!el) return;
+  const map={idle:['','gray'],load:['讀取雲端中…','info'],ok:['已同步','ok'],
+    save:['儲存中…','info'],err:['雲端連線失敗','bad'],conflict:['版本衝突','warn'],local:['本機模式','gray']};
+  const m=map[NET]||['',''];
+  el.innerHTML = CLOUD
+    ? '<span class="tag '+m[1]+'">'+m[0]+(NET==='ok'&&LASTSYNC?' '+LASTSYNC.slice(-8):'')+'</span>'+
+      '<button class="btn sm" onclick="pullNow()" title="重新讀取雲端資料">↻</button>'
+    : '<span class="tag gray">本機模式</span>';
+}
+function paintMe(){
+  const el=$('#meBox'); if(!el) return;
+  if(!CLOUD){ el.innerHTML=''; return; }
+  if(!ME){ el.innerHTML='<span class="tag bad">未登入</span>'+
+      '<button class="btn sm" onclick="openGate(\'login\')">登入</button>'; return; }
+  const t = ME.legacy ? '<span class="tag warn">共用密碼·唯讀</span>'
+    : '<span class="tag '+(myRole()==='viewer'?'gray':'ok')+'">'+esc(ME.roleName||ROLE_NAME[myRole()])+'</span>';
+  el.innerHTML='<b>'+esc(ME.name||'')+'</b>'+t+'<button class="btn sm" onclick="logout()">登出</button>';
+}
+function logout(){
+  TOKEN=''; PW=''; ME=null; LS.del(TKKEY); LS.del(PWKEY);
+  R=[]; REV=0; renderAll(); openGate('login','已登出');
+}
+
+async function apiPost(action,payload,extra){
+  const body=Object.assign({action:action,payload:payload,token:TOKEN,pw:PW,who:WHO},extra||{});
+  let lastErr;
+  const tries=(action==='saveSerial')?1:2;
+  for(let i=0;i<tries;i++){
+    try{
+      const res=await fetch(API_URL,{method:'POST',
+        headers:{'Content-Type':'text/plain;charset=utf-8'},body:JSON.stringify(body)});
+      if(!res.ok) throw new Error('HTTP '+res.status);
+      return await res.json();
+    }catch(e){ lastErr=e; if(i+1<tries) await new Promise(r=>setTimeout(r,1200)); }
+  }
+  throw lastErr;
+}
+
+async function whoAmI(){
+  try{
+    const d=await apiPost('me',null);
+    if(d.error){ if(d.needLogin) openGate('login', d.error); return false; }
+    ME={id:d.id,name:d.name,email:d.email,role:d.role,legacy:!!d.legacy,
+        roleName:d.roleName||ROLE_NAME[d.role]||'唯讀'};
+    WHO=ME.name||WHO; closeGate(); paintMe(); return true;
+  }catch(e){ return false; }
+}
+
+async function pull(silent){
+  if(!CLOUD) return false;
+  setNet('load');
+  try{
+    const d=await apiPost('loadSerial',null);
+    if(d.error){
+      setNet('err');
+      if(d.needLogin){ openGate('login', d.error); return false; }
+      if(!silent) toast(d.error);
+      return false;
+    }
+    R = (d.records||[]).map(normRec);
+    REV = d.rev||0; LASTSYNC = d.updatedAt||'';
+    META = {updatedAt:d.updatedAt||'', updatedBy:d.updatedBy||''};
+    await DB.set('cache',JSON.parse(JSON.stringify({R:R,REV:REV,META:META})));
+    setNet('ok');
+    return true;
+  }catch(e){
+    setNet('err');
+    if(!silent) toast('連不上雲端（'+(e.message||'網路逾時')+'），顯示的是本機快取。可按 ↻ 重試');
+    return false;
+  }
+}
+async function pullNow(){ if(await pull()){ await whoAmI(); renderAll(); toast('已重新讀取雲端資料'); } }
+
+async function push(force){
+  if(!CLOUD){ await DB.set('cache',JSON.parse(JSON.stringify({R:R,REV:REV,META:META}))); return true; }
+  if(!canWrite()){ denyWrite(); return false; }
+  if(SAVING){ return false; }
+  SAVING=true; setNet('save');
+  try{
+    const d=await apiPost('saveSerial',R,{baseRev:force?null:REV,force:!!force});
+    SAVING=false;
+    if(d.conflict){
+      setNet('conflict');
+      dialog('雲端資料已被別人更新',
+        '<p>你載入資料後，<b>'+esc(d.updatedBy||'其他使用者')+'</b> 在 <b>'+esc(d.updatedAt||'')+
+        '</b> 也存過一次（雲端版本 '+d.serverRev+'，你的是 '+REV+'）。</p>'+
+        '<div class="hint">建議先「放棄我的修改並重新載入」確認雲端內容，再重做一次修改。</div>',
+        '<button class="btn danger" type="button" onclick="closeDlg();push(true)">強制覆蓋雲端</button>'+
+        '<button class="btn pri" type="button" onclick="closeDlg();pullNow()">放棄我的修改並重新載入</button>'+
+        '<button class="btn" value="x">稍後再說</button>');
+      return false;
+    }
+    if(d.error){ setNet('err'); toast(d.error); return false; }
+    REV=d.rev||REV; LASTSYNC=d.updatedAt||nowts();
+    META={updatedAt:LASTSYNC, updatedBy:(ME&&ME.name)||WHO||''};
+    await DB.set('cache',JSON.parse(JSON.stringify({R:R,REV:REV,META:META})));
+    setNet('ok');
+    return true;
+  }catch(e){ SAVING=false; setNet('err'); toast('儲存失敗：'+(e.message||'網路逾時')); return false; }
+}
+
+/* ---------- 登入畫面 ---------- */
+let GATE_TAB='login', GATE_MSG='', GATE_MSG_OK=false, GATE_BUSY=false;
+function openGate(tab,msg,ok){ GATE_TAB=tab||'login'; GATE_MSG=msg||''; GATE_MSG_OK=!!ok;
+  $('#gate').classList.add('on'); paintGate(); }
+function closeGate(){ $('#gate').classList.remove('on'); GATE_MSG=''; GATE_BUSY=false; }
+function gateTab(t){ GATE_TAB=t; GATE_MSG=''; paintGate(); }
+function paintGate(){
+  const msg = GATE_MSG ? '<div class="gate-msg '+(GATE_MSG_OK?'ok':'bad')+'">'+esc(GATE_MSG)+'</div>' : '';
+  const tabs = '<div class="gate-tabs">'+
+    '<button type="button" class="'+(GATE_TAB==='login'?'on':'')+'" onclick="gateTab(\'login\')">登入</button>'+
+    '<button type="button" class="'+(GATE_TAB==='legacy'?'on':'')+'" onclick="gateTab(\'legacy\')">共用密碼</button>'+
+    '</div>';
+  let body;
+  if(GATE_TAB==='login'){
+    body = tabs+msg+
+      '<div class="fld"><label>Email</label><input id="g_email" type="email" value="'+
+        esc(LS.get('bom_last_email'))+'" placeholder="you@company.com"></div>'+
+      '<div class="fld"><label>密碼</label><input id="g_pw" type="password" placeholder="請輸入密碼"></div>'+
+      '<button class="btn pri" type="button" style="width:100%;margin-top:6px" onclick="doLogin()"'+
+        (GATE_BUSY?' disabled':'')+'>'+(GATE_BUSY?'登入中…':'登入')+'</button>'+
+      '<div class="gate-foot">與 BOM 管理系統共用同一組帳號。還沒有帳號請到'+
+        '<a href="bom.html">料號系統</a>的「申請帳號」建立。</div>';
+  }else{
+    body = tabs+msg+
+      '<div class="gate-msg" style="background:var(--line2);color:var(--mut);border:1px solid var(--line)">'+
+        '過渡期用的舊共用密碼，登入後<b>只能查看、不能修改</b>資料。</div>'+
+      '<div class="fld"><label>你的名字</label><input id="l_who" value="'+esc(WHO)+'" placeholder="例：謝嘉元"></div>'+
+      '<div class="fld"><label>共用密碼</label><input id="l_pw" type="password" placeholder="請向管理者索取"></div>'+
+      '<button class="btn" type="button" style="width:100%;margin-top:6px" onclick="doLegacy()">以唯讀身分進入</button>';
+  }
+  $('#gateBox').innerHTML =
+    '<h2>產品批序號管理</h2><div class="sub">安德斯醫學科技　批號 · 序號 · 發放紀錄</div>'+body+
+    '<div class="gate-foot" style="margin-top:12px"><a href="index.html">← 回系統入口</a></div>';
+  const box=$('#gateBox');
+  setTimeout(()=>{ const t=box.querySelector('#g_pw,#l_pw'); if(t) t.focus(); },60);
+  box.querySelectorAll('input').forEach(i=>i.onkeydown=e=>{
+    if(e.key==='Enter'){ e.preventDefault(); GATE_TAB==='login'?doLogin():doLegacy(); }});
+}
+async function doLogin(){
+  if(GATE_BUSY) return;
+  const email=$('#g_email').value.trim(), pw=$('#g_pw').value;
+  if(!email||!pw){ GATE_MSG='請輸入 Email 與密碼'; GATE_MSG_OK=false; return paintGate(); }
+  GATE_BUSY=true; paintGate();
+  try{
+    const d=await apiPost('login',null,{email:email,password:pw,token:'',pw:''});
+    GATE_BUSY=false;
+    if(d.error){ GATE_MSG=d.error; GATE_MSG_OK=false; return paintGate(); }
+    TOKEN=d.token; ME=d.profile; ME.roleName=ME.roleName||ROLE_NAME[ME.role]||'唯讀';
+    WHO=ME.name; PW='';
+    LS.set(TKKEY,TOKEN); LS.set(WHOKEY,WHO); LS.set('bom_last_email',email); LS.del(PWKEY);
+    closeGate(); await pull(); renderAll();
+    toast('已登入：'+ME.name+'（'+ME.roleName+'）');
+  }catch(e){ GATE_BUSY=false; GATE_MSG='連不上伺服器：'+(e.message||'網路逾時'); GATE_MSG_OK=false; paintGate(); }
+}
+async function doLegacy(){
+  WHO=$('#l_who').value.trim(); PW=$('#l_pw').value;
+  if(!PW){ GATE_MSG='請輸入共用密碼'; GATE_MSG_OK=false; return paintGate(); }
+  TOKEN=''; LS.del(TKKEY); LS.set(PWKEY,PW); LS.set(WHOKEY,WHO);
+  closeGate();
+  if(await whoAmI()){ await pull(); renderAll(); }
+  else { openGate('legacy','共用密碼不正確'); }
+}
+</script>
+
+<script>
+/* ============================================================
+   批號規則
+   批號 3 碼 ＝ 年碼 + 月碼 + 當月批次碼；序號 4 碼接在批號後面
+   年碼：A=2024、B=2025、C=2026 …　月碼：A=1月 … L=12月　批次碼：A、B、C …
+   ============================================================ */
+const YEAR0 = 2024;
+function letterYear(ch){ const i=ch.charCodeAt(0)-65; return (i>=0&&i<=25)?YEAR0+i:null; }
+function yearLetter(y){ const i=y-YEAR0; return (i>=0&&i<=25)?String.fromCharCode(65+i):null; }
+function letterMonth(ch){ const i=ch.charCodeAt(0)-64; return (i>=1&&i<=12)?i:null; }
+function monthLetter(m){ return (m>=1&&m<=12)?String.fromCharCode(64+m):null; }
+
+/* 從「批號/序號」欄位解析出年 / 月 / 批次；PRBEA0001 這種前綴會被保留在 prefix */
+function decodeSn(sn){
+  const m=String(sn||'').toUpperCase().match(/([A-Z]{2,})\s*(\d{3,4})?/);
+  if(!m) return null;
+  const L=m[1]; if(L.length<3) return null;
+  const core=L.slice(-3);
+  return {prefix:L.slice(0,-3), core:core, serial:m[2]||'',
+          year:letterYear(core[0]), month:letterMonth(core[1]), batch:core[2]};
+}
+/* 日期欄可能是 20240513 / 202406 / 2026 / 2026/03/13 */
+function parseYM(d){
+  const s=String(d||'').replace(/[^0-9]/g,'');
+  if(s.length>=6) return {y:+s.slice(0,4), m:+s.slice(4,6)};
+  if(s.length===4) return {y:+s, m:null};
+  return null;
+}
+/* 批號與日期是否一致；回傳 'ok' / 'diff' / '' */
+function snMatch(rec){
+  const a=decodeSn(rec.sn), b=parseYM(rec.date);
+  if(!a||!b||a.year===null) return '';
+  if(b.m===null) return a.year===b.y?'ok':'diff';
+  if(a.month===null) return '';
+  return (a.year===b.y && a.month===b.m)?'ok':'diff';
+}
+/* 指定年月，算出下一個還沒被用掉的批次碼 */
+function nextBatch(y,m){
+  const yl=yearLetter(y), ml=monthLetter(m);
+  if(!yl||!ml) return '';
+  const used={};
+  R.forEach(r=>{ const d=decodeSn(r.sn);
+    if(d && d.core[0]===yl && d.core[1]===ml) used[d.core[2]]=1; });
+  for(let i=0;i<25;i++){ const c=String.fromCharCode(65+i); if(!used[c]) return yl+ml+c; }
+  return yl+ml+'Z';
+}
+</script>
+
+<script>
+/* ============================================================
+   資料 / 畫面
+   ============================================================ */
+let R=[], META={updatedAt:'',updatedBy:''};
+let Q='', FP='', FY='', FC='', FBAD=false;
+let SORT={k:'no', dir:-1};
+
+function normRec(r){
+  r=r||{};
+  return {no:(r.no===''||r.no===null||r.no===undefined)?'':r.no,
+          date:String(r.date||''), product:String(r.product||''),
+          qty:(r.qty===''||r.qty===null||r.qty===undefined)?'':r.qty,
+          sn:String(r.sn||''), doer:String(r.doer||''), checker:String(r.checker||''),
+          use:String(r.use||''), note:String(r.note||'')};
+}
+function nextNo(){
+  let mx=0; R.forEach(r=>{ const n=parseInt(r.no,10); if(!isNaN(n)&&n>mx) mx=n; });
+  return mx+1;
+}
+function view(v){
+  document.querySelectorAll('nav button').forEach(b=>b.classList.toggle('on',b.dataset.v===v));
+  document.querySelectorAll('.view').forEach(d=>d.classList.toggle('on',d.id==='v-'+v));
+  window.scrollTo(0,0);
+}
+function renderAll(){ vList(); vRule(); vData(); paintMe(); paintNet(); setHdr(); }
+function setHdr(){
+  $('#hdrSub').textContent = R.length ? '　共 '+R.length+' 筆'+(META.updatedAt?'　更新於 '+META.updatedAt:'') : '';
+}
+
+function filtered(){
+  const q=Q.trim().toLowerCase();
+  let out=R.filter(r=>{
+    if(FP && r.product!==FP) return false;
+    if(FC && r.checker!==FC) return false;
+    if(FY){ const b=parseYM(r.date); if(!b || String(b.y)!==FY) return false; }
+    if(FBAD && snMatch(r)!=='diff') return false;
+    if(!q) return true;
+    return [r.no,r.date,r.product,r.qty,r.sn,r.doer,r.checker,r.use,r.note]
+      .join(' ').toLowerCase().indexOf(q)>=0;
+  });
+  const k=SORT.k, dir=SORT.dir;
+  out.sort((a,b)=>{
+    let x=a[k], y=b[k];
+    if(k==='no'||k==='qty'){ x=parseFloat(x); y=parseFloat(y);
+      if(isNaN(x)) x=-Infinity; if(isNaN(y)) y=-Infinity; }
+    else { x=String(x); y=String(y); return dir*x.localeCompare(y,'zh-Hant'); }
+    return dir*(x-y);
+  });
+  return out;
+}
+function setSort(k){ if(SORT.k===k) SORT.dir=-SORT.dir; else { SORT.k=k; SORT.dir=1; } vList(); }
+const COLS=[['no','項次'],['date','日期'],['product','產品名稱'],['qty','數量'],
+            ['sn','批號/序號'],['checker','確認者'],['use','用途'],['note','備註']];
+
+function vList(){
+  const list=filtered();
+  const products=[...new Set(R.map(r=>r.product).filter(Boolean))].sort((a,b)=>a.localeCompare(b,'zh-Hant'));
+  const checkers=[...new Set(R.map(r=>r.checker).filter(Boolean))].sort();
+  const years=[...new Set(R.map(r=>{const b=parseYM(r.date);return b?String(b.y):'';}).filter(Boolean))].sort().reverse();
+  const thisY=new Date().getFullYear();
+  const nThisY=R.filter(r=>{const b=parseYM(r.date);return b&&b.y===thisY;}).length;
+  const nBad=R.filter(r=>snMatch(r)==='diff').length;
+  const ro = CLOUD && !canWrite();
+
+  $('#v-list').innerHTML =
+  (ro?'<div class="ro-banner">目前是<b>唯讀</b>身分，可以查詢與匯出，但無法新增或修改紀錄。</div>':'')+
+  (CLOUD && !R.length && canWrite()
+    ? '<div class="seed-banner">雲端的「產品批序號」工作表目前是空的。'+
+      '可以先把內建的 <b>'+SEED.length+' 筆</b>歷史紀錄（2024/05 起）寫上去做為起始資料。'+
+      '<div style="margin-top:9px"><button class="btn pri" onclick="seedCloud()">將內建 '+SEED.length+' 筆寫入雲端</button></div></div>'
+    : '')+
+  '<div class="stats">'+
+    '<div class="stat"><div class="k">總紀錄數</div><div class="v">'+R.length+'</div></div>'+
+    '<div class="stat"><div class="k">產品種類</div><div class="v">'+products.length+'</div></div>'+
+    '<div class="stat ok"><div class="k">'+thisY+' 年</div><div class="v">'+nThisY+'</div></div>'+
+    '<div class="stat '+(nBad?'warn':'')+'"><div class="k">批號與日期不符</div><div class="v">'+nBad+'</div></div>'+
+    '<div class="stat"><div class="k">目前顯示</div><div class="v">'+list.length+'</div></div>'+
+  '</div>'+
+  '<div class="card"><div class="row">'+
+    '<div class="grow"><input type="search" id="q" placeholder="搜尋　產品／批號／用途／備註／人名…" value="'+esc(Q)+'"></div>'+
+    '<select id="fp" style="width:auto;min-width:150px"><option value="">全部產品</option>'+
+      products.map(p=>'<option'+(FP===p?' selected':'')+'>'+esc(p)+'</option>').join('')+'</select>'+
+    '<select id="fy" style="width:auto"><option value="">全部年份</option>'+
+      years.map(y=>'<option'+(FY===y?' selected':'')+'>'+esc(y)+'</option>').join('')+'</select>'+
+    '<select id="fc" style="width:auto"><option value="">全部確認者</option>'+
+      checkers.map(c=>'<option'+(FC===c?' selected':'')+'>'+esc(c)+'</option>').join('')+'</select>'+
+    '<span class="chip'+(FBAD?' on':'')+'" onclick="FBAD=!FBAD;vList()">只看批號不符</span>'+
+    '<button class="btn" onclick="clearFilter()">清除</button>'+
+    (ro?'':'<button class="btn pri" onclick="editRec(-1)">＋ 新增紀錄</button>')+
+    '<button class="btn" onclick="exportXlsx()">匯出 Excel</button>'+
+  '</div></div>'+
+  '<div class="tblwrap"><table><thead><tr>'+
+    COLS.map(c=>'<th onclick="setSort(\''+c[0]+'\')">'+c[1]+
+      (SORT.k===c[0]?' <span class="ar">'+(SORT.dir>0?'▲':'▼')+'</span>':'')+'</th>').join('')+
+    '<th class="nos"></th></tr></thead><tbody>'+
+    (list.length?list.map(r=>rowHTML(r)).join('')
+      :'<tr><td colspan="9"><div class="empty">沒有符合條件的紀錄。</div></td></tr>')+
+  '</tbody></table></div>';
+
+  $('#q').oninput=e=>{ Q=e.target.value; const p=e.target.selectionStart; vList();
+    const n=$('#q'); n.focus(); n.setSelectionRange(p,p); };
+  $('#fp').onchange=e=>{ FP=e.target.value; vList(); };
+  $('#fy').onchange=e=>{ FY=e.target.value; vList(); };
+  $('#fc').onchange=e=>{ FC=e.target.value; vList(); };
+}
+function clearFilter(){ Q=''; FP=''; FY=''; FC=''; FBAD=false; vList(); }
+
+function rowHTML(r){
+  const i=R.indexOf(r);
+  const st=snMatch(r);
+  const d=decodeSn(r.sn);
+  const tip=d&&d.year!==null?('年 '+d.core[0]+'='+d.year+'　月 '+d.core[1]+'='+(d.month||'?')+'　批 '+d.batch):'';
+  const ro=CLOUD&&!canWrite();
+  return '<tr>'+
+    '<td class="num mut">'+esc(r.no)+'</td>'+
+    '<td class="mono">'+esc(fmtDate(r.date))+'</td>'+
+    '<td>'+esc(r.product)+'</td>'+
+    '<td class="num">'+esc(r.qty)+'</td>'+
+    '<td class="mono" title="'+esc(tip)+'">'+esc(r.sn)+
+      (st==='diff'?' <span class="tag warn" title="批號的年月與日期欄不一致">≠日期</span>':'')+'</td>'+
+    '<td>'+esc(r.checker)+'</td>'+
+    '<td class="wrapcell">'+esc(r.use)+'</td>'+
+    '<td class="wrapcell mut">'+esc(r.note)+'</td>'+
+    '<td class="num">'+(ro?'':'<button class="btn sm" onclick="editRec('+i+')">編輯</button>')+'</td>'+
+  '</tr>';
+}
+function fmtDate(d){
+  const s=String(d||'').replace(/[^0-9]/g,'');
+  if(String(d).indexOf('/')>=0) return d;
+  if(s.length===8) return s.slice(0,4)+'/'+s.slice(4,6)+'/'+s.slice(6,8);
+  if(s.length===6) return s.slice(0,4)+'/'+s.slice(4,6);
+  return String(d||'');
+}
+
+/* ---------- 新增 / 編輯 ---------- */
+let EDIT=-1;
+function editRec(i){
+  if(!canWrite()) return denyWrite();
+  EDIT=i;
+  const r = i>=0 ? R[i] : {no:nextNo(),date:'',product:'',qty:'',sn:'',doer:'',checker:WHO||'',use:'',note:''};
+  const products=[...new Set(R.map(x=>x.product).filter(Boolean))].sort((a,b)=>a.localeCompare(b,'zh-Hant'));
+  dialog(i>=0?'編輯紀錄　#'+esc(r.no):'新增批序號紀錄',
+    '<div class="f2">'+
+      '<div class="fld"><label>項次</label><input id="f_no" value="'+esc(r.no)+'"></div>'+
+      '<div class="fld"><label>日期（20260828 或 202608）</label><input id="f_date" value="'+esc(r.date)+'"></div>'+
+      '<div class="fld"><label>產品名稱 *</label><input id="f_product" list="plist" value="'+esc(r.product)+'">'+
+        '<datalist id="plist">'+products.map(p=>'<option value="'+esc(p)+'">').join('')+'</datalist></div>'+
+      '<div class="fld"><label>數量</label><input id="f_qty" value="'+esc(r.qty)+'"></div>'+
+      '<div class="fld"><label>批號/序號 *</label><input id="f_sn" value="'+esc(r.sn)+'"></div>'+
+      '<div class="fld"><label>確認者</label><input id="f_checker" value="'+esc(r.checker)+'"></div>'+
+      '<div class="fld"><label>執行者</label><input id="f_doer" value="'+esc(r.doer)+'"></div>'+
+      '<div class="fld"><label>用途</label><input id="f_use" value="'+esc(r.use)+'"></div>'+
+    '</div>'+
+    '<div class="fld"><label>備註</label><textarea id="f_note" rows="2">'+esc(r.note)+'</textarea></div>'+
+    '<div class="row" style="margin-top:2px">'+
+      '<button class="btn sm" type="button" onclick="suggestSn()">依日期建議批號</button>'+
+      '<span class="hint" id="snInfo" style="margin:0"></span></div>',
+    (i>=0?'<button class="btn danger" type="button" onclick="delRec()">刪除</button>':'')+
+    '<button class="btn pri" type="button" onclick="saveRec()">儲存</button>'+
+    '<button class="btn" value="x">取消</button>');
+  ['f_sn','f_date'].forEach(id=>{ const el=document.getElementById(id); if(el) el.oninput=paintSnInfo; });
+  paintSnInfo();
+}
+function paintSnInfo(){
+  const el=document.getElementById('snInfo'); if(!el) return;
+  const sn=(document.getElementById('f_sn')||{}).value||'';
+  const dt=(document.getElementById('f_date')||{}).value||'';
+  const d=decodeSn(sn);
+  if(!d||d.year===null){ el.textContent = sn?'批號格式無法解析':''; return; }
+  const b=parseYM(dt);
+  let t='解析：'+d.core+' → '+d.year+' 年 '+(d.month?d.month+' 月':'月碼 '+d.core[1]+' 無效')+
+        '　第 '+d.batch+' 批'+(d.serial?'　序號 '+d.serial:'');
+  if(b && d.month && (b.y!==d.year || (b.m!==null && b.m!==d.month))) t+='　⚠ 與日期欄不一致';
+  el.textContent=t;
+}
+function suggestSn(){
+  const dt=(document.getElementById('f_date')||{}).value||'';
+  const b=parseYM(dt);
+  if(!b||b.m===null) return toast('請先填日期（例 202608 或 20260828）');
+  const c=nextBatch(b.y,b.m);
+  if(!c) return toast('這個年月超出批號可表示範圍');
+  document.getElementById('f_sn').value=c+'0001';
+  paintSnInfo();
+}
+async function saveRec(){
+  if(!canWrite()) return denyWrite();
+  const g=id=>(document.getElementById(id)||{}).value||'';
+  const rec=normRec({no:g('f_no').trim(), date:g('f_date').trim(), product:g('f_product').trim(),
+    qty:g('f_qty').trim(), sn:g('f_sn').trim(), doer:g('f_doer').trim(),
+    checker:g('f_checker').trim(), use:g('f_use').trim(), note:g('f_note').trim()});
+  if(!rec.product) return toast('請填產品名稱');
+  if(!rec.sn) return toast('請填批號/序號');
+  const n=parseInt(rec.no,10); if(!isNaN(n)) rec.no=n;
+  const q=parseFloat(rec.qty); if(!isNaN(q)&&String(q)===String(rec.qty)) rec.qty=q;
+  const backup=JSON.parse(JSON.stringify(R));
+  if(EDIT>=0) R[EDIT]=rec; else R.push(rec);
+  closeDlg();
+  if(await push()) { renderAll(); toast(EDIT>=0?'已更新':'已新增'); }
+  else { R=backup; renderAll(); }
+}
+async function delRec(){
+  if(EDIT<0) return;
+  const r=R[EDIT];
+  dialog('刪除紀錄','<p>要刪除 <b>'+esc(r.sn)+'</b>（'+esc(r.product)+'）這筆紀錄嗎？此動作會同步到雲端。</p>',
+    '<button class="btn danger" type="button" onclick="delRecGo()">確定刪除</button>'+
+    '<button class="btn" value="x">取消</button>');
+}
+async function delRecGo(){
+  const backup=JSON.parse(JSON.stringify(R));
+  R.splice(EDIT,1); closeDlg();
+  if(await push()){ renderAll(); toast('已刪除'); } else { R=backup; renderAll(); }
+}
+
+/* ---------- 批號規則頁 ---------- */
+function vRule(){
+  const now=new Date(), y=now.getFullYear(), m=now.getMonth()+1;
+  const yl=yearLetter(y)||'?', ml=monthLetter(m)||'?';
+  const years=[]; for(let i=0;i<6;i++) years.push([YEAR0+i, String.fromCharCode(65+i)]);
+  const months=[]; for(let i=1;i<=12;i++) months.push([i, monthLetter(i)]);
+  $('#v-rule').innerHTML =
+  '<div class="card"><h2>批號編碼規則<span class="sub">批號 3 碼 ＋ 序號 4 碼</span></h2>'+
+    '<div class="codebox"><span class="c-y">C</span><span class="c-m">H</span><span class="c-b">D</span>'+
+      '<span class="c-s">0003</span></div>'+
+    '<div class="rule" style="margin-top:14px">'+
+      '<div class="rulebox"><div class="h"><span class="tag" style="background:#dfeef2;color:#1d5a68">第 1 碼</span> 年碼</div>'+
+        '<div class="b">'+years.map(a=>'<i><b>'+a[1]+'</b> = '+a[0]+' 年</i>').join('')+'</div>'+
+        '<div class="hint">'+YEAR0+' 年起，每年往後一個字母。</div></div>'+
+      '<div class="rulebox"><div class="h"><span class="tag" style="background:#fdf0d8;color:#8a5a06">第 2 碼</span> 月碼</div>'+
+        '<div class="b">'+months.map(a=>'<b>'+a[1]+'</b>='+a[0]+'月').join('　')+'</div></div>'+
+      '<div class="rulebox"><div class="h"><span class="tag" style="background:#e4ecfb;color:#1a4ea8">第 3 碼</span> 當月批次</div>'+
+        '<div class="b">A＝當月第一批，B＝第二批，依序往後。</div>'+
+        '<div class="hint">Z 在既有紀錄中被拿來標示特殊／補編的批次。</div></div>'+
+      '<div class="rulebox"><div class="h"><span class="tag" style="background:#eaf3ea;color:#1a6b38">後 4 碼</span> 序號</div>'+
+        '<div class="b">同一批內的流水號，0001 起算。<br>完整序號＝批號 3 碼 ＋ 序號 4 碼。</div></div>'+
+    '</div>'+
+    '<div class="hint">部分品項另有前綴（例如 <b>PR</b>BEA0001 的 PR），解析時前綴會被忽略，只看最後 3 個字母。</div>'+
+  '</div>'+
+  '<div class="card"><h2>批號查詢 / 產生<span class="sub">輸入批號解析，或選年月取得下一個可用批次</span></h2>'+
+    '<div class="row">'+
+      '<div style="width:220px"><div class="fld" style="margin:0"><label>解析批號</label>'+
+        '<input id="rq" placeholder="例 CHD0003" value=""></div></div>'+
+      '<div style="align-self:end;padding-bottom:2px"><span class="hint" id="rqOut" style="margin:0">—</span></div>'+
+    '</div>'+
+    '<hr style="border:0;border-top:1px solid var(--line);margin:14px 0">'+
+    '<div class="row">'+
+      '<div style="width:110px"><div class="fld" style="margin:0"><label>年</label>'+
+        '<input id="ny" type="number" value="'+y+'"></div></div>'+
+      '<div style="width:110px"><div class="fld" style="margin:0"><label>月</label>'+
+        '<input id="nm" type="number" value="'+m+'"></div></div>'+
+      '<div style="align-self:end;padding-bottom:2px">'+
+        '<button class="btn" onclick="calcNext()">查下一個可用批次</button></div>'+
+      '<div style="align-self:end;padding-bottom:2px"><span class="hint" id="nOut" style="margin:0">'+
+        '本月批號前 2 碼為 <b>'+yl+ml+'</b></span></div>'+
+    '</div>'+
+  '</div>'+
+  '<div class="card"><h2>各月已用批次<span class="sub">依批號解析出的年月統計</span></h2>'+
+    monthTableHTML()+
+  '</div>';
+  const rq=$('#rq'); if(rq) rq.oninput=()=>{
+    const d=decodeSn(rq.value);
+    $('#rqOut').innerHTML = (!d||d.year===null)
+      ? (rq.value?'無法解析':'—')
+      : '<b>'+esc(d.core)+'</b> → '+d.year+' 年 '+(d.month?d.month+' 月':'月碼無效')+
+        '　第 '+esc(d.batch)+' 批'+(d.serial?'　序號 '+esc(d.serial):'')+
+        (d.prefix?'　（前綴 '+esc(d.prefix)+'）':'')+
+        '　共 '+R.filter(r=>{const x=decodeSn(r.sn);return x&&x.core===d.core;}).length+' 筆使用此批號';
+  };
+}
+function calcNext(){
+  const y=parseInt($('#ny').value,10), m=parseInt($('#nm').value,10);
+  if(isNaN(y)||isNaN(m)||m<1||m>12) return toast('請輸入正確的年與月');
+  const c=nextBatch(y,m);
+  $('#nOut').innerHTML = c ? '下一個可用批號：<b>'+esc(c)+'</b>（完整序號例 '+esc(c)+'0001）'
+                           : '這個年月超出批號可表示範圍';
+}
+function monthTableHTML(){
+  const g={};
+  R.forEach(r=>{ const d=decodeSn(r.sn); if(!d||d.year===null||!d.month) return;
+    const k=d.year+'-'+String(d.month).padStart(2,'0');
+    (g[k]=g[k]||{})[d.batch]=((g[k]||{})[d.batch]||0)+1; });
+  const keys=Object.keys(g).sort().reverse();
+  if(!keys.length) return '<div class="empty">尚無資料</div>';
+  return '<div class="tblwrap" style="max-height:340px"><table><thead><tr>'+
+    '<th class="nos">年月</th><th class="nos">批號前 2 碼</th><th class="nos">已用批次</th>'+
+    '<th class="nos num">批數</th><th class="nos num">紀錄筆數</th></tr></thead><tbody>'+
+    keys.map(k=>{ const [y,m]=k.split('-').map(Number);
+      const bs=Object.keys(g[k]).sort();
+      const n=bs.reduce((s,b)=>s+g[k][b],0);
+      return '<tr><td class="mono">'+y+'/'+String(m).padStart(2,'0')+'</td>'+
+        '<td class="mono">'+(yearLetter(y)||'?')+(monthLetter(m)||'?')+'</td>'+
+        '<td class="mono">'+bs.join(' ')+'</td>'+
+        '<td class="num">'+bs.length+'</td><td class="num">'+n+'</td></tr>';
+    }).join('')+'</tbody></table></div>';
+}
+
+/* ---------- 資料管理頁 ---------- */
+function vData(){
+  const ro=CLOUD&&!canWrite();
+  $('#v-data').innerHTML =
+  '<div class="card"><h2>匯出</h2><div class="row">'+
+    '<button class="btn" onclick="exportXlsx()">匯出 Excel（產品批序號記錄表）</button>'+
+    '<span class="hint" style="margin:0">欄位與原本的 Excel 相同，可直接沿用。</span>'+
+  '</div></div>'+
+  '<div class="card"><h2>匯入 Excel<span class="sub">需有「項次／日期／產品名稱／批號」等欄位</span></h2>'+
+    (ro?'<div class="ro-banner">唯讀身分無法匯入。</div>':
+    '<div class="row">'+
+      '<button class="btn" onclick="pickImport(\'merge\')">合併匯入（依批號更新／新增）</button>'+
+      '<button class="btn danger" onclick="pickImport(\'replace\')">整份取代</button>'+
+    '</div>'+
+    '<div class="hint">合併匯入：批號相同的更新內容，沒有的新增在後面。整份取代：雲端資料全部換成檔案內容。</div>')+
+  '</div>'+
+  '<div class="card"><h2>目前狀態</h2>'+
+    '<div class="hint" style="font-size:13px">'+
+      '紀錄筆數：<b>'+R.length+'</b><br>'+
+      '雲端版本：<b>'+REV+'</b><br>'+
+      '最後更新：<b>'+esc(META.updatedAt||'—')+'</b>'+(META.updatedBy?'　由 <b>'+esc(META.updatedBy)+'</b>':'')+'<br>'+
+      '資料表：Google 試算表的「產品批序號」工作表'+
+    '</div>'+
+  '</div>';
+}
+function xlsxRows(){
+  return R.map(r=>({'項次':r.no,'日期':r.date,'產品名稱':r.product,'數量':r.qty,
+    '批號/序號':r.sn,'執行者':r.doer,'確認者':r.checker,'用途':r.use,'備註1':r.note}));
+}
+function exportXlsx(){
+  const ws=XLSX.utils.json_to_sheet(xlsxRows(),
+    {header:['項次','日期','產品名稱','數量','批號/序號','執行者','確認者','用途','備註1']});
+  ws['!cols']=[{wch:6},{wch:11},{wch:22},{wch:7},{wch:26},{wch:9},{wch:9},{wch:24},{wch:34}];
+  const wb=XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb,ws,'產品批序號記錄表');
+  const d=new Date(), p=n=>(n<10?'0':'')+n;
+  XLSX.writeFile(wb,'產品批序號'+d.getFullYear()+p(d.getMonth()+1)+p(d.getDate())+'.xlsx');
+}
+let IMPMODE='merge';
+function pickImport(mode){
+  if(!canWrite()) return denyWrite();
+  IMPMODE=mode;
+  let el=document.getElementById('__imp');
+  if(!el){ el=document.createElement('input'); el.type='file'; el.id='__imp'; el.accept='.xlsx,.xls';
+    el.onchange=()=>{ if(el.files[0]) doImport(el.files[0]); el.value=''; };
+    document.body.appendChild(el); }
+  el.click();
+}
+async function doImport(file){
+  let wb;
+  try{ wb=XLSX.read(await file.arrayBuffer(),{type:'array'}); }
+  catch(e){ return toast('檔案讀取失敗'); }
+  const sn=wb.SheetNames.find(n=>n.indexOf('批序號')>=0)||wb.SheetNames[0];
+  const aoa=XLSX.utils.sheet_to_json(wb.Sheets[sn],{header:1,raw:true,defval:null});
+  let hr=aoa.findIndex(r=>r&&r.some(c=>String(c||'').trim()==='批號/序號'||String(c||'').trim()==='批號'));
+  if(hr<0) return toast('找不到「批號/序號」欄位');
+  const H=aoa[hr].map(c=>String(c===null||c===undefined?'':c).trim());
+  const col=names=>{ for(const n of names){ const i=H.indexOf(n); if(i>=0) return i; } return -1; };
+  const C={no:col(['項次']),date:col(['日期']),product:col(['產品名稱','產品']),qty:col(['數量']),
+    sn:col(['批號/序號','批號']),doer:col(['執行者']),checker:col(['確認者']),
+    use:col(['用途']),note:col(['備註1','備註'])};
+  const S_=v=>{ if(v===null||v===undefined) return '';
+    if(v instanceof Date){ const p=n=>(n<10?'0':'')+n;
+      return v.getFullYear()+'/'+p(v.getMonth()+1)+'/'+p(v.getDate()); }
+    if(typeof v==='number' && Math.round(v)===v) return String(v);
+    return String(v).trim(); };
+  const list=[];
+  for(let i=hr+1;i<aoa.length;i++){
+    const r=aoa[i]||[]; const g=k=>C[k]>=0?r[C[k]]:null;
+    const code=S_(g('sn')); if(!code) continue;
+    list.push(normRec({no:S_(g('no')),date:S_(g('date')),product:S_(g('product')),qty:S_(g('qty')),
+      sn:code,doer:S_(g('doer')),checker:S_(g('checker')),use:S_(g('use')),note:S_(g('note'))}));
+  }
+  if(!list.length) return toast('檔案裡沒有可匯入的資料');
+  const backup=JSON.parse(JSON.stringify(R));
+  let add=0,upd=0;
+  if(IMPMODE==='replace'){ R=list; add=list.length; }
+  else{
+    list.forEach(n=>{ const ix=R.findIndex(o=>o.sn===n.sn && o.product===n.product);
+      if(ix>=0){ R[ix]=n; upd++; } else { R.push(n); add++; } });
+  }
+  if(await push()){ renderAll();
+    toast(IMPMODE==='replace'?('已取代為 '+add+' 筆'):('匯入完成：新增 '+add+'、更新 '+upd)); }
+  else { R=backup; renderAll(); }
+}
+async function seedCloud(){
+  if(!canWrite()) return denyWrite();
+  if(R.length) return toast('雲端已有資料，請改用「資料管理 → 匯入」');
+  R=SEED.map(normRec);
+  if(await push()){ renderAll(); toast('已寫入 '+R.length+' 筆到雲端'); }
+  else { R=[]; renderAll(); }
+}
+
+/* ---------- 啟動 ---------- */
+document.querySelectorAll('nav button').forEach(b=>b.onclick=()=>view(b.dataset.v));
+$('#dlgForm').addEventListener('submit',e=>{});
+
+(async function init(){
+  if(CLOUD){
+    try{
+      const c=await DB.get('cache');
+      if(c&&c.R){ R=c.R.map(normRec); REV=c.REV||0; META=c.META||META; renderAll(); setNet('load'); }
+    }catch(e){}
+    if(!TOKEN && !PW){ renderAll(); openGate('login'); return; }
+    if(await whoAmI()) await pull();
+    renderAll();
+    return;
+  }
+  ME={name:'本機使用者', role:'admin', roleName:'管理員'};
+  try{
+    const c=await DB.get('cache');
+    R = (c&&c.R&&c.R.length) ? c.R.map(normRec) : SEED.map(normRec);
+    REV=(c&&c.REV)||0; META=(c&&c.META)||META;
+  }catch(e){ R=SEED.map(normRec); }
+  setNet('local'); renderAll();
+})();
+</script>
+</body>
+</html>
