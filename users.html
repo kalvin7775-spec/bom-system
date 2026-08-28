@@ -164,6 +164,13 @@ const ST_NAME={pending:'待審核', active:'啟用中', disabled:'已停用'};
 const ST_TAG ={pending:'warn',   active:'ok',    disabled:'gray'};
 function myRole(){ return (ME&&ME.role)||'viewer'; }
 function isAdmin(){ return myRole()==='admin'; }
+/* 後端的 me 指令不一定會回傳 id，改用 id 或 email 任一相符就算是自己 */
+function isMe(u){
+  if(!ME||!u) return false;
+  if(ME.id && u.id && String(ME.id)===String(u.id)) return true;
+  const a=String(ME.email||'').trim().toLowerCase(), b=String(u.email||'').trim().toLowerCase();
+  return !!a && a===b;
+}
 
 async function apiPost(action,payload,extra){
   const body=Object.assign({action:action,payload:payload,token:TOKEN,pw:PW,who:WHO},extra||{});
@@ -306,8 +313,9 @@ function vUsers(){
   }
   const cnt=r=>USERS.filter(u=>u.role===r).length;
   const rows=u=>'<tr>'+
-    '<td><b>'+esc(u.name||'')+'</b><div class="mini">'+esc(u.email)+'</div></td>'+
-    '<td><select onchange="setUser(\''+u.id+'\',\'role\',this.value)"'+(u.id===(ME&&ME.id)?' disabled':'')+'>'+
+    '<td><b>'+esc(u.name||'')+'</b>'+(isMe(u)?' <span class="tag info">你自己</span>':'')+
+      '<div class="mini">'+esc(u.email)+'</div></td>'+
+    '<td><select onchange="setUser(\''+u.id+'\',\'role\',this.value)"'+(isMe(u)?' disabled':'')+'>'+
       ['admin','editor','viewer'].map(r=>'<option value="'+r+'"'+(u.role===r?' selected':'')+'>'+ROLE_NAME[r]+'</option>').join('')+
     '</select></td>'+
     '<td><span class="tag '+(ST_TAG[u.status]||'gray')+'">'+(ST_NAME[u.status]||esc(u.status))+'</span></td>'+
@@ -315,10 +323,10 @@ function vUsers(){
     '<td class="mini">'+esc(u.lastLogin||'—')+'</td>'+
     '<td style="white-space:nowrap">'+
       (u.status==='pending'?'<button class="btn sm pri" onclick="setUser(\''+u.id+'\',\'status\',\'active\')">核准</button> ':'')+
-      (u.status==='active'&&u.id!==(ME&&ME.id)?'<button class="btn sm" onclick="setUser(\''+u.id+'\',\'status\',\'disabled\')">停用</button> ':'')+
+      (u.status==='active'&&!isMe(u)?'<button class="btn sm" onclick="setUser(\''+u.id+'\',\'status\',\'disabled\')">停用</button> ':'')+
       (u.status==='disabled'?'<button class="btn sm" onclick="setUser(\''+u.id+'\',\'status\',\'active\')">恢復</button> ':'')+
       '<button class="btn sm" onclick="resetUserPw(\''+u.id+'\')">重設密碼</button> '+
-      (u.id!==(ME&&ME.id)?'<button class="btn sm danger" onclick="delUser(\''+u.id+'\')">刪除</button>':'')+
+      (!isMe(u)?'<button class="btn sm danger" onclick="delUser(\''+u.id+'\')">刪除</button>':'')+
     '</td></tr>';
   el.innerHTML=
   '<div class="stats">'+
@@ -330,7 +338,10 @@ function vUsers(){
   '</div>'+
   '<div class="card"><h2>使用者清單<span class="sub">這裡設定的權限，所有系統一體適用</span></h2>'+
     '<div class="hint">同事自行註冊後<b>立即可用</b>，預設權限為「編輯」。要限制某人只能看，把角色改成「唯讀」；'+
-      '要暫時停權按「停用」，人離職了按「刪除」。角色下拉一改就即時生效，不用按儲存。</div>'+
+      '要暫時停權按「停用」，人離職了按「刪除」。角色下拉一改就即時生效，不用按儲存。<br>'+
+      '你自己的角色與停用／刪除按鈕會鎖住，避免不小心把自己踢出管理員。'+
+      (cnt('admin')<=1?'　<b style="color:var(--warn)">目前只有 1 位管理員，建議至少再指定一位備援。</b>':'')+
+      '</div>'+
     '<div class="row" style="margin:12px 0 10px">'+
       '<button class="btn" onclick="loadUsers()">↻ 重新讀取</button>'+
       '<div class="grow"></div>'+
