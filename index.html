@@ -55,6 +55,10 @@ a.blk:hover .go{text-decoration:underline}
 .blk.orange .ico{background:var(--orange-bg);color:var(--orange)}
 .blk.orange .go{color:var(--orange)}
 a.blk.orange:hover{border-color:var(--orange);box-shadow:0 6px 18px rgba(90,60,10,.10)}
+.blk.indigo{border-color:#c3caea}
+.blk.indigo .ico{background:var(--indigo-bg);color:var(--indigo)}
+.blk.indigo .go{color:var(--indigo)}
+a.blk.indigo:hover{border-color:var(--indigo);box-shadow:0 6px 18px rgba(40,50,90,.10)}
 
 .blk.soon{border-style:dashed;border-color:#d8dde2;background:#fbfcfd}
 .blk.soon .ico{background:var(--line2);color:#aab2bb}
@@ -111,13 +115,16 @@ footer code{background:var(--line2);padding:1px 5px;border-radius:4px;font-size:
       <span class="go">進入 →</span>
     </a>
 
-    <div class="blk soon">
+    <a class="blk indigo" href="users.html">
       <div class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"
-        stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14"/><path d="M5 12h14"/></svg></div>
-      <div class="bd"><div class="t">預留位置 3</div>
-        <div class="d">尚未啟用。之後可放文件管理、SOP 查詢等系統。</div></div>
-      <span class="go">準備中</span>
-    </div>
+        stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="8" r="3.2"/>
+        <path d="M3.5 20a5.5 5.5 0 0 1 11 0"/><path d="M17 8.5h4"/><path d="M17 12h4"/><path d="M17 15.5h4"/></svg></div>
+      <div class="bd">
+        <div class="t">帳號與權限</div>
+        <div class="d">全系統共用的一組帳號。管理員可在這裡調整角色（管理員／編輯／唯讀）、停用帳號與重設密碼；一般同事可修改自己的密碼。</div>
+      </div>
+      <span class="go">進入 →</span>
+    </a>
 
     <div class="blk soon">
       <div class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"

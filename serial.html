@@ -26,6 +26,9 @@ h1 small{font-weight:400;color:var(--mut);font-size:12px;margin-left:8px}
   white-space:nowrap;transition:.15s}
 .homelink:hover{background:var(--line2);color:var(--txt);border-color:#cfd5db}
 .homelink img{height:20px;width:auto;display:block}
+.navlink{display:inline-flex;align-items:center;padding:7px 13px;border-radius:6px;
+  font-size:13.5px;color:var(--mut);text-decoration:none;white-space:nowrap}
+.navlink:hover{background:var(--line2);color:var(--txt)}
 nav{display:flex;gap:2px;flex:1;flex-wrap:wrap}
 nav button{background:none;border:0;padding:7px 13px;border-radius:6px;cursor:pointer;
   font-size:13.5px;color:var(--mut);font-family:inherit}
@@ -147,6 +150,7 @@ details summary::-webkit-details-marker{color:var(--mut)}
     <button data-v="list" class="on">批序號紀錄</button>
     <button data-v="rule">批號規則</button>
     <button data-v="data">資料管理</button>
+    <a id="navAcct" class="navlink" href="users.html" style="display:none">帳號與權限 ↗</a>
   </nav>
   <span id="meBox"></span>
 </header>
@@ -249,6 +253,8 @@ function paintMe(){
   const t = ME.legacy ? '<span class="tag warn">共用密碼·唯讀</span>'
     : '<span class="tag '+(myRole()==='viewer'?'gray':'ok')+'">'+esc(ME.roleName||ROLE_NAME[myRole()])+'</span>';
   el.innerHTML='<b>'+esc(ME.name||'')+'</b>'+t+'<button class="btn sm" onclick="logout()">登出</button>';
+  const na=document.getElementById('navAcct');
+  if(na) na.style.display = (ME && !ME.legacy) ? '' : 'none';
 }
 function logout(){
   TOKEN=''; PW=''; ME=null; LS.del(TKKEY); LS.del(PWKEY);

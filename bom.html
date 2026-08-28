@@ -146,6 +146,9 @@ input[type=file]{display:none}
   white-space:nowrap;transition:.15s}
 .homelink:hover{background:var(--line2);color:var(--txt);border-color:#cfd5db}
 .homelink img{height:20px;width:auto;display:block}
+.navlink{display:inline-flex;align-items:center;padding:7px 13px;border-radius:6px;
+  font-size:13.5px;color:var(--mut);text-decoration:none;white-space:nowrap}
+.navlink:hover{background:var(--line2);color:var(--txt)}
 </style>
 </head>
 <body>
@@ -161,7 +164,8 @@ input[type=file]{display:none}
     <button data-v="move">庫存異動<span id="moveBadge"></span></button>
     <button data-v="sync">更新比對</button>
     <button data-v="data">資料管理</button>
-    <button data-v="users" id="navUsers" style="display:none">使用者管理</button>
+    <button data-v="users" id="navUsers" style="display:none">人員部門</button>
+    <a id="navAcct" class="navlink" href="users.html" style="display:none">帳號與權限 ↗</a>
   </nav>
   <span id="meBox"></span>
 </header>
@@ -749,6 +753,8 @@ function paintMe(){
     <button class="btn sm" style="margin:0" onclick="logout()">登出</button>`;
   const nu=document.getElementById('navUsers');
   if(nu) nu.style.display = isAdmin() ? '' : 'none';
+  const na=document.getElementById('navAcct');
+  if(na) na.style.display = (ME && !ME.legacy) ? '' : 'none';
 }
 </script>
 <script>
@@ -2960,19 +2966,12 @@ function vUsers(){
       ${u.id!==(ME&&ME.id)?`<button class="btn sm danger" onclick="delUser('${u.id}')">刪除</button>`:''}
     </td></tr>`;
   el.innerHTML=`
-  <div class="card"><h2>使用者清單
-      <span class="sub">共 ${USERS.length} 人　管理員 ${USERS.filter(u=>u.role==='admin').length}／編輯 ${USERS.filter(u=>u.role==='editor').length}／唯讀 ${USERS.filter(u=>u.role==='viewer').length}</span></h2>
-    <div class="hint">同事自行註冊後<b>立即可用</b>，預設權限為「編輯」。要限制某人只能看，把角色改成「唯讀」；
-      要暫時停權按「停用」，人離職了按「刪除」。角色下拉一改就即時生效，不用按儲存。</div>
-    ${recent.length?`<div class="hint">最近加入：${recent.map(u=>esc(u.name)+'（'+(ROLE_NAME[u.role]||'')+'）').join('、')}</div>`:''}
-    <div class="row" style="margin-bottom:10px">
-      <button class="btn" onclick="loadUsers()">↻ 重新讀取</button>
-      <div class="grow"></div>
-      <span class="mini">帳號資料存在試算表的「使用者」工作表，密碼以雜湊存放、看不到明碼。</span>
+  <div class="card"><h2>帳號與權限<span class="sub">已獨立成一頁，全系統共用</span></h2>
+    <div class="hint">使用者帳號、角色（管理員／編輯／唯讀）、停用與重設密碼，統一在
+      「帳號與權限」那一頁管理。那裡設定的權限，<b>料號系統與產品批序號系統一體適用</b>。</div>
+    <div class="row" style="margin-top:12px">
+      <a class="btn pri" href="users.html" style="text-decoration:none">前往帳號與權限</a>
     </div>
-    <div class="tblwrap"><table><thead><tr><th class="nos">使用者</th><th class="nos">角色</th><th class="nos">狀態</th><th class="nos">建立時間</th><th class="nos">最後登入</th><th class="nos">操作</th></tr></thead>
-      <tbody>${USERS.length?USERS.map(rows).join('')
-        :'<tr><td colspan="6" class="mini">尚未讀取，請按「重新讀取」</td></tr>'}</tbody></table></div>
   </div>
   <div class="card"><h2>人員部門對照表
       <span class="sub">領料單的「申請部門」依填表人查這張表決定，與用途無關</span></h2>
@@ -2994,17 +2993,7 @@ function vUsers(){
       <span class="mini mut" id="stMsg"></span>
     </div>
   </div>
-  <div class="card"><h2>權限說明</h2>
-    <div class="tblwrap"><table><thead><tr><th class="nos">角色</th><th class="nos">可以做什麼</th></tr></thead><tbody>
-      <tr><td><b>管理員</b></td><td>全部功能，另可調整角色、停用、重設密碼、刪除帳號</td></tr>
-      <tr><td><b>編輯</b>（預設）</td><td>新增／修改料號與 BOM、匯入 Excel、更新比對、需求試算</td></tr>
-      <tr><td><b>唯讀</b></td><td>查詢、需求試算、匯出，所有寫入按鈕會隱藏或被擋下</td></tr>
-    </tbody></table></div>
-    <div class="hint">新註冊者的預設權限由 Apps Script 的 <code>DEFAULT_ROLE</code> 決定，目前是 <code>editor</code>；
-      想改成註冊後只能看，把它改成 <code>viewer</code> 再重新部署即可。<br>
-      舊的共用密碼 <code>endosemio2026</code> 仍可登入，但一律為唯讀。全部同事都改用個人帳號後，
-      把 <code>LEGACY_PW_ENABLED</code> 改成 <code>false</code> 並重新部署即可停用。</div>
-  </div>`;
+  `;
 }
 /* ---------- 人員部門對照表（管理員維護，存在試算表的系統設定） ---------- */
 function stEdit(i,k,v){ S.staff[i][k]=v.trim(); stDirty(); }
@@ -3107,7 +3096,7 @@ function go(v){
   document.querySelectorAll('.view').forEach(d=>d.classList.toggle('on',d.id==='v-'+v));
   if(v==='boms') renderBom();
   if(v==='move') vMove();
-  if(v==='users' && isAdmin() && !USERS_LOADED) loadUsers();
+  /* 使用者清單已移到 users.html，這一頁只留人員部門對照表 */
   window.scrollTo(0,0);
 }
 document.querySelectorAll('nav button').forEach(b=>b.onclick=()=>go(b.dataset.v));
