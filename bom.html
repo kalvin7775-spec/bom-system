@@ -224,7 +224,9 @@ const $=s=>document.querySelector(s);
 const esc=t=>String(t==null?'':t).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 const nf=n=>n==null||n===''||isNaN(n)?'':Number(n).toLocaleString('zh-TW',{maximumFractionDigits:4});
 const money=n=>n==null||isNaN(n)?'—':'$'+Number(n).toLocaleString('zh-TW',{maximumFractionDigits:2});
-const nowts=()=>new Date().toLocaleString('zh-TW',{hour12:false});
+const nowts=()=>{const d=new Date(),p=n=>(n<10?'0':'')+n;
+  return d.getFullYear()+'/'+p(d.getMonth()+1)+'/'+p(d.getDate())+' '+
+         p(d.getHours())+':'+p(d.getMinutes())+':'+p(d.getSeconds());};
 function toast(m){const t=$('#toast');t.textContent=m;t.classList.add('on');
   clearTimeout(t._t);t._t=setTimeout(()=>t.classList.remove('on'),2400);}
 
