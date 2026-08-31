@@ -134,8 +134,57 @@ function sysFlush(){
   if(!c || !c.dirty) return;
   const sh = sheet('sys');
   const data = c.keys.map(function(k){ return [k, c.map[k]]; });
-  if(data.length) sh.getRange(1,1,data.length,2).setValues(data);
+  if(data.length){
+    /* updatedAt / serialAt 這類時間鍵值先設成純文字，避免被當成日期換算 */
+    c.keys.forEach(function(k, i){
+      if(/At$/.test(String(k))) sh.getRange(i+1, 2).setNumberFormat('@');
+    });
+    sh.getRange(1,1,data.length,2).setValues(data);
+  }
   c.dirty = false;
+}
+
+/* ---------- 一次性維護：把既有的時間欄改成純文字，並校正被時區位移的紀錄 ----------
+   在編輯器選這個函式按「執行」跑一次即可，之後不需要再跑。                     */
+function fixTimestamps(){
+  const out = [];
+
+  /* 異動紀錄：以畫面上看到的值為準寫回成文字 */
+  const sh = sheet('hist');
+  const last = sh.getLastRow();
+  if(last >= 2){
+    const rng  = sh.getRange(2, 1, last-1, 1);
+    const disp = rng.getDisplayValues();
+    rng.setNumberFormat('@');
+    rng.setValues(disp);
+    out.push('異動紀錄 ' + (last-1) + ' 列已轉為文字');
+
+    /* 2026/08/07 13:59:48 那筆資料庫上傳，先前被累積位移到 08/09，改回正確時間 */
+    const src = sh.getRange(2, 2, last-1, 1).getDisplayValues();
+    for(let i=0;i<src.length;i++){
+      if(String(src[i][0]).indexOf('BOM資料庫_20260805') >= 0){
+        sh.getRange(i+2, 1).setNumberFormat('@').setValue('2026/08/07 13:59:48');
+        out.push('已校正第 ' + (i+2) + ' 列為 2026/08/07 13:59:48');
+      }
+    }
+  }
+
+  /* 系統表：updatedAt / serialAt */
+  const sy = sheet('sys');
+  const n  = sy.getLastRow();
+  if(n >= 1){
+    const keys = sy.getRange(1, 1, n, 1).getValues();
+    const disp = sy.getRange(1, 2, n, 1).getDisplayValues();
+    for(let i=0;i<n;i++){
+      if(/At$/.test(String(keys[i][0]))){
+        sy.getRange(i+1, 2).setNumberFormat('@').setValue(disp[i][0]);
+        out.push('系統.' + keys[i][0] + ' → ' + disp[i][0]);
+      }
+    }
+  }
+  SpreadsheetApp.flush();
+  _SYS = null;
+  throw new Error('FIXED ' + out.join(' ｜ '));   /* 借用錯誤訊息把結果顯示在執行記錄 */
 }
 
 /* ---------- 讀取整份資料 ---------- */
@@ -192,6 +241,14 @@ function readState(){
 }
 
 function num(v){ const n = parseFloat(v); return isNaN(n) ? 0 : n; }
+
+/* ---------- 時間欄一律以「純文字」存放 ----------
+   若讓試算表把 "2026/08/31 16:50:38" 自動轉成日期值，讀回時會再做一次時區換算；
+   只要試算表與指令碼的時區設定有落差，每存一次就會位移數小時，而且會累積。
+   把儲存格格式設成 @（純文字）後，寫進去什麼、讀回來就是什麼。          */
+function markTextCol(sh, row, col, nRows){
+  if(nRows > 0) sh.getRange(row, col, nRows, 1).setNumberFormat('@');
+}
 /* 試算表可能把時間字串自動轉成日期物件，讀回時統一格式化 */
 function fmtTS(v){
   if(v instanceof Date) return Utilities.formatDate(v,'Asia/Taipei','yyyy/MM/dd HH:mm:ss');
@@ -231,7 +288,9 @@ function writeState(st, who){
       }));
     });
     writeRows('lines', lines);
-    writeRows('hist', (st.history||[]).slice(0,200).map(h=>({
+    const hist200 = (st.history||[]).slice(0,200);
+    markTextCol(sheet('hist'), 2, 1, hist200.length);   /* 時間欄 */
+    writeRows('hist', hist200.map(h=>({
       '時間':h.ts||'', '來源':h.file||'', '新增':(h.sum&&h.sum.added)||0,
       '消失':(h.sum&&h.sum.removed)||0, '庫存變動':(h.sum&&h.sum.stock)||0,
       '單價變動':(h.sum&&h.sum.cost)||0, '其他':(h.sum&&h.sum.other)||0, '操作者':h.by||''
