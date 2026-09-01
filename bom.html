@@ -1405,7 +1405,8 @@ function vBoms(){
     ${[['max','取較高者'],['buy','自身單價'],['sum','下階加總']]
       .map(([k,t])=>`<span class="chip ${costMode()===k?'on':''}" onclick="setCostMode('${k}')">${t}</span>`).join('')}
     <label class="chip ${bomFlat?'on':''}" onclick="bomFlat=!bomFlat;vBoms()">展開後總用量</label>
-    <button class="btn" onclick="exportBom()" ${curBom?'':'disabled'}>匯出</button>
+    <button class="btn pri" onclick="exportBomForm()" ${curBom?'':'disabled'} title="公司「材料清單-BOM」表單格式（QS RD-2-01-17-A）">匯出表單</button>
+    <button class="btn" onclick="exportBom()" ${curBom?'':'disabled'} title="明細＋展開總用量兩張分頁">匯出明細</button>
     <button class="btn danger" onclick="delBom()" ${curBom?'':'disabled'}>刪除</button>
   </div></div>
   <div id="bomBody"></div>`;
@@ -2594,7 +2595,7 @@ async function doMvSubmit(){
 }
 
 /* ---------- 歷史單據 ---------- */
-const moveSt={q:'',type:'',open:''};
+const moveSt={q:'',type:'',open:'',ym:''};
 /* 把逐列紀錄依單號組成一張張單 */
 function moveOrders(){
   const g={}, order=[];
@@ -2605,6 +2606,7 @@ function moveOrders(){
   });
   let list=order.map(n=>g[n]).reverse();
   if(moveSt.type) list=list.filter(o=>o.type===moveSt.type);
+  if(moveSt.ym)   list=list.filter(o=>ymOf(o.date)===moveSt.ym);
   const q=moveSt.q.trim().toLowerCase();
   if(q) list=list.filter(o=>[o.no,o.reason,o.taker,o.by,o.house].join(' ').toLowerCase().includes(q)
     || o.lines.some(l=>(l.code+' '+l.name).toLowerCase().includes(q)));
@@ -2680,14 +2682,19 @@ function vMove(){
   const list=moveOrders();
   const hist=`
   <div class="card">
-    <h2>歷史單據 <span class="sub">共 ${list.length} 張${(S.moves||[]).length?`／${S.moves.length} 筆明細`:''}</span></h2>
+    <h2>歷史單據 <span class="sub">${moveSt.ym?`${moveSt.ym.slice(0,4)}/${moveSt.ym.slice(4)}　`:''}共 ${list.length} 張${(S.moves||[]).length?`／${S.moves.length} 筆明細`:''}</span></h2>
     <div class="row" style="margin-bottom:10px">
       <div class="grow"><input type="search" id="mvq" placeholder="搜尋單號 / 品號 / 品名 / 原因 / 領用人…" value="${esc(moveSt.q)}"></div>
       <div class="chips">
         ${[['','全部'],['入庫','入庫'],['領料','領料'],['退料','退料']]
           .map(([k,t])=>`<span class="chip ${moveSt.type===k?'on':''}" data-mt="${k}">${t}</span>`).join('')}
       </div>
-      <button class="btn" onclick="exportMoves()">匯出 Excel</button>
+      <select id="mvym" style="width:auto;min-width:130px">
+        <option value="">全部月份</option>
+        ${moveMonths().map(m=>`<option value="${m}"${moveSt.ym===m?' selected':''}>${m.slice(0,4)}/${m.slice(4)}</option>`).join('')}
+      </select>
+      <button class="btn pri" onclick="exportMovesMonth()">${moveSt.ym?`匯出 ${moveSt.ym.slice(0,4)}/${moveSt.ym.slice(4)}`:'匯出本月'} Excel</button>
+      <button class="btn" onclick="exportMoves()">匯出全部</button>
     </div>
     ${list.length?`<div class="tblwrap" style="max-height:60vh"><table><thead><tr>
       <th class="nos">單號</th><th class="nos">日期</th><th class="nos">類別</th><th class="nos">倉別</th>
@@ -2720,6 +2727,8 @@ function vMove(){
   const q=document.getElementById('mvq');
   if(q) q.oninput=e=>{moveSt.q=e.target.value; vMove(); const n=document.getElementById('mvq');
     if(n){n.focus(); n.setSelectionRange(n.value.length,n.value.length);}};
+  const ym=document.getElementById('mvym');
+  if(ym) ym.onchange=e=>{ moveSt.ym=e.target.value; vMove(); };
   el.querySelectorAll('.chip[data-mt]').forEach(c=>c.onclick=()=>{moveSt.type=c.dataset.mt; vMove();});
   paintMoveBadge();
   if(typeof applyReadonlyUI==='function') applyReadonlyUI();
@@ -3128,5 +3137,244 @@ $('#dlgForm').addEventListener('submit',e=>{});
   if(!(await DB.get('state'))) await DB.set('state',JSON.parse(JSON.stringify(S)));
   setNet('local'); renderAll();
 })();
+</script>
+<script>
+/* ============================================================
+   庫存異動 — 依月份匯出（明細／單號彙總／料號彙總）
+   ============================================================ */
+function ymOf(d){ const s=String(d||'').replace(/[^0-9]/g,''); return s.length>=6?s.slice(0,6):''; }
+function moveMonths(){
+  const set={}; (S.moves||[]).forEach(m=>{ const y=ymOf(m.date); if(y) set[y]=1; });
+  return Object.keys(set).sort().reverse();
+}
+function exportMovesMonth(){
+  const all=S.moves||[];
+  if(!all.length) return toast('還沒有任何異動紀錄');
+  let ym=moveSt.ym;
+  if(!ym){ const d=new Date(), p=n=>(n<10?'0':'')+n; ym=''+d.getFullYear()+p(d.getMonth()+1); }
+  const src=all.filter(m=>ymOf(m.date)===ym);
+  if(!src.length) return toast(ym.slice(0,4)+'/'+ym.slice(4)+' 沒有異動紀錄');
+
+  /* 分頁一：逐筆明細 */
+  const detail=src.map(m=>({
+    '單號':m.no,'日期':m.date,'類別':m.type,'倉別':m.house,'申請部門':m.dept,'異動原因':m.reason,
+    '項次':m.seq,'品號':m.code,'品名':m.name,'數量':m.qty,'單位':m.unit,
+    '進出':(m.type==='領料'?-1:1)*(+m.qty||0),
+    '異動前庫存':m.before,'異動後庫存':m.after,
+    '領用人':m.taker,'填表人':m.by,'備註':m.note,'單據備註':m.memo,'建立時間':m.at}));
+
+  /* 分頁二：依單號彙總 */
+  const byNo={}, order=[];
+  src.forEach(m=>{ if(!byNo[m.no]){ byNo[m.no]={h:m,n:0,q:0}; order.push(m.no); }
+    byNo[m.no].n++; byNo[m.no].q += (+m.qty||0); });
+  const orders=order.map(no=>{ const o=byNo[no], h=o.h;
+    return {'單號':no,'日期':h.date,'類別':h.type,'倉別':h.house,'申請部門':h.dept,
+      '異動原因':h.reason,'項數':o.n,'合計數量':o.q,
+      '領用人':h.taker,'填表人':h.by,'單據備註':h.memo,'建立時間':h.at}; });
+
+  /* 分頁三：依料號彙總 */
+  const byCode={}, corder=[];
+  src.forEach(m=>{ if(!byCode[m.code]){ byCode[m.code]={name:m.name,unit:m.unit,'入庫':0,'領料':0,'退料':0,nos:{}};
+      corder.push(m.code); }
+    const b=byCode[m.code]; b[m.type] = (b[m.type]||0) + (+m.qty||0); b.nos[m.no]=1;
+    if(!b.name) b.name=m.name; if(!b.unit) b.unit=m.unit; });
+  const codes=corder.sort().map(c=>{ const b=byCode[c];
+    return {'品號':c,'品名':b.name||itemOf(c).name||'','單位':b.unit||itemOf(c).unit||'',
+      '入庫合計':b['入庫']||0,'領料合計':b['領料']||0,'退料合計':b['退料']||0,
+      '淨變動':(b['入庫']||0)+(b['退料']||0)-(b['領料']||0),
+      '單據數':Object.keys(b.nos).length,
+      '目前庫存':itemOf(c).stock}; });
+
+  const wb=XLSX.utils.book_new();
+  const s1=XLSX.utils.json_to_sheet(detail);
+  s1['!cols']=[{wch:12},{wch:11},{wch:7},{wch:9},{wch:9},{wch:22},{wch:6},{wch:17},{wch:26},
+               {wch:7},{wch:6},{wch:7},{wch:11},{wch:11},{wch:9},{wch:9},{wch:18},{wch:18},{wch:19}];
+  XLSX.utils.book_append_sheet(wb,s1,'明細');
+  const s2=XLSX.utils.json_to_sheet(orders);
+  s2['!cols']=[{wch:12},{wch:11},{wch:7},{wch:9},{wch:9},{wch:24},{wch:6},{wch:9},{wch:9},{wch:9},{wch:20},{wch:19}];
+  XLSX.utils.book_append_sheet(wb,s2,'單號彙總');
+  const s3=XLSX.utils.json_to_sheet(codes);
+  s3['!cols']=[{wch:17},{wch:28},{wch:6},{wch:9},{wch:9},{wch:9},{wch:9},{wch:7},{wch:9}];
+  XLSX.utils.book_append_sheet(wb,s3,'料號彙總');
+  XLSX.writeFile(wb,'庫存異動_'+ym+'.xlsx');
+  toast(ym.slice(0,4)+'/'+ym.slice(4)+' 已匯出：'+order.length+' 張單、'+src.length+' 筆明細');
+}
+
+/* ============================================================
+   BOM 匯出 — 公司「材料清單-BOM」表單（QS RD-2-01-17-A）
+   以 xlsx-js-style 產生帶框線與字體的版本，需要時才載入
+   ============================================================ */
+let XLSXS=null;
+function ensureStyledXlsx(){
+  if(XLSXS) return Promise.resolve(XLSXS);
+  return new Promise((res,rej)=>{
+    const keepX=window.XLSX, keepZ=window.JSZip;
+    const s=document.createElement('script');
+    s.src='https://cdn.jsdelivr.net/npm/xlsx-js-style@1.2.0/dist/xlsx.bundle.js';
+    s.onload=()=>{ XLSXS=window.XLSX; window.XLSX=keepX; if(keepZ) window.JSZip=keepZ; res(XLSXS); };
+    s.onerror=()=>{ window.XLSX=keepX; if(keepZ) window.JSZip=keepZ;
+      rej(new Error('載入表單元件失敗，請確認網路後再試')); };
+    document.head.appendChild(s);
+  });
+}
+const F_KAI='DFKai-SB', F_KAI2='標楷體', F_TNR='Times New Roman';
+const HEADFILL={fgColor:{rgb:'D0CECE'},patternType:'solid'};
+function BD(l,r,t,b){
+  const o={}; if(l)o.left={style:l}; if(r)o.right={style:r};
+  if(t)o.top={style:t}; if(b)o.bottom={style:b}; return o;
+}
+function CL(v,st){
+  const c={};
+  if(v===null||v===undefined||v===''){ c.t='s'; c.v=''; }
+  else if(typeof v==='number'){ c.t='n'; c.v=v; }
+  else { c.t='s'; c.v=String(v); }
+  if(st) c.s=st; return c;
+}
+function A1(col,row){ let s='',n=col; while(n>0){ const m=(n-1)%26; s=String.fromCharCode(65+m)+s; n=(n-m-1)/26; } return s+row; }
+
+function bomFormSheets(bom){
+  const nos=lineNos(bom.lines);
+  const lines=bom.lines.map((l,i)=>{
+    const it=itemOf(l.code);
+    const qty=(+l.qty||0), cost=(it.cost==null||it.cost==='')?null:+it.cost;
+    return {seq:i+1, lv:l.level, code:l.code,
+      name:l.name||it.name||'', spec:(l.spec||it.spec||''),
+      qty:qty, unit:l.unit||it.unit||'pcs',
+      cost:cost, price:(cost==null?null:Math.round(cost*qty*100)/100),
+      stock:(it.stock==null?'':it.stock), note:l.note||''};
+  });
+  const today=new Date(), p=n=>(n<10?'0':'')+n;
+  const dstr=p(today.getMonth()+1)+'/'+p(today.getDate())+'/'+today.getFullYear();
+
+  /* ---------- BOM ---------- */
+  const ws={}, merges=[], rowsH=[];
+  const put=(c,r,v,st)=>{ ws[A1(c,r)]=CL(v,st); };
+  put(2,1,'安德斯醫學科技股份有限公司',
+      {font:{name:F_KAI,sz:18,bold:true},alignment:{horizontal:'center',vertical:'center'}});
+  merges.push({s:{r:0,c:1},e:{r:0,c:14}});
+  put(5,2,'        EndoSemio Co., Ltd.',
+      {font:{name:F_KAI,sz:14},alignment:{horizontal:'center',vertical:'center',wrapText:true}});
+  merges.push({s:{r:1,c:4},e:{r:1,c:11}});
+  put(5,3,'     材料清單-BOM',
+      {font:{name:F_KAI,sz:16},alignment:{horizontal:'center',vertical:'center',wrapText:true}});
+  merges.push({s:{r:2,c:4},e:{r:2,c:11}});
+  const thin=BD('thin','thin','thin','thin');
+  put(14,3,'QS文件編號',{font:{name:F_KAI,sz:10},alignment:{horizontal:'center',vertical:'center',wrapText:true},border:thin});
+  put(15,3,'RD-2-01-17-A',{font:{name:F_TNR,sz:12,bold:true},alignment:{horizontal:'center',vertical:'center'},border:thin});
+  put(14,4,'存檔路徑',{font:{name:F_KAI,sz:10},alignment:{horizontal:'center',vertical:'center',wrapText:true},border:thin});
+  put(15,4,'Cloud/IS0 13485/研發部',{font:{name:F_KAI,sz:9,bold:true},alignment:{horizontal:'center',vertical:'center',wrapText:true},border:thin});
+
+  const lbl={font:{name:F_KAI,sz:11,bold:true},alignment:{vertical:'center'},border:BD('medium','thin','medium','medium')};
+  const val={font:{name:F_KAI2,sz:12},alignment:{vertical:'center',wrapText:true},border:BD(null,'medium','medium','medium')};
+  put(2,6,'品號',Object.assign({},lbl,{alignment:{horizontal:'center',vertical:'center'}}));
+  put(3,6,bom.code,val); merges.push({s:{r:5,c:2},e:{r:5,c:3}});
+  put(5,6,'產品名稱',lbl);
+  put(6,6,bom.name||'',Object.assign({},val,{font:{name:F_KAI2,sz:11}})); merges.push({s:{r:5,c:5},e:{r:5,c:6}});
+  put(8,6,'規格',lbl);
+  put(9,6,bom.spec||'',Object.assign({},val,{font:{name:F_KAI2,sz:11}})); merges.push({s:{r:5,c:8},e:{r:5,c:14}});
+  for(let c=4;c<=4;c++) ws[A1(c,6)]=ws[A1(c,6)]||CL('',val);
+  [7,10,11,12,13,14].forEach(c=>{ if(!ws[A1(c,6)]) ws[A1(c,6)]=CL('',{border:BD(null,null,'medium','medium')}); });
+
+  const hSty=c=>({font:{name:F_KAI,sz:(c<=5?11:12),bold:true},
+    alignment:{horizontal:'center',vertical:'center',wrapText:true},
+    fill:HEADFILL, border:BD(c===2?'medium':'thin', c===15?'medium':'thin','medium','medium')});
+  const heads=[[2,'項次'],[3,'階層'],[4,'品號'],[5,'品名'],[7,'規格'],[8,'用量'],[9,'單位'],
+               [10,'單價'],[11,'價格'],[12,'庫存數量'],[15,'備註']];
+  heads.forEach(([c,t])=>put(c,7,t,hSty(c)));
+  [6,13,14].forEach(c=>{ ws[A1(c,7)]=CL('',{fill:HEADFILL,border:BD('thin','thin','medium','medium')}); });
+  merges.push({s:{r:6,c:4},e:{r:6,c:5}});    /* 品名 E:F */
+  merges.push({s:{r:6,c:11},e:{r:6,c:13}});  /* 庫存數量 L:N */
+
+  lines.forEach((l,i)=>{
+    const r=8+i;
+    const base=(c)=>({border:BD(c===2?'medium':'thin', c===15?'medium':'thin','thin','thin'),
+                      alignment:{vertical:'center'}});
+    put(2,r,l.seq,{font:{name:F_TNR,sz:11},alignment:{horizontal:'center',vertical:'center'},border:BD('medium','thin','thin','thin')});
+    put(3,r,l.lv,{font:{name:F_TNR,sz:11},alignment:{horizontal:'center',vertical:'center'},border:BD('thin','thin','thin','thin')});
+    put(4,r,l.code,{font:{name:F_KAI2,sz:10},alignment:{horizontal:'left',vertical:'center'},border:BD('thin','thin','thin','thin')});
+    put(5,r,l.name,{font:{name:F_KAI2,sz:10},alignment:{horizontal:'left',vertical:'center',wrapText:true},border:BD('thin','thin','thin','thin')});
+    ws[A1(6,r)]=CL('',{border:BD(null,'thin','thin','thin')});
+    merges.push({s:{r:r-1,c:4},e:{r:r-1,c:5}});
+    put(7,r,l.spec,{font:{name:F_KAI2,sz:8},alignment:{vertical:'center',wrapText:true},border:BD('thin','thin','thin','thin')});
+    put(8,r,l.qty,{font:{name:F_KAI2,sz:12},alignment:{horizontal:'center',vertical:'center'},border:BD('thin','thin','thin','thin')});
+    put(9,r,l.unit,{font:{name:F_KAI2,sz:12},alignment:{horizontal:'center',vertical:'center'},border:BD('thin','thin','thin','thin')});
+    put(10,r,l.cost===null?'':l.cost,{font:{name:F_KAI2,sz:12},alignment:{horizontal:'center',vertical:'center'},border:BD('thin','thin','thin','thin')});
+    put(11,r,l.price===null?'':l.price,{font:{name:F_KAI2,sz:12},alignment:{horizontal:'center',vertical:'center'},border:BD('thin','thin','thin','thin')});
+    put(12,r,l.stock,{font:{name:F_KAI2,sz:12},alignment:{horizontal:'center',vertical:'center'},border:BD('thin','thin','thin','thin')});
+    ws[A1(13,r)]=CL('',{border:BD(null,null,'thin','thin')});
+    ws[A1(14,r)]=CL('',{border:BD(null,'thin','thin','thin')});
+    merges.push({s:{r:r-1,c:11},e:{r:r-1,c:13}});
+    put(15,r,l.note,{font:{name:F_KAI2,sz:11},alignment:{vertical:'center',wrapText:true},border:BD('thin','medium','thin','thin')});
+  });
+
+  const lastRow=7+lines.length;
+  ws['!ref']='A1:'+A1(16,Math.max(lastRow,10));
+  ws['!merges']=merges;
+  ws['!cols']=[1.66,5.16,5,17.16,9.83,21.33,14.16,6.66,5.66,5.66,8,5.16,5,10.33,20.83,2.66]
+    .map(w=>({wch:Math.max(0.6,w-0.83)}));
+  rowsH[0]={hpt:33}; rowsH[1]={hpt:18}; rowsH[2]={hpt:18}; rowsH[3]={hpt:18}; rowsH[4]={hpt:9.75};
+  for(let r=5;r<lastRow;r++) rowsH[r]={hpt:18.75};
+  ws['!rows']=rowsH;
+
+  /* ---------- 封面 ---------- */
+  const cv={}, cm=[];
+  cv['B6']=CL('安德斯醫學科技股份有限公司',{font:{name:F_KAI,sz:36,bold:true},alignment:{horizontal:'center',vertical:'center'}});
+  cm.push({s:{r:5,c:1},e:{r:7,c:20}});
+  cv['B9']=CL('EndoSemio Co., Ltd.',{font:{name:F_TNR,sz:22,bold:true},alignment:{horizontal:'center',vertical:'center'}});
+  cm.push({s:{r:8,c:1},e:{r:9,c:20}});
+  cv['B14']=CL(bom.code+'  BOM',{font:{name:F_TNR,sz:26,bold:true},alignment:{horizontal:'center',vertical:'center'}});
+  cm.push({s:{r:13,c:1},e:{r:16,c:20}});
+  const cvL={font:{name:F_TNR,sz:12,bold:true},alignment:{vertical:'center'}};
+  const cvV={font:{name:F_KAI2,sz:13},alignment:{vertical:'center'}};
+  const info=[['產品名稱：',bom.name||''],['料件號碼：',bom.code],
+              ['文件編號：',''],['日期：',dstr],['版本：','A']];
+  info.forEach((x,i)=>{ const r=25+i;
+    cv['I'+r]=CL(x[0],cvL); cv['K'+r]=CL(x[1],cvV);
+    cm.push({s:{r:r-1,c:8},e:{r:r-1,c:9}});
+    cm.push({s:{r:r-1,c:10},e:{r:r-1,c:14}});
+  });
+  cv['!ref']='A1:U32'; cv['!merges']=cm;
+  cv['!cols']=[1.66,5.16].concat(new Array(19).fill(5)).map(w=>({wch:Math.max(0.6,w-0.83)}));
+
+  /* ---------- 修改歷史 ---------- */
+  const hs={}, hm=[];
+  hs['B2']=CL('安德斯醫學科技股份有限公司',{font:{name:F_KAI,sz:18,bold:true},alignment:{horizontal:'center',vertical:'center'}});
+  hm.push({s:{r:1,c:1},e:{r:1,c:7}});
+  hs['B3']=CL('EndoSemio Co., Ltd.',{font:{name:F_KAI,sz:18},alignment:{horizontal:'center',vertical:'center'}});
+  hm.push({s:{r:2,c:1},e:{r:2,c:7}});
+  hs['B5']=CL('標題',{font:{name:F_KAI,sz:11,bold:true},alignment:{vertical:'center'},border:thin});
+  hs['C5']=CL(bom.code+'  BOM',{font:{name:F_KAI2,sz:11},alignment:{vertical:'center'},border:thin});
+  hm.push({s:{r:4,c:2},e:{r:4,c:7}});
+  const hh=['項次','內容和更新項目','版本','日期','修訂','核准','備註'];
+  hh.forEach((t,i)=>{ hs[A1(2+i,6)]=CL(t,{font:{name:F_KAI,sz:11,bold:true},
+    alignment:{horizontal:'center',vertical:'center'},fill:HEADFILL,border:thin}); });
+  for(let i=0;i<15;i++){ const r=7+i;
+    hs[A1(2,r)]=CL(i+1,{font:{name:F_TNR,sz:11},alignment:{horizontal:'center',vertical:'center'},border:thin});
+    for(let c=3;c<=8;c++) hs[A1(c,r)]=CL(i===0&&c===3?'首次發行（由 BOM 管理系統匯出）':
+        (i===0&&c===4?'A':(i===0&&c===5?dstr:'')),
+      {font:{name:F_KAI2,sz:11},alignment:{vertical:'center',wrapText:true},border:thin});
+  }
+  hs['!ref']='A1:J22'; hs['!merges']=hm;
+  hs['!cols']=[1.66,4.33,73.33,6,7,6.83,6.83,18.83,1.66,8.16].map(w=>({wch:Math.max(0.6,w-0.83)}));
+
+  return {cover:cv, hist:hs, bom:ws};
+}
+
+async function exportBomForm(){
+  const bom=BIDX[curBom];
+  if(!bom) return toast('請先選擇一張 BOM');
+  let X;
+  try{ X=await ensureStyledXlsx(); }
+  catch(e){ return toast(e.message||'載入表單元件失敗'); }
+  const sh=bomFormSheets(bom);
+  const wb=X.utils.book_new();
+  X.utils.book_append_sheet(wb,sh.cover,'封面');
+  X.utils.book_append_sheet(wb,sh.hist,'修改歷史');
+  X.utils.book_append_sheet(wb,sh.bom,'BOM');
+  const d=new Date(), p=n=>(n<10?'0':'')+n;
+  X.writeFile(wb,'BOM_'+bom.code+'_'+d.getFullYear()+p(d.getMonth()+1)+p(d.getDate())+'.xlsx');
+  toast('已匯出材料清單-BOM 表單');
+}
+
 </script>
 </body></html>
