@@ -498,6 +498,11 @@ function postOrder(auth, p){
       const m = String(r['單號']||'').match(/^PP(\d{4})(\d{3})$/);
       if(m && ('PP'+m[1]) === pfx) max = Math.max(max, parseInt(m[2],10));
     });
+    /* 已刪除的單號不再重複配發，免得同一個號碼出現兩份不同的 Word 單 */
+    String(sysGet('voidNos','')).split(',').forEach(function(x){
+      const m = String(x||'').trim().match(/^PP(\d{4})(\d{3})$/);
+      if(m && ('PP'+m[1]) === pfx) max = Math.max(max, parseInt(m[2],10));
+    });
     const no = pfx + String(max+1).padStart(3,'0');
     const dateStr = Utilities.formatDate(valid,'Asia/Taipei','yyyy/MM/dd');
 
@@ -548,6 +553,82 @@ function postOrder(auth, p){
     sysFlush();
     SpreadsheetApp.flush();
     return {ok:true, no:no, rev:rev, date:dateStr,
+            stock: Object.keys(touched).map(function(c){ return {code:c, stock:touched[c]}; })};
+  } finally { lock.releaseLock(); }
+}
+
+/* 刪除一張已送出的單（僅管理員）：回沖庫存 → 移除該單在「庫存異動」的所有列 */
+function voidOrder(auth, p){
+  if(!isAdmin(auth.role))
+    return {error:'只有管理員可以刪除已送出的單據。', denied:true};
+  const no  = String((p && p.no)  || '').trim();
+  const why = String((p && p.why) || '').trim();
+  if(!no) return {error:'沒有指定要刪除的單號'};
+
+  const lock = LockService.getScriptLock();
+  lock.waitLock(25000);
+  try{
+    const msh  = sheet('moves');
+    const last = msh.getLastRow(), lastC = msh.getLastColumn();
+    if(last < 2) return {error:'「庫存異動」還沒有任何紀錄'};
+    const head  = msh.getRange(1,1,1,lastC).getValues()[0].map(String);
+    const cNo   = head.indexOf('單號'), cType = head.indexOf('類別'),
+          cCode = head.indexOf('品號'), cQty  = head.indexOf('數量');
+    if(cNo<0 || cType<0 || cCode<0 || cQty<0)
+      return {error:'「庫存異動」缺少 單號／類別／品號／數量 欄位'};
+    const body = msh.getRange(2,1,last-1,lastC).getValues();
+    const hit  = [];                       /* body 的列索引（0 起算） */
+    for(let i=0;i<body.length;i++)
+      if(String(body[i][cNo]).trim() === no) hit.push(i);
+    if(!hit.length)
+      return {error:'找不到單號 '+no+'，可能已經被別人刪掉了，請按 ↻ 重新讀取雲端'};
+
+    /* --- 回沖庫存：領料把數量加回來，入庫／退料則扣回去 --- */
+    const ish   = sheet('items');
+    const iLast = ish.getLastRow();
+    if(iLast < 2) return {error:'料號主檔沒有資料，無法回沖庫存'};
+    const iHead  = ish.getRange(1,1,1,ish.getLastColumn()).getValues()[0].map(String);
+    const kCode  = iHead.indexOf('品號'), kStock = iHead.indexOf('庫存數量');
+    if(kCode<0 || kStock<0) return {error:'料號主檔缺少「品號」或「庫存數量」欄'};
+    const iBody = ish.getRange(2,1,iLast-1,iHead.length).getValues();
+    const idx = {};
+    for(let i=0;i<iBody.length;i++){
+      const c = String(iBody[i][kCode]).trim();
+      if(c && !(c in idx)) idx[c] = i;
+    }
+    const touched = {}, missing = [];
+    hit.forEach(function(i){
+      const code = String(body[i][cCode]).trim();
+      const sign = moveSign(String(body[i][cType]));
+      if(!(code in idx)){ if(missing.indexOf(code)<0) missing.push(code); return; }
+      const r   = idx[code];
+      const cur = (touched[code] !== undefined) ? touched[code] : num(iBody[r][kStock]);
+      touched[code] = cur - sign * num(body[i][cQty]);
+    });
+    Object.keys(touched).forEach(function(code){
+      ish.getRange(idx[code]+2, kStock+1).setValue(touched[code]);
+    });
+
+    /* --- 由下往上刪列，索引才不會位移 --- */
+    for(let k=hit.length-1;k>=0;k--) msh.deleteRow(hit[k]+2);
+
+    /* --- 記下作廢的單號並寫入異動紀錄 --- */
+    const used = String(sysGet('voidNos','')).split(',')
+                   .map(function(x){return String(x).trim();}).filter(function(x){return x;});
+    if(used.indexOf(no) < 0) used.push(no);
+    sysSet('voidNos', used.slice(-800).join(','));
+
+    const now = nowTS();
+    sheet('hist').appendRow([now, '刪除庫存異動單 '+no+(why?'（'+why+'）':''),
+      0, hit.length, Object.keys(touched).length, 0, 0, auth.name||'']);
+
+    const rev = (Number(sysGet('rev',0))||0) + 1;
+    sysSet('rev', rev);
+    sysSet('updatedAt', now);
+    sysSet('updatedBy', (auth.name||'') + '（刪除單據 ' + no + '）');
+    sysFlush();
+    SpreadsheetApp.flush();
+    return {ok:true, no:no, rev:rev, removed:hit.length, missing:missing,
             stock: Object.keys(touched).map(function(c){ return {code:c, stock:touched[c]}; })};
   } finally { lock.releaseLock(); }
 }
@@ -773,6 +854,7 @@ function doPost(e){
                                           roleName: ROLES[auth.role]||'唯讀'});
   if(action === 'changePw')   return out(acChangePw(auth, body));
   if(action === 'postOrder')  return out(postOrder(auth, body));
+  if(action === 'voidOrder')  return out(voidOrder(auth, body));
   if(action === 'setStaff')   return out(acSetStaff(auth, body));
   if(action === 'listUsers')  return out(acListUsers(auth));
   if(action === 'setUser')    return out(acSetUser(auth, body));
