@@ -2699,7 +2699,7 @@ function vMove(){
     ${list.length?`<div class="tblwrap" style="max-height:60vh"><table><thead><tr>
       <th class="nos">單號</th><th class="nos">日期</th><th class="nos">類別</th><th class="nos">倉別</th>
       <th class="nos">異動原因</th><th class="nos num">項數</th><th class="nos">領用人</th>
-      <th class="nos">填表人</th><th class="nos" style="width:150px">操作</th></tr></thead><tbody>
+      <th class="nos">填表人</th><th class="nos" style="width:210px">操作</th></tr></thead><tbody>
       ${list.map(o=>`<tr style="cursor:pointer" onclick="mvToggle('${esc(o.no)}')">
         <td class="mono"><b>${esc(o.no)}</b></td><td class="mut">${esc(o.date)}</td>
         <td><span class="tag ${o.type==='領料'?'bad':(o.type==='入庫'?'ok':'warn')}">${esc(o.type)}</span></td>
@@ -2707,7 +2707,8 @@ function vMove(){
         <td class="num">${o.lines.length}</td><td class="mut">${esc(o.taker)}</td><td class="mut">${esc(o.by)}</td>
         <td onclick="event.stopPropagation()">
           <button class="btn sm" onclick="mvDoc('${esc(o.no)}')">Word</button>
-          <button class="btn sm" onclick="mvToggle('${esc(o.no)}')">${moveSt.open===o.no?'收合':'明細'}</button></td></tr>
+          <button class="btn sm" onclick="mvToggle('${esc(o.no)}')">${moveSt.open===o.no?'收合':'明細'}</button>
+          ${isAdmin()?`<button class="btn sm danger" onclick="mvDelOrder('${esc(o.no)}')" title="刪除這張單並回沖庫存">刪除</button>`:''}</td></tr>
         ${moveSt.open===o.no?`<tr><td colspan="9" style="background:#fafbfc;padding:10px 14px">
           <table style="font-size:12.5px"><thead><tr><th class="nos">項次</th><th class="nos">品號</th>
             <th class="nos">品名</th><th class="nos num">數量</th><th class="nos">單位</th>
@@ -2747,6 +2748,62 @@ function mvDoc(no){
   docFromOrder({no:h.no,date:h.date,type:h.type,house:h.house,dept:h.dept,reason:h.reason,
     taker:h.taker,by:h.by,memo:h.memo,
     lines:all.map(l=>({code:l.code,name:l.name,qty:l.qty,unit:l.unit,note:l.note}))});
+}
+/* ---------- 刪除已送出的單據（僅管理員）：整張單移除並回沖庫存 ---------- */
+function mvDelOrder(no){
+  if(!isAdmin()) return toast('只有管理員可以刪除已送出的單據');
+  const all=(S.moves||[]).filter(m=>m.no===no);
+  if(!all.length) return toast('找不到這張單，請按 ↻ 重新讀取雲端');
+  const h=all[0], sg=(h.type==='領料')?-1:1;
+  dialog(`刪除單據　${no}`,`
+    <dl class="kv">
+      <dt>類別</dt><dd><b>${esc(h.type)}</b>　${esc(h.house)}</dd>
+      <dt>日期</dt><dd>${esc(h.date)}</dd>
+      <dt>異動原因</dt><dd>${esc(h.reason)}</dd>
+      <dt>填表人</dt><dd>${esc(h.by)}${h.taker?`　<span class="mini mut">領用人 ${esc(h.taker)}</span>`:''}</dd>
+      <dt>明細</dt><dd>${all.length} 項</dd>
+    </dl>
+    <div class="tblwrap" style="margin-top:10px;max-height:220px"><table style="font-size:12.5px">
+      <thead><tr><th class="nos">品號</th><th class="nos">品名</th><th class="nos num">回沖</th>
+        <th class="nos num">目前庫存</th><th class="nos num">刪除後</th></tr></thead><tbody>
+      ${all.map(l=>{ const it=itemOf(l.code), af=(it.stock||0)-sg*(+l.qty||0);
+        return `<tr><td class="mono">${esc(l.code)}</td><td>${esc(l.name)}</td>
+          <td class="num"><b class="${sg>0?'mv-out':'mv-in'}">${sg>0?'-':'+'}${nf(l.qty)}</b></td>
+          <td class="num mut">${nf(it.stock)}</td>
+          <td class="num"><b>${nf(af)}</b>${af<0?' <span class="tag bad">負數</span>':''}</td></tr>`;}).join('')}
+    </tbody></table></div>
+    <div class="fld" style="margin-top:10px"><label>刪除原因<span class="mini mut">（會寫進「更新比對」的異動紀錄）</span></label>
+      <input id="del_why" style="width:100%" placeholder="例：單號重複送出、品號打錯"></div>
+    <div class="hint">按下確定後，這張單的 ${all.length} 筆明細會從「庫存異動」整張移除，庫存立刻回沖成上表的「刪除後」數量。
+      這個動作<b>不能復原</b>；單號 ${esc(no)} 已用掉，不會再配給別張單，所以會出現號碼跳號。
+      如果只是想沖銷帳但保留紀錄，請改開一張反向的單。</div>`,
+    `<button class="btn danger" type="button" onclick="doMvDelOrder('${esc(no)}')">確定刪除</button>
+     <button class="btn" value="x">取消</button>`);
+}
+async function doMvDelOrder(no){
+  const box=document.getElementById('del_why');
+  const why=box?box.value.trim():'';
+  closeDlg();
+  if(!CLOUD) return toast('本機模式無法刪除單據，請使用線上版');
+  setNet('save');
+  try{
+    const d=await apiPost('voidOrder',null,{no:no,why:why});
+    if(d.error){ setNet('err');
+      if(d.needLogin) return openGate('login',d.error);
+      return dialog('刪不掉',`<p>${esc(d.error)}</p>
+        <div class="hint">單據沒有被刪除，庫存也沒有變動。</div>`); }
+    await pull(); renderAll(); go('move');
+    dialog(`單據已刪除　${no}`,`
+      <p>已移除 ${d.removed} 筆明細，庫存已回沖。</p>
+      ${(d.stock||[]).length?`<dl class="kv"><dt>回沖後庫存</dt>
+        <dd>${(d.stock||[]).map(x=>esc(x.code)+' → '+nf(x.stock)).join('<br>')}</dd></dl>`:''}
+      ${(d.missing||[]).length?`<div class="ro-banner">下列品號已不在料號主檔，庫存沒有回沖，請自行確認：
+        ${(d.missing||[]).map(esc).join('、')}</div>`:''}
+      <div class="hint">刪除紀錄已寫進「更新比對」，可查是誰在什麼時候刪的。</div>`,
+      `<button class="btn pri" value="x">知道了</button>`);
+  }catch(e){ setNet('err');
+    dialog('刪不掉',`<p>連不上雲端：${esc(e.message||'網路逾時')}</p>
+      <div class="hint">單據沒有被刪除。確認網路後再試一次。</div>`); }
 }
 function mvPreviewDoc(){
   if(!MVORD.lines.length) return toast('單據沒有明細');
@@ -3068,6 +3125,7 @@ async function doDelUser(id){
 /* ---------- 唯讀權限保護：所有會改資料的入口統一攔截 ---------- */
 const WRITE_FNS=['saveItem','editItem','delItem','bulkAdd','bulkSave',
   'addMove','doAddMove','mvSubmit','doMvSubmit','mvClear','doMvClear',
+  'mvDelOrder','doMvDelOrder',
   'stEdit','stAdd','stDel','stSave',
   'importItemsFile','importDB','applyDB','applyLoose','importBomFile','impJSON',
   'applySync','syncPick','editBom','saveBom','delBom','dupBom','splitSubBom','doSplitSubBom',
