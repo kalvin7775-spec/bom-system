@@ -254,6 +254,13 @@ function fmtTS(v){
   if(v instanceof Date) return Utilities.formatDate(v,'Asia/Taipei','yyyy/MM/dd HH:mm:ss');
   return String(v===null||v===undefined?'':v);
 }
+/* 日期欄只要日期；試算表若把字串轉成日期值，讀回時去掉被補上的 00:00:00 */
+function fmtDate(v){
+  if(v instanceof Date) return Utilities.formatDate(v,'Asia/Taipei','yyyy/MM/dd');
+  const s = String(v===null||v===undefined?'':v).trim();
+  const m = s.match(/^(\d{4})[\/-](\d{1,2})[\/-](\d{1,2})/);
+  return m ? (m[1]+'/'+('0'+m[2]).slice(-2)+'/'+('0'+m[3]).slice(-2)) : s;
+}
 function numOrNull(v){
   if(v===''||v===null||v===undefined) return null;
   const n = parseFloat(v); return isNaN(n) ? null : n;
@@ -452,7 +459,7 @@ function readMoves(){
   const all = rows('moves');
   const use = all.length > MOVE_LIMIT ? all.slice(all.length - MOVE_LIMIT) : all;
   return use.map(function(r){
-    return {no:String(r['單號']||''), date:fmtTS(r['日期']), type:String(r['類別']||''),
+    return {no:String(r['單號']||''), date:fmtDate(r['日期']), type:String(r['類別']||''),
       house:String(r['倉別']||''), dept:String(r['申請部門']||''), reason:String(r['異動原因']||''),
       seq:num(r['項次']), code:String(r['品號']||''), name:String(r['品名']||''),
       qty:num(r['數量']), unit:String(r['單位']||'pcs'),
@@ -490,8 +497,9 @@ function postOrder(auth, p){
   lock.waitLock(25000);
   try{
     /* --- 取單號 --- */
-    const d = o.date ? new Date(String(o.date).replace(/-/g,'/')) : new Date();
-    const valid = isNaN(d.getTime()) ? new Date() : d;
+    /* 單據日期一律以送出當下的伺服器時間為準；
+       草稿存在瀏覽器裡，隔幾天再送出時舊日期會跟著送過來，之前就是這樣跑掉的 */
+    const valid = new Date();
     const pfx = 'PP' + Utilities.formatDate(valid,'Asia/Taipei','yyMM');
     let max = 0;
     rows('moves').forEach(function(r){
@@ -544,7 +552,10 @@ function postOrder(auth, p){
     });
     /* --- 附加到庫存異動 --- */
     const msh = sheet('moves');
-    msh.getRange(msh.getLastRow()+1, 1, out.length, HEAD.moves.length).setValues(out);
+    const at0 = msh.getLastRow()+1;
+    markTextCol(msh, at0, HEAD.moves.indexOf('日期')+1,   out.length);
+    markTextCol(msh, at0, HEAD.moves.indexOf('建立時間')+1, out.length);
+    msh.getRange(at0, 1, out.length, HEAD.moves.length).setValues(out);
 
     const rev = (Number(sysGet('rev',0))||0) + 1;
     sysSet('rev', rev);

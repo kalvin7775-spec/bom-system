@@ -2474,7 +2474,9 @@ function autoDept(){
   if(d){ MVORD.dept=d; saveDraft(); }
   return d;
 }
-let MVORD=(()=>{ try{ const o=JSON.parse(LS.get(DRAFTKEY)); if(o&&Array.isArray(o.lines)) return o; }catch(e){}
+let MVORD=(()=>{ try{ const o=JSON.parse(LS.get(DRAFTKEY));
+    /* 單據日期以送出當下為準，草稿裡的舊日期不再沿用 */
+    if(o&&Array.isArray(o.lines)){ o.date=todayStr(); return o; } }catch(e){}
   return blankDraft(); })();
 function saveDraft(){ LS.set(DRAFTKEY,JSON.stringify(MVORD)); paintMoveBadge(); }
 function paintMoveBadge(){ const b=document.getElementById('moveBadge');
@@ -2530,7 +2532,6 @@ function mvSubmit(){
   /* 依「領料單系統規範」第七節逐項檢查必填 */
   if(!MVORD.lines.length) return toast('單據沒有明細');
   if(!MVORD.reason.trim()) return toast('請填「異動原因」，會印在 Word 單的表頭');
-  if(!MVORD.date) return toast('請填日期');
   if(!MVORD.house) return toast('請選倉別');
   if(!autoDept()) return toast('請選申請部門（依填表人所屬部門）');
   const bad=MVORD.lines.filter(l=>!(l.qty>0));
@@ -2542,7 +2543,7 @@ function mvSubmit(){
   dialog('送出單據',`
     <dl class="kv">
       <dt>類別</dt><dd><b>${esc(MVORD.type)}</b>　${esc(MVORD.house)}</dd>
-      <dt>日期</dt><dd>${esc(MVORD.date)}</dd>
+      <dt>日期</dt><dd>${esc(todayStr().replace(/-/g,'/'))} <span class="mini mut">（送出當下，含實際時間）</span></dd>
       <dt>申請部門</dt><dd>${esc(MVORD.dept)}　<span class="mini mut">填表人 ${esc((ME&&ME.name)||WHO||'')}</span></dd>
       <dt>異動原因</dt><dd>${esc(MVORD.reason)}</dd>
       <dt>明細</dt><dd>${send.length} 項，共 ${nf(send.reduce((s,l)=>s+(+l.qty||0),0))} 個</dd>
@@ -2595,6 +2596,9 @@ async function doMvSubmit(){
 }
 
 /* ---------- 歷史單據 ---------- */
+/* 舊資料的日期被試算表轉成日期值，讀回來會多一截 00:00:00，顯示時去掉 */
+const dateOnly=v=>String(v||'').trim().slice(0,10);
+const hhmm=v=>{ const m=String(v||'').match(/(\d{1,2}):(\d{2})/); return m?('0'+m[1]).slice(-2)+':'+m[2]:''; };
 const moveSt={q:'',type:'',open:'',ym:''};
 /* 把逐列紀錄依單號組成一張張單 */
 function moveOrders(){
@@ -2635,7 +2639,9 @@ function vMove(){
         <select id="ov_house" style="width:110px" onchange="mvHead('house',this.value)">
           ${HOUSES.map(h=>`<option value="${h}"${MVORD.house===h?' selected':''}>${h}</option>`).join('')}</select></div>
       <div><label class="mini">日期</label><br>
-        <input type="date" style="width:150px" value="${esc(MVORD.date)}" onchange="mvHead('date',this.value)"></div>
+        <span class="mut" style="display:inline-block;padding:7px 2px;font-size:13px"
+          title="單據日期由伺服器在送出當下決定，不會因為草稿放了幾天而跑掉">
+          送出當下自動帶入（今天 ${esc(todayStr().replace(/-/g,'/'))}）</span></div>
       <div><label class="mini">申請部門${dept?'':' <span class="tag bad">待確認</span>'}</label><br>
         <select style="width:120px" onchange="mvHead('dept',this.value)">
           <option value=""${dept?'':' selected'}>請選擇…</option>
@@ -2701,7 +2707,8 @@ function vMove(){
       <th class="nos">異動原因</th><th class="nos num">項數</th><th class="nos">領用人</th>
       <th class="nos">填表人</th><th class="nos" style="width:210px">操作</th></tr></thead><tbody>
       ${list.map(o=>`<tr style="cursor:pointer" onclick="mvToggle('${esc(o.no)}')">
-        <td class="mono"><b>${esc(o.no)}</b></td><td class="mut">${esc(o.date)}</td>
+        <td class="mono"><b>${esc(o.no)}</b></td>
+        <td class="mut">${esc(dateOnly(o.date))}${hhmm(o.at)?`<br><span class="mini mut">建立 ${esc(hhmm(o.at))}</span>`:''}</td>
         <td><span class="tag ${o.type==='領料'?'bad':(o.type==='入庫'?'ok':'warn')}">${esc(o.type)}</span></td>
         <td class="mut">${esc(o.house)}</td><td>${esc(o.reason)}</td>
         <td class="num">${o.lines.length}</td><td class="mut">${esc(o.taker)}</td><td class="mut">${esc(o.by)}</td>
@@ -2807,7 +2814,7 @@ async function doMvDelOrder(no){
 }
 function mvPreviewDoc(){
   if(!MVORD.lines.length) return toast('單據沒有明細');
-  docFromOrder(Object.assign({},MVORD,{no:'(未送出)',date:MVORD.date.replace(/-/g,'/'),
+  docFromOrder(Object.assign({},MVORD,{no:'(未送出)',date:todayStr().replace(/-/g,'/'),
     by:(ME&&ME.name)||WHO||''}));
 }
 function exportMoves(){
