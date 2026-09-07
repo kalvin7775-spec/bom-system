@@ -563,7 +563,15 @@ function postOrder(auth, p){
     sysSet('updatedBy', (auth.name||'') + '（' + o.type + ' ' + no + '）');
     sysFlush();
     SpreadsheetApp.flush();
-    return {ok:true, no:no, rev:rev, date:dateStr,
+    /* 一併把寫進去的明細回傳（欄位順序同 HEAD.moves），
+       前端可以直接接到畫面上，省掉送出後那次整份重讀 */
+    const wrote = out.map(function(r){
+      return {no:r[0], date:r[1], type:r[2], house:r[3], dept:r[4], reason:r[5], seq:r[6],
+              code:r[7], name:r[8], qty:r[9], unit:r[10], before:r[11], after:r[12],
+              taker:r[13], by:r[14], note:r[15], memo:r[16], at:r[17]};
+    });
+    return {ok:true, no:no, rev:rev, date:dateStr, moves:wrote,
+            updatedAt:String(sysGet('updatedAt','')), updatedBy:String(sysGet('updatedBy','')),
             stock: Object.keys(touched).map(function(c){ return {code:c, stock:touched[c]}; })};
   } finally { lock.releaseLock(); }
 }
@@ -640,6 +648,7 @@ function voidOrder(auth, p){
     sysFlush();
     SpreadsheetApp.flush();
     return {ok:true, no:no, rev:rev, removed:hit.length, missing:missing,
+            updatedAt:String(sysGet('updatedAt','')), updatedBy:String(sysGet('updatedBy','')),
             stock: Object.keys(touched).map(function(c){ return {code:c, stock:touched[c]}; })};
   } finally { lock.releaseLock(); }
 }

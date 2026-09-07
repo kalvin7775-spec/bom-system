@@ -2528,6 +2528,28 @@ function mvClear(){
 function doMvClear(){ MVORD=blankDraft(); saveDraft(); vMove(); toast('已清空'); }
 
 /* ---------- 送出 ---------- */
+/* 送單／刪單後就地更新畫面，不再整份重讀雲端。
+   伺服器已回傳新單明細、異動後庫存與新的 rev，接上去即可，可省下 3～6 秒。
+   萬一回傳內容不齊（例如後端還是舊版），回傳 false 讓呼叫端退回 pull()。 */
+async function applyMoveResult(d, opt){
+  opt = opt || {};
+  if(d.rev == null) return false;
+  if(!opt.removeNo && !Array.isArray(d.moves)) return false;
+  if(opt.removeNo) S.moves = (S.moves||[]).filter(m => m.no !== opt.removeNo);
+  if(Array.isArray(d.moves) && d.moves.length) S.moves = (S.moves||[]).concat(d.moves);
+  (d.stock||[]).forEach(x => { const it = IDX[x.code]; if(it) it.stock = x.stock; });
+  REV = d.rev;
+  if(d.updatedAt){
+    LASTSYNC = d.updatedAt;
+    S.meta = S.meta || {};
+    S.meta.updatedAt = d.updatedAt;
+    if(d.updatedBy) S.meta.updatedBy = d.updatedBy;
+  }
+  DIRTY = false; setNet('ok');
+  reindex();
+  try{ await DB.set('cache', JSON.parse(JSON.stringify({S:S, REV:REV}))); }catch(e){}
+  return true;
+}
 function mvSubmit(){
   /* 依「領料單系統規範」第七節逐項檢查必填 */
   if(!MVORD.lines.length) return toast('單據沒有明細');
@@ -2577,7 +2599,8 @@ async function doMvSubmit(){
                    reason:snapshot.reason,taker:snapshot.taker,memo:snapshot.memo,
                    date:snapshot.date,lines:rest}:{});
     saveDraft();
-    await pull(); renderAll();
+    if(!await applyMoveResult(d)) await pull();
+    renderAll();
     const posted=Object.assign({},snapshot,{no:d.no,date:d.date,by:(ME&&ME.name)||WHO||''});
     go('move');
     dialog(`單據已送出　${d.no}`,`
@@ -2799,7 +2822,8 @@ async function doMvDelOrder(no){
       if(d.needLogin) return openGate('login',d.error);
       return dialog('刪不掉',`<p>${esc(d.error)}</p>
         <div class="hint">單據沒有被刪除，庫存也沒有變動。</div>`); }
-    await pull(); renderAll(); go('move');
+    if(!await applyMoveResult(d,{removeNo:no})) await pull();
+    renderAll(); go('move');
     dialog(`單據已刪除　${no}`,`
       <p>已移除 ${d.removed} 筆明細，庫存已回沖。</p>
       ${(d.stock||[]).length?`<dl class="kv"><dt>回沖後庫存</dt>
