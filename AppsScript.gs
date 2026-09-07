@@ -903,10 +903,21 @@ function doPost(e){
     }
   }
 
-  if(action === 'load')
-    return out(Object.assign(readState(),
-      {auth:{id:auth.id, role:auth.role, name:auth.name, email:auth.email, legacy:!!auth.legacy,
-             roleName: ROLES[auth.role]||'唯讀'}}));
+  if(action === 'load'){
+    const authInfo = {id:auth.id, role:auth.role, name:auth.name, email:auth.email,
+                      legacy:!!auth.legacy, roleName: ROLES[auth.role]||'唯讀'};
+    /* 前端把手上的版本號一起送來；跟雲端一樣就不必重讀那 6 張表，
+       直接請它沿用本機快取。舊版前端不送 haveRev，照舊回完整資料。 */
+    const curRev = Number(sysGet('rev',0))||0;
+    if(body.haveRev !== undefined && body.haveRev !== null &&
+       Number(body.haveRev) === curRev && curRev > 0){
+      return out({notModified:true, rev:curRev,
+                  updatedAt:fmtTS(sysGet('updatedAt','')),
+                  updatedBy:String(sysGet('updatedBy','')),
+                  auth:authInfo});
+    }
+    return out(Object.assign(readState(), {auth:authInfo}));
+  }
 
   if(action === 'save'){
     if(!canWrite(auth.role))
