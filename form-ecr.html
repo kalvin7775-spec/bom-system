@@ -105,6 +105,64 @@ col.s0{width:20%} col.s1{width:13.33%}
 .sign .box{height:1.5cm}
 .foot{margin-top:7px;font-size:10.5pt;line-height:1.7}
 
+
+/* ---------- 雲端：登入閘門、狀態、歷史單據（皆不列印） ---------- */
+.bar .tag{font-size:11.5px;padding:3px 8px;border-radius:20px;border:1px solid transparent;
+  font-family:-apple-system,"Noto Sans TC",sans-serif;white-space:nowrap}
+.bar .tag.ok{background:#e9f7ee;color:#1a6b38;border-color:#bfe3cd}
+.bar .tag.bad{background:#fdecec;color:#a62222;border-color:#f3c6c6}
+.bar .tag.warn{background:#fff5e5;color:#8a5a00;border-color:#f0dcb4}
+.bar .tag.info{background:#eaf1fd;color:#24509b;border-color:#c9d9f5}
+.bar .tag.gray{background:#f0f2f5;color:#6b7280;border-color:#e0e4ea}
+.bar .box{display:inline-flex;align-items:center;gap:6px;
+  font-family:-apple-system,"Noto Sans TC",sans-serif;font-size:12.5px}
+.bar .btn.sm{padding:4px 9px;font-size:12px}
+
+#gate{position:fixed;inset:0;background:#eef1f5;z-index:500;display:none;overflow:auto;padding:44px 16px;
+  font-family:-apple-system,"Noto Sans TC","PingFang TC",sans-serif}
+#gate.on{display:block}
+.gate-box{max-width:430px;margin:0 auto;background:#fff;border:1px solid #dde2e8;
+  border-radius:12px;padding:26px 26px 22px;box-shadow:0 4px 22px rgba(20,30,50,.08)}
+.gate-box h2{margin:0 0 4px;font-size:19px}
+.gate-box .sub{color:var(--mut);font-size:13px;margin-bottom:18px}
+.gate-tabs{display:flex;gap:2px;background:#eef0f3;padding:3px;border-radius:8px;margin-bottom:18px}
+.gate-tabs button{flex:1;background:none;border:0;padding:8px;border-radius:6px;cursor:pointer;
+  font:inherit;font-size:13px;color:var(--mut)}
+.gate-tabs button.on{background:#fff;color:var(--acc);font-weight:600;box-shadow:0 1px 3px rgba(0,0,0,.08)}
+.gate-msg{font-size:13px;padding:9px 11px;border-radius:7px;margin-bottom:14px;line-height:1.6}
+.gate-msg.bad{background:#fdecec;color:#a62222;border:1px solid #f3c6c6}
+.gate-msg.ok{background:#e9f7ee;color:#1a6b38;border:1px solid #bfe3cd}
+.fld{margin-bottom:11px}
+.fld label{display:block;font-size:12.5px;color:var(--mut);margin-bottom:4px}
+.fld input{width:100%;font:inherit;font-size:14px;padding:8px 10px;border:1px solid #cfd6de;border-radius:7px}
+.fld input:focus{outline:none;border-color:var(--acc);box-shadow:0 0 0 2px rgba(31,95,191,.14)}
+.gate-foot{margin-top:16px;padding-top:14px;border-top:1px solid #e6eaef;color:var(--mut);font-size:12.5px;line-height:1.7}
+.gate-foot a{color:var(--acc)}
+
+.vbanner{max-width:21cm;margin:14px auto -6px;padding:10px 16px;border-radius:9px;
+  background:#fff5e5;border:1px solid #f0dcb4;color:#8a5a00;font-size:13px;
+  font-family:-apple-system,"Noto Sans TC",sans-serif;display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.vbanner b{color:#6b4600}
+.vbanner .btn{margin-left:auto}
+
+.histwrap{max-width:21cm;margin:22px auto 60px;background:#fff;border:1px solid #dde2e8;
+  border-radius:12px;padding:16px 18px;font-family:-apple-system,"Noto Sans TC",sans-serif;font-size:13px}
+.histwrap h2{margin:0 0 4px;font-size:15px}
+.histwrap .sub{color:var(--mut);font-size:12.5px;margin-bottom:12px}
+.histwrap table{border-collapse:collapse;width:100%;table-layout:auto}
+.histwrap th{background:#f4f6f9;border:1px solid #e3e7ec;padding:7px 8px;text-align:left;
+  font-size:12px;color:#4b5563;white-space:nowrap}
+.histwrap td{border:1px solid #e9edf1;padding:6px 8px;vertical-align:middle;word-break:break-word}
+.histwrap tr:hover td{background:#f8fafc}
+.histwrap .mono{font-family:ui-monospace,Menlo,Consolas,monospace;white-space:nowrap}
+.histwrap .empty{color:var(--mut);text-align:center;padding:22px 0}
+.histwrap .ops{white-space:nowrap}
+.histwrap .btn{padding:4px 9px;font-size:12px;margin-right:4px}
+.histwrap .btn.danger{color:#b3261e;border-color:#f0c3bd}
+.hsearch{width:100%;font:inherit;font-size:13px;padding:7px 10px;border:1px solid #cfd6de;
+  border-radius:7px;margin-bottom:10px}
+@media print{ .vbanner,.histwrap,#gate{display:none !important} }
+
 /* ---------- 列印（另存 PDF） ---------- */
 @page{size:A4;margin:1.4cm 1cm}
 @media print{
@@ -135,16 +193,23 @@ https://github.com/nodeca/pako/blob/main/LICENSE
 </script>
 </head>
 <body>
+<div id="gate"><div class="gate-box" id="gateBox"></div></div>
+
 <div class="bar">
   <a class="home" href="index.html">首頁</a>
   <a class="home" href="forms.html">表格填寫</a>
   <h1>文件/工程變更審查表</h1>
-  <span class="sub">QA-2-01-01-A ｜ 尚未連動雲端：資料只在這個分頁，重新整理就會清空，請先匯出 Word 或 PDF 保存</span>
+  <span class="box" id="netBox"></span>
+  <span class="sub">QA-2-01-01-A</span>
+  <span class="box" id="meBox"></span>
   <button class="btn" onclick="loadSample()">載入範例</button>
-  <button class="btn" onclick="clearAll()">清空</button>
+  <button class="btn" onclick="newForm()">新表單</button>
   <button class="btn" onclick="window.print()">匯出 PDF（列印）</button>
-  <button class="btn pri" onclick="exportWord()">匯出 Word</button>
+  <button class="btn" onclick="exportWord()">匯出 Word</button>
+  <button class="btn pri" id="btnSubmit" onclick="submitEcr()">送出存檔</button>
 </div>
+
+<div class="vbanner" id="vbanner" hidden></div>
 
 <div class="sheet" id="sheet">
 
@@ -245,6 +310,13 @@ https://github.com/nodeca/pako/blob/main/LICENSE
     ● 任何單位有疑問時，本文件將不被簽核完畢，不可發行為正式文件，需討論清楚後再行簽核。<br>
     ● 文件/工程變更審查，簽核單位，由製作人在□內勾選。
   </div>
+</div>
+
+<div class="histwrap" id="histWrap">
+  <h2>已送出的審查表 <span id="histCount" class="sub" style="font-weight:400"></span></h2>
+  <div class="sub">送出後內容就鎖住不能改；打錯的話請管理員刪掉再重開一張。</div>
+  <input type="search" class="hsearch" id="hq" placeholder="搜尋編號 / 文件名稱 / 文件編號 / 製作人…">
+  <div id="histBody"></div>
 </div>
 
 <div class="toast" id="toast"></div>
@@ -354,9 +426,10 @@ function b64ToU8(b64){
   return u;
 }
 
-async function exportWord(){
+async function exportWord(){ return exportWordMap(buildMap()); }
+
+async function exportWordMap(m){
   if(typeof JSZip === 'undefined') return toast('Word 元件沒載入，請重新整理頁面');
-  const m = buildMap();
   try{
     const zip = await JSZip.loadAsync(b64ToU8(DOC_TPL_B64));
     let xml = await zip.file('word/document.xml').async('string');
@@ -401,7 +474,6 @@ function loadSample(){
 }
 
 function clearAll(){
-  if(!confirm('確定清空整張表？')) return;
   document.querySelectorAll('#sheet .in').forEach(el => el.textContent = '');
   document.querySelectorAll('#sheet input[type=checkbox], #sheet input[type=radio]')
     .forEach(el => el.checked = false);
@@ -410,10 +482,433 @@ function clearAll(){
     const box = fld('E' + i + 'T');
     box.classList.add('off'); box.setAttribute('contenteditable','false');
   }
-  toast('已清空');
 }
 
 $('logo').src = 'data:image/png;base64,' + LOGO_B64;
+</script>
+<script>
+/* ============================================================
+   雲端 — 與 BOM 系統共用同一個 Apps Script 後端與同一組帳號
+   送出後內容鎖住，只有管理員能刪除；編號由填表人自己填，後端會擋重號。
+   ============================================================ */
+const API_URL = 'https://script.google.com/macros/s/AKfycbzjpoGstBAAPfVpHwQ2dfCMtDw3yfVgtYQuLKbUWFO8sGNRu7Pkk8wOaqZguGkQx7PQxg/exec';
+const CLOUD = API_URL.indexOf('http') === 0;
+
+const TKKEY = 'bom_token_v1', PWKEY = 'bom_pw_v2', WHOKEY = 'bom_who_v1';
+const LS = {
+  get: k => { try{ return localStorage.getItem(k) || ''; }catch(e){ return ''; } },
+  set: (k,v) => { try{ localStorage.setItem(k,v); }catch(e){} },
+  del: k => { try{ localStorage.removeItem(k); }catch(e){} }
+};
+let TOKEN = LS.get(TKKEY), PW = LS.get(PWKEY), WHO = LS.get(WHOKEY);
+let ME = null, REV = 0, NET = 'idle', LASTSYNC = '';
+let RECS = [], MODE = 'new', VIEWNO = '', HQ = '';
+
+const ROLE_NAME = {admin:'管理員', editor:'編輯', viewer:'唯讀'};
+const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g,
+  c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+function myRole(){ return (ME && ME.role) || 'viewer'; }
+function canWrite(){ return myRole() === 'admin' || myRole() === 'editor'; }
+function isAdmin(){ return myRole() === 'admin'; }
+function denyWrite(){ toast(ME && ME.legacy
+  ? '共用密碼為唯讀模式，請註冊個人帳號後由管理員給予編輯權限'
+  : '你的權限為「唯讀」，不能送出審查表。請聯絡管理員調整權限'); }
+
+/* ---------- 狀態列 ---------- */
+function setNet(s){ NET = s; paintNet(); }
+function paintNet(){
+  const el = $('netBox'); if(!el) return;
+  const map = {idle:['','gray'], load:['讀取雲端中…','info'], ok:['已同步','ok'],
+    save:['儲存中…','info'], err:['雲端連線失敗','bad']};
+  const m = map[NET] || ['',''];
+  el.innerHTML = '<span class="tag ' + m[1] + '">' + m[0] +
+    (NET === 'ok' && LASTSYNC ? ' ' + esc(LASTSYNC.slice(-8)) : '') + '</span>' +
+    '<button class="btn sm" onclick="pullNow()" title="重新讀取雲端資料">↻</button>';
+}
+function paintMe(){
+  const el = $('meBox'); if(!el) return;
+  if(!ME){
+    el.innerHTML = '<span class="tag bad">未登入</span>' +
+      '<button class="btn sm" onclick="openGate(\'login\')">登入</button>';
+  }else{
+    const t = ME.legacy ? '<span class="tag warn">共用密碼·唯讀</span>'
+      : '<span class="tag ' + (myRole() === 'viewer' ? 'gray' : 'ok') + '">' +
+        esc(ME.roleName || ROLE_NAME[myRole()]) + '</span>';
+    el.innerHTML = '<b>' + esc(ME.name || '') + '</b>' + t +
+      '<button class="btn sm" onclick="logout()">登出</button>';
+  }
+  const b = $('btnSubmit');
+  if(b) b.style.display = (ME && canWrite() && MODE === 'new') ? '' : 'none';
+}
+function logout(){
+  TOKEN = ''; PW = ''; ME = null; LS.del(TKKEY); LS.del(PWKEY);
+  RECS = []; renderHist(); paintMe(); openGate('login','已登出');
+}
+
+async function apiPost(action, payload, extra){
+  const body = Object.assign({action:action, payload:payload, token:TOKEN, pw:PW, who:WHO}, extra || {});
+  let lastErr;
+  const tries = (action === 'postEcr' || action === 'voidEcr') ? 1 : 2;
+  for(let i = 0; i < tries; i++){
+    try{
+      const res = await fetch(API_URL, {method:'POST',
+        headers:{'Content-Type':'text/plain;charset=utf-8'}, body: JSON.stringify(body)});
+      if(!res.ok) throw new Error('HTTP ' + res.status);
+      return await res.json();
+    }catch(e){ lastErr = e; if(i + 1 < tries) await new Promise(r => setTimeout(r, 1200)); }
+  }
+  throw lastErr;
+}
+
+async function whoAmI(){
+  try{
+    const d = await apiPost('me', null);
+    if(d.error){ if(d.needLogin) openGate('login', d.error); return false; }
+    ME = {id:d.id, name:d.name, email:d.email, role:d.role, legacy:!!d.legacy,
+          roleName:d.roleName || ROLE_NAME[d.role] || '唯讀'};
+    WHO = ME.name || WHO; closeGate(); paintMe(); return true;
+  }catch(e){ return false; }
+}
+
+async function pull(silent){
+  setNet('load');
+  try{
+    const d = await apiPost('loadEcr', null);
+    if(d.error){
+      setNet('err');
+      if(d.needLogin){ openGate('login', d.error); return false; }
+      if(!silent) toast(d.error);
+      return false;
+    }
+    RECS = d.records || [];
+    REV = d.rev || 0; LASTSYNC = d.updatedAt || '';
+    setNet('ok'); renderHist(); return true;
+  }catch(e){
+    setNet('err');
+    if(!silent) toast('連不上雲端（' + (e.message || '網路逾時') + '）');
+    return false;
+  }
+}
+async function pullNow(){ if(await pull()) toast('已重新讀取雲端資料'); }
+
+/* ---------- 登入畫面 ---------- */
+let GATE_TAB = 'login', GATE_MSG = '', GATE_MSG_OK = false, GATE_BUSY = false;
+function openGate(tab, msg, ok){
+  GATE_TAB = tab || 'login'; GATE_MSG = msg || ''; GATE_MSG_OK = !!ok;
+  $('gate').classList.add('on'); paintGate();
+}
+function closeGate(){ $('gate').classList.remove('on'); GATE_MSG = ''; GATE_BUSY = false; }
+function gateTab(t){ GATE_TAB = t; GATE_MSG = ''; paintGate(); }
+function paintGate(){
+  const msg = GATE_MSG ? '<div class="gate-msg ' + (GATE_MSG_OK ? 'ok' : 'bad') + '">' + esc(GATE_MSG) + '</div>' : '';
+  const tabs = '<div class="gate-tabs">' +
+    '<button type="button" class="' + (GATE_TAB === 'login' ? 'on' : '') + '" onclick="gateTab(\'login\')">登入</button>' +
+    '<button type="button" class="' + (GATE_TAB === 'legacy' ? 'on' : '') + '" onclick="gateTab(\'legacy\')">共用密碼</button>' +
+    '</div>';
+  let body;
+  if(GATE_TAB === 'login'){
+    body = tabs + msg +
+      '<div class="fld"><label>Email</label><input id="g_email" type="email" value="' +
+        esc(LS.get('bom_last_email')) + '" placeholder="you@company.com"></div>' +
+      '<div class="fld"><label>密碼</label><input id="g_pw" type="password" placeholder="請輸入密碼"></div>' +
+      '<button class="btn pri" type="button" style="width:100%;margin-top:6px" onclick="doLogin()"' +
+        (GATE_BUSY ? ' disabled' : '') + '>' + (GATE_BUSY ? '登入中…' : '登入') + '</button>' +
+      '<div class="gate-foot">與 BOM 管理系統共用同一組帳號。還沒有帳號請到' +
+        '<a href="bom.html">料號系統</a>的「申請帳號」建立。</div>';
+  }else{
+    body = tabs + msg +
+      '<div class="gate-msg" style="background:#f0f2f5;color:#6b7280;border:1px solid #e0e4ea">' +
+        '過渡期用的舊共用密碼，登入後<b>只能查看、不能送出</b>審查表。</div>' +
+      '<div class="fld"><label>你的名字</label><input id="l_who" value="' + esc(WHO) + '" placeholder="例：謝嘉元"></div>' +
+      '<div class="fld"><label>共用密碼</label><input id="l_pw" type="password" placeholder="請向管理者索取"></div>' +
+      '<button class="btn" type="button" style="width:100%;margin-top:6px" onclick="doLegacy()">以唯讀身分進入</button>';
+  }
+  $('gateBox').innerHTML =
+    '<h2>文件/工程變更審查表</h2><div class="sub">安德斯醫學科技　QA-2-01-01-A</div>' + body +
+    '<div class="gate-foot" style="margin-top:12px"><a href="forms.html">← 回表格填寫</a>　' +
+    '<a href="index.html">回系統入口</a></div>';
+  const box = $('gateBox');
+  setTimeout(() => { const t = box.querySelector('#g_pw,#l_pw'); if(t) t.focus(); }, 60);
+  box.querySelectorAll('input').forEach(i => i.onkeydown = e => {
+    if(e.key === 'Enter'){ e.preventDefault(); GATE_TAB === 'login' ? doLogin() : doLegacy(); }
+  });
+}
+async function doLogin(){
+  if(GATE_BUSY) return;
+  const email = $('g_email').value.trim(), pw = $('g_pw').value;
+  if(!email || !pw){ GATE_MSG = '請輸入 Email 與密碼'; GATE_MSG_OK = false; return paintGate(); }
+  GATE_BUSY = true; paintGate();
+  try{
+    const d = await apiPost('login', null, {email:email, password:pw, token:'', pw:''});
+    GATE_BUSY = false;
+    if(d.error){ GATE_MSG = d.error; GATE_MSG_OK = false; return paintGate(); }
+    TOKEN = d.token; ME = d.profile; ME.roleName = ME.roleName || ROLE_NAME[ME.role] || '唯讀';
+    WHO = ME.name; PW = '';
+    LS.set(TKKEY, TOKEN); LS.set(WHOKEY, WHO); LS.set('bom_last_email', email); LS.del(PWKEY);
+    closeGate(); paintMe(); await pull();
+    toast('已登入：' + ME.name + '（' + ME.roleName + '）');
+  }catch(e){
+    GATE_BUSY = false; GATE_MSG = '連不上伺服器：' + (e.message || '網路逾時');
+    GATE_MSG_OK = false; paintGate();
+  }
+}
+async function doLegacy(){
+  WHO = $('l_who').value.trim(); PW = $('l_pw').value;
+  if(!PW){ GATE_MSG = '請輸入共用密碼'; GATE_MSG_OK = false; return paintGate(); }
+  TOKEN = ''; LS.del(TKKEY); LS.set(PWKEY, PW); LS.set(WHOKEY, WHO);
+  closeGate();
+  if(await whoAmI()) await pull();
+  else openGate('legacy', '共用密碼不正確');
+}
+
+/* ============================================================
+   表單 ←→ 紀錄
+   ============================================================ */
+const REASON_LABELS = ['客戶要求','設計改善','降低成本','作業改進','品質改善','材料變更','醫療技術文件','其他'];
+const SIGN_LABELS   = ['總經理','品管部主管','行政管理部主管','製造部主管','營運銷售部主管','研發部主管','填表人'];
+const KIND_LABELS   = {K1:'新訂', K2:'修訂', K3:'廢除'};
+
+function buildRec(){
+  const rec = {};
+  ['no','makerDept:MAKER_DEPT','revDept:REV_DEPT','docName:DOC_NAME','maker:MAKER',
+   'date:DATE','docNo:DOC_NO','ver:VER','content:CONTENT','remark:REMARK','rOther:R_OTHER']
+    .forEach(pair => {
+      const [k, id] = pair.indexOf(':') >= 0 ? pair.split(':') : [pair, pair.toUpperCase()];
+      rec[k] = getv(id);
+    });
+  rec.kind = radio('kind');
+  rec.reasons = [];
+  for(let i = 1; i <= 8; i++) if(chk('R' + i)) rec.reasons.push(i);
+  rec.evals = {};
+  for(let i = 1; i <= 13; i++) if(radio('E' + i) === 'Y') rec.evals[i] = getv('E' + i + 'T');
+  rec.signs = [];
+  for(let i = 1; i <= 7; i++) if(chk('S' + i)) rec.signs.push(i);
+  return rec;
+}
+
+/* 給試算表看的摘要欄位 */
+function buildSummary(rec){
+  const reason = rec.reasons.map(i =>
+    (i === 8 && rec.rOther) ? '其他：' + rec.rOther : REASON_LABELS[i - 1]).join('、');
+  const evalYes = Object.keys(rec.evals).map(i =>
+    EVAL_ITEMS[i - 1] + (rec.evals[i] ? '（' + rec.evals[i] + '）' : '')).join('；');
+  return {
+    kind: KIND_LABELS[rec.kind] || '',
+    reason: reason,
+    evalYes: evalYes || '（全部無異常）',
+    sign: rec.signs.map(i => SIGN_LABELS[i - 1]).join('、')
+  };
+}
+
+function applyRec(rec){
+  rec = rec || {};
+  setv('NO', rec.no || ''); setv('MAKER_DEPT', rec.makerDept || ''); setv('REV_DEPT', rec.revDept || '');
+  setv('DOC_NAME', rec.docName || ''); setv('MAKER', rec.maker || ''); setv('DATE', rec.date || '');
+  setv('DOC_NO', rec.docNo || ''); setv('VER', rec.ver || ''); setv('CONTENT', rec.content || '');
+  setv('REMARK', rec.remark || ''); setv('R_OTHER', rec.rOther || '');
+  document.querySelectorAll('input[name="kind"]').forEach(r => r.checked = (r.value === rec.kind));
+  const rs = rec.reasons || [];
+  for(let i = 1; i <= 8; i++) $('R' + i).checked = rs.indexOf(i) >= 0;
+  const ev = rec.evals || {};
+  for(let i = 1; i <= 13; i++){
+    const yes = Object.prototype.hasOwnProperty.call(ev, i) || Object.prototype.hasOwnProperty.call(ev, String(i));
+    document.querySelector('input[name="E' + i + '"][value="' + (yes ? 'Y' : 'N') + '"]').checked = true;
+    const box = fld('E' + i + 'T');
+    box.classList.toggle('off', !yes);
+    box.setAttribute('contenteditable', yes && MODE === 'new' ? 'true' : 'false');
+    box.textContent = yes ? (ev[i] || ev[String(i)] || '') : '';
+  }
+  const sg = rec.signs || [];
+  for(let i = 1; i <= 7; i++) $('S' + i).checked = sg.indexOf(i) >= 0;
+}
+
+/* ---------- 新表單 / 檢視 兩種狀態 ---------- */
+function setMode(m, no){
+  MODE = m; VIEWNO = no || '';
+  const view = (m === 'view');
+  document.querySelectorAll('#sheet .in').forEach(el => {
+    if(view) el.setAttribute('contenteditable', 'false');
+    else el.setAttribute('contenteditable', el.classList.contains('off') ? 'false' : 'true');
+  });
+  document.querySelectorAll('#sheet input[type=checkbox], #sheet input[type=radio]')
+    .forEach(el => el.disabled = view);
+  const bn = $('vbanner');
+  bn.hidden = !view;
+  if(view) bn.innerHTML = '正在檢視已送出的審查表 <b>' + esc(VIEWNO) + '</b>　' +
+    '<span style="color:#8a5a00">內容已鎖定，不能修改</span>' +
+    '<button class="btn" onclick="newForm()">回到新表單</button>';
+  paintMe();
+}
+function newForm(){
+  if(MODE === 'new'){
+    const rec = buildRec();
+    const any = rec.no || rec.docName || rec.content || rec.reasons.length;
+    if(any && !confirm('目前填的內容還沒送出，確定清掉開一張新的？')) return;
+  }
+  setMode('new');
+  clearAll();
+  toast('已開新表單');
+  window.scrollTo({top:0, behavior:'smooth'});
+}
+
+/* ---------- 送出 ---------- */
+async function submitEcr(){
+  if(!ME) return openGate('login', '請先登入才能送出');
+  if(!canWrite()) return denyWrite();
+  if(MODE === 'view') return toast('這是已送出的表單，請先按「回到新表單」');
+  const rec = buildRec();
+  if(!rec.no)      return toast('請填「編號」');
+  if(!rec.docName) return toast('請填「文件/工程名稱」');
+  if(!rec.maker)   return toast('請填「製作人」');
+  if(!rec.kind)    return toast('請勾選「變更性質」（新訂／修訂／廢除）');
+  if(RECS.some(r => r.no === rec.no))
+    return toast('編號 ' + rec.no + ' 已經存在，請換一個');
+  const sum = buildSummary(rec);
+  const msg = '確定送出？送出後內容就鎖住不能改。\n\n'
+    + '編號：' + rec.no + '\n'
+    + '文件/工程名稱：' + rec.docName + '\n'
+    + '變更性質：' + (sum.kind || '（未選）') + '\n'
+    + '變更理由：' + (sum.reason || '（未選）') + '\n'
+    + '評估異常：' + sum.evalYes + '\n'
+    + '簽核單位：' + (sum.sign || '（未勾選）');
+  if(!confirm(msg)) return;
+  setNet('save');
+  try{
+    const d = await apiPost('postEcr', null, {rec:rec, summary:sum});
+    if(d.error){
+      setNet('err');
+      if(d.needLogin) return openGate('login', d.error);
+      return alert('送出失敗：' + d.error);
+    }
+    setNet('ok');
+    await pull(true);
+    setMode('view', d.no);
+    toast('已送出並存檔：' + d.no);
+    if(confirm('已送出 ' + d.no + '，要現在下載 Word 嗎？')) exportWord();
+  }catch(e){
+    setNet('err');
+    alert('送不出去：' + (e.message || '網路逾時') + '\n審查表沒有存進雲端，確認網路後再試一次。');
+  }
+}
+
+/* ---------- 歷史單據 ---------- */
+function filtered(){
+  const q = HQ.trim().toLowerCase();
+  if(!q) return RECS;
+  return RECS.filter(r => [r.no, r.docName, r.docNo, r.maker, r.by, r.ver]
+    .join(' ').toLowerCase().includes(q));
+}
+function renderHist(){
+  const box = $('histBody'), cnt = $('histCount');
+  if(!box) return;
+  if(!ME){
+    cnt.textContent = '';
+    box.innerHTML = '<div class="empty">登入後才看得到已送出的審查表。</div>';
+    return;
+  }
+  const list = filtered().slice().reverse();
+  cnt.textContent = '共 ' + RECS.length + ' 張' + (HQ.trim() ? '，符合 ' + list.length + ' 張' : '');
+  if(!list.length){
+    box.innerHTML = '<div class="empty">' + (RECS.length ? '查無符合的審查表' : '還沒有任何已送出的審查表') + '</div>';
+    return;
+  }
+  box.innerHTML = '<table><thead><tr>' +
+    '<th>編號</th><th>日期</th><th>文件/工程名稱</th><th>文件編號</th><th>版本</th>' +
+    '<th>性質</th><th>製作人</th><th>填表人</th><th>操作</th></tr></thead><tbody>' +
+    list.map(r => '<tr>' +
+      '<td class="mono"><b>' + esc(r.no) + '</b></td>' +
+      '<td>' + esc(r.date) + '</td>' +
+      '<td>' + esc(r.docName) + '</td>' +
+      '<td class="mono">' + esc(r.docNo) + '</td>' +
+      '<td>' + esc(r.ver) + '</td>' +
+      '<td>' + esc(r.kind) + '</td>' +
+      '<td>' + esc(r.maker) + '</td>' +
+      '<td>' + esc(r.by) + '</td>' +
+      '<td class="ops">' +
+        '<button class="btn" onclick="viewRec(\'' + esc(r.no) + '\')">檢視</button>' +
+        '<button class="btn" onclick="wordOf(\'' + esc(r.no) + '\')">Word</button>' +
+        (isAdmin() ? '<button class="btn danger" onclick="delRec(\'' + esc(r.no) + '\')">刪除</button>' : '') +
+      '</td></tr>').join('') +
+    '</tbody></table>';
+}
+function recOf(no){ return RECS.find(r => r.no === no); }
+
+function viewRec(no){
+  const r = recOf(no);
+  if(!r) return toast('找不到這張審查表，請按 ↻ 重新讀取');
+  setMode('view', no);
+  applyRec(r.data && r.data.no ? r.data : Object.assign({}, r));
+  window.scrollTo({top:0, behavior:'smooth'});
+}
+
+/* 直接由紀錄產 Word，不必先載進表單 */
+function mapFromRec(rec){
+  const m = {};
+  ['no:NO','makerDept:MAKER_DEPT','revDept:REV_DEPT','docName:DOC_NAME','maker:MAKER',
+   'date:DATE','docNo:DOC_NO','ver:VER','content:CONTENT','remark:REMARK','rOther:R_OTHER']
+    .forEach(p => { const [k, id] = p.split(':'); m[id] = rec[k] || ''; });
+  ['K1','K2','K3'].forEach(k => m[k] = CK(rec.kind === k));
+  const rs = rec.reasons || [];
+  for(let i = 1; i <= 8; i++) m['R' + i] = CK(rs.indexOf(i) >= 0);
+  const ev = rec.evals || {};
+  for(let i = 1; i <= 13; i++){
+    const has = Object.prototype.hasOwnProperty.call(ev, i) || Object.prototype.hasOwnProperty.call(ev, String(i));
+    m['E' + i + 'N'] = CK(!has);
+    m['E' + i + 'Y'] = CK(has);
+    m['E' + i + 'T'] = has ? (ev[i] || ev[String(i)] || '') : '';
+  }
+  const sg = rec.signs || [];
+  for(let i = 1; i <= 7; i++) m['S' + i] = CK(sg.indexOf(i) >= 0);
+  return m;
+}
+function wordOf(no){
+  const r = recOf(no);
+  if(!r) return toast('找不到這張審查表，請按 ↻ 重新讀取');
+  const rec = (r.data && r.data.no) ? r.data : null;
+  if(!rec) return toast('這筆紀錄缺少完整資料，請改用「檢視」後再匯出');
+  exportWordMap(mapFromRec(rec));
+}
+
+async function delRec(no){
+  if(!isAdmin()) return toast('只有管理員可以刪除已送出的審查表');
+  const r = recOf(no);
+  if(!r) return toast('找不到這張審查表');
+  if(!confirm('確定刪除審查表 ' + no + '？\n\n' + (r.docName || '') +
+              '\n\n這個動作不能復原，編號會被釋放出來，之後可以再被使用。')) return;
+  const why = prompt('刪除原因（會寫進「更新比對」的異動紀錄）：', '') || '';
+  setNet('save');
+  try{
+    const d = await apiPost('voidEcr', null, {no:no, why:why.trim()});
+    if(d.error){
+      setNet('err');
+      if(d.needLogin) return openGate('login', d.error);
+      return alert('刪不掉：' + d.error);
+    }
+    setNet('ok');
+    await pull(true);
+    if(VIEWNO === no) setMode('new');
+    toast('已刪除 ' + no);
+  }catch(e){
+    setNet('err');
+    alert('刪不掉：' + (e.message || '網路逾時'));
+  }
+}
+
+/* 檢視模式時不讓「載入範例」把鎖住的表單蓋掉 */
+const _origLoadSample = loadSample;
+loadSample = function(){
+  if(MODE === 'view') return toast('這是已送出的表單，請先按「回到新表單」');
+  _origLoadSample();
+};
+
+/* ---------- 啟動 ---------- */
+(async function init(){
+  const hq = $('hq');
+  if(hq) hq.oninput = e => { HQ = e.target.value; renderHist(); };
+  paintNet(); paintMe(); renderHist(); setMode('new');
+  if(!TOKEN && !PW){ openGate('login'); return; }
+  if(await whoAmI()) await pull();
+})();
 </script>
 </body>
 </html>

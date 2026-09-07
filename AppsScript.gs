@@ -25,7 +25,7 @@ const LEGACY_PW_ENABLED = true;                 // 全部同事都註冊完後�
 /* ================== */
 
 const SH = {items:'料號主檔', boms:'BOM主檔', lines:'BOM明細', hist:'異動紀錄', sys:'系統',
-            users:'使用者', moves:'庫存異動', serial:'產品批序號'};
+            users:'使用者', moves:'庫存異動', serial:'產品批序號', ecr:'文件變更審查'};
 
 const HEAD = {
   items:['品號','品名','規格','單位','庫存數量','單位成本','安全庫存','供應商','交期','儲位','MSB','備註'],
@@ -37,7 +37,10 @@ const HEAD = {
   moves:['單號','日期','類別','倉別','申請部門','異動原因','項次','品號','品名','數量','單位',
          '異動前庫存','異動後庫存','領用人','填表人','備註','單據備註','建立時間'],
   /* 產品批序號記錄表：欄位對齊原本的 Excel「產品批序號記錄表」 */
-  serial:['項次','日期','產品名稱','數量','批號/序號','執行者','確認者','用途','備註1','型號']
+  serial:['項次','日期','產品名稱','數量','批號/序號','執行者','確認者','用途','備註1','型號'],
+  /* 文件/工程變更審查表 QA-2-01-01-A：前面是給人看的欄位，最後一欄存完整內容供還原 Word */
+  ecr:['編號','日期','文件/工程名稱','文件/工程編號','版本','變更性質','製作單位','修訂單位',
+       '製作人','變更理由','評估異常項目','變更內容','備註','簽核單位','填表人','建立時間','資料JSON']
 };
 
 /* 角色權限：admin 全部；editor 可讀可寫；viewer 只能讀 */
@@ -53,7 +56,7 @@ function ss(){
 
 /* 首次使用：在編輯器選這個函式按「執行」，建立所有工作表並完成授權 */
 function setup(){
-  ['items','boms','lines','hist','sys','users','moves','serial'].forEach(sheet);
+  ['items','boms','lines','hist','sys','users','moves','serial','ecr'].forEach(sheet);
   if(String(sysGet('rev',''))==='') { sysSet('rev', 0); sysFlush(); }
   const s = ss();
   const d = s.getSheetByName('工作表1');
@@ -654,6 +657,108 @@ function voidOrder(auth, p){
 }
 
 /* ============================================================
+   文件/工程變更審查表 QA-2-01-01-A（form-ecr.html 使用）
+   一張審查表一列；「資料JSON」存完整勾選內容，前端才能原樣還原成 Word。
+   版本號存在「系統」表的 ecrRev，與 BOM 的 rev 各自獨立。
+   ============================================================ */
+function readEcr(){
+  return rows('ecr').map(function(r){
+    let data = {};
+    try{ data = JSON.parse(String(r['資料JSON']||'{}')); }catch(e){ data = {}; }
+    return {no:String(r['編號']||''), date:fmtDate(r['日期']),
+      docName:String(r['文件/工程名稱']||''), docNo:String(r['文件/工程編號']||''),
+      ver:String(r['版本']||''), kind:String(r['變更性質']||''),
+      makerDept:String(r['製作單位']||''), revDept:String(r['修訂單位']||''),
+      maker:String(r['製作人']||''), reason:String(r['變更理由']||''),
+      evalYes:String(r['評估異常項目']||''), content:String(r['變更內容']||''),
+      remark:String(r['備註']||''), sign:String(r['簽核單位']||''),
+      by:String(r['填表人']||''), at:fmtTS(r['建立時間']), data:data};
+  });
+}
+
+/* 送出一張審查表：編號由填表人自己填，這裡負責擋重號並寫入 */
+function postEcr(auth, p){
+  if(!canWrite(auth.role))
+    return {error: auth.legacy ? '共用密碼為唯讀模式，無法送出審查表。'
+                              : '你的權限為「唯讀」，無法送出審查表。', denied:true};
+  const rec = (p && p.rec) || {};
+  const sum = (p && p.summary) || {};
+  const no  = String(rec.no||'').trim();
+  if(!no) return {error:'「編號」必填'};
+  if(no.length > 30) return {error:'「編號」太長'};
+  if(!String(rec.docName||'').trim()) return {error:'「文件/工程名稱」必填'};
+
+  const lock = LockService.getScriptLock();
+  lock.waitLock(25000);
+  try{
+    /* 手動編號一定要擋重複，否則兩個人可能撞號 */
+    const dup = rows('ecr').some(function(r){ return String(r['編號']||'').trim() === no; });
+    if(dup) return {error:'編號 '+no+' 已經存在，請換一個編號'};
+
+    const now = nowTS();
+    const dateStr = fmtDate(rec.date) || Utilities.formatDate(new Date(),'Asia/Taipei','yyyy/MM/dd');
+    const row = [no, dateStr, String(rec.docName||''), String(rec.docNo||''), String(rec.ver||''),
+      String(sum.kind||''), String(rec.makerDept||''), String(rec.revDept||''), String(rec.maker||''),
+      String(sum.reason||''), String(sum.evalYes||''), String(rec.content||''), String(rec.remark||''),
+      String(sum.sign||''), auth.name||'', now, JSON.stringify(rec)];
+
+    const sh = sheet('ecr');
+    const at0 = sh.getLastRow()+1;
+    markTextCol(sh, at0, HEAD.ecr.indexOf('編號')+1,     1);
+    markTextCol(sh, at0, HEAD.ecr.indexOf('日期')+1,     1);
+    markTextCol(sh, at0, HEAD.ecr.indexOf('建立時間')+1, 1);
+    sh.getRange(at0, 1, 1, HEAD.ecr.length).setValues([row]);
+
+    const rev = (Number(sysGet('ecrRev',0))||0) + 1;
+    sysSet('ecrRev', rev);
+    sysSet('ecrAt', now);
+    sysSet('ecrBy', (auth.name||'') + '（送出 ' + no + '）');
+    sysFlush();
+    SpreadsheetApp.flush();
+    return {ok:true, no:no, rev:rev, date:dateStr, at:now, by:auth.name||''};
+  } finally { lock.releaseLock(); }
+}
+
+/* 刪除一張審查表（僅管理員）；送出後不能改，打錯只能刪掉重開 */
+function voidEcr(auth, p){
+  if(!isAdmin(auth.role))
+    return {error:'只有管理員可以刪除已送出的審查表。', denied:true};
+  const no  = String((p && p.no)  || '').trim();
+  const why = String((p && p.why) || '').trim();
+  if(!no) return {error:'沒有指定要刪除的編號'};
+
+  const lock = LockService.getScriptLock();
+  lock.waitLock(25000);
+  try{
+    const sh = sheet('ecr');
+    const last = sh.getLastRow(), lastC = sh.getLastColumn();
+    if(last < 2) return {error:'「文件變更審查」還沒有任何紀錄'};
+    const head = sh.getRange(1,1,1,lastC).getValues()[0].map(String);
+    const cNo = head.indexOf('編號');
+    if(cNo < 0) return {error:'「文件變更審查」缺少「編號」欄'};
+    const body = sh.getRange(2,1,last-1,lastC).getValues();
+    const hit = [];
+    for(let i=0;i<body.length;i++)
+      if(String(body[i][cNo]).trim() === no) hit.push(i);
+    if(!hit.length)
+      return {error:'找不到編號 '+no+'，可能已經被別人刪掉了，請按 ↻ 重新讀取'};
+    for(let k=hit.length-1;k>=0;k--) sh.deleteRow(hit[k]+2);
+
+    const now = nowTS();
+    sheet('hist').appendRow([now, '刪除文件變更審查表 '+no+(why?'（'+why+'）':''),
+      0, hit.length, 0, 0, 0, auth.name||'']);
+
+    const rev = (Number(sysGet('ecrRev',0))||0) + 1;
+    sysSet('ecrRev', rev);
+    sysSet('ecrAt', now);
+    sysSet('ecrBy', (auth.name||'') + '（刪除 ' + no + '）');
+    sysFlush();
+    SpreadsheetApp.flush();
+    return {ok:true, no:no, rev:rev, removed:hit.length};
+  } finally { lock.releaseLock(); }
+}
+
+/* ============================================================
    使用者與登入
    ============================================================ */
 
@@ -880,6 +985,12 @@ function doPost(e){
   if(action === 'setUser')    return out(acSetUser(auth, body));
   if(action === 'resetPw')    return out(acResetPw(auth, body));
   if(action === 'delUser')    return out(acDelUser(auth, body));
+
+  if(action === 'loadEcr')
+    return out({ok:true, records:readEcr(), rev:Number(sysGet('ecrRev',0))||0,
+                updatedAt:fmtTS(sysGet('ecrAt','')), updatedBy:String(sysGet('ecrBy',''))});
+  if(action === 'postEcr')    return out(postEcr(auth, body));
+  if(action === 'voidEcr')    return out(voidEcr(auth, body));
 
   if(action === 'loadSerial') return out(readSerial());
 
