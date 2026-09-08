@@ -831,40 +831,23 @@ function shrinkReasonRun(xml, escReason){
   return xml.slice(0, rs) + nw + xml.slice(re_ + 8);
 }
 
-/* Word 範本每一頁固定 24 個品項列 */
+/* Word 範本每一張單固定 24 個品項列 */
 const DOC_ROWS=24;
 /* 單據 → .docx 並下載
-   明細超過 24 項時，把範本的整頁內容（表頭表格＋品項表格＋簽核表格）複製一份，
-   中間插入分頁符，就能印出第 2、3… 頁；頁首與章節設定沿用原本的，不受影響。 */
+   明細超過 24 項時，每 24 項各自輸出「一份獨立的 Word 檔」，
+   每份都是完整的一張單（表頭、單號、簽核欄都在），檔名結尾標 _1of2、_2of2。 */
 async function docFromOrder(o){
   if(typeof JSZip==='undefined') return toast('Word 產出元件尚未載入，請重新整理頁面後再試');
   const CK=(on)=>on?'■':'□';
   const lines=o.lines||[];
-  const pages=Math.max(1,Math.ceil(lines.length/DOC_ROWS));
+  const parts=Math.max(1,Math.ceil(lines.length/DOC_ROWS));
+  const tplU8=b64ToU8(DOC_TPL_B64);
+  const safe=v=>String(v==null?'':v).replace(/[\\/:*?"<>|]/g,'');
+  const base=`${o.no||'單據'}_${safe(o.reason||o.type||'')}`;
+  const names=[];
 
-  const zip=await JSZip.loadAsync(b64ToU8(DOC_TPL_B64));
-  const raw=await zip.file('word/document.xml').async('string');
-
-  /* 拆出 <w:body> 裡「可重複的版面」與最後的章節設定 <w:sectPr> */
-  const bs=raw.indexOf('<w:body>'), be=raw.lastIndexOf('</w:body>');
-  const head=raw.slice(0,bs+8), tail=raw.slice(be);
-  const body=raw.slice(bs+8,be);
-  const ss=body.lastIndexOf('<w:sectPr');
-  const sect = ss>=0 ? body.slice(ss) : '';
-  const unit = ss>=0 ? body.slice(0,ss) : body;
-  const PBRK='<w:p><w:pPr><w:spacing w:after="0" w:line="200" w:lineRule="exact"/></w:pPr>'
-           +'<w:r><w:br w:type="page"/></w:r></w:p>';
-
-  const fill=(tpl,map)=>{
-    let x=tpl.replace(/\{\{([A-Za-z0-9]+)\}\}/g,(m,k)=> k in map ? xmlEsc(map[k]) : '');
-    /* 規範：異動原因超過 22 字就縮成 9pt，免得表頭撐高把版面擠掉 */
-    if(String(map.REASON).length > 22) x = shrinkReasonRun(x, xmlEsc(map.REASON));
-    return x;
-  };
-
-  const out=[];
-  for(let p=0;p<pages;p++){
-    const pg = pages>1 ? `（第 ${p+1} / ${pages} 頁）` : '';
+  for(let p=0;p<parts;p++){
+    const pg = parts>1 ? `（第 ${p+1} / ${parts} 份）` : '';
     const map={
       NO:o.no||'', DATE:o.date||'', DEPT:o.dept||'製造部', REASON:o.reason||'',
       W1:CK(o.house==='研發倉'), W2:CK(o.house==='物料倉'), W3:CK(o.house==='成品倉'),
@@ -873,24 +856,34 @@ async function docFromOrder(o){
     };
     for(let i=1;i<=DOC_ROWS;i++){
       const l=lines[p*DOC_ROWS+i-1];
-      map['r'+i+'n']= '';        /* 項次欄由 Word 自己自動編號（跨頁會自動接續） */
+      map['r'+i+'n']= '';        /* 項次欄由 Word 自己自動編號，這裡留空免得重複 */
       map['r'+i+'c']= l? (l.code||'') : '';
       map['r'+i+'m']= l? (l.name||'') : '';
       map['r'+i+'q']= l? String(l.qty) : '';
       map['r'+i+'u']= l? (l.unit||'pcs') : '';
       map['r'+i+'b']= '';        /* 依規範：品項列備註留空，用途統一寫在表頭「異動原因」 */
     }
-    out.push(fill(unit,map));
-  }
-  zip.file('word/document.xml', head + out.join(PBRK) + sect + tail);
+    const zip=await JSZip.loadAsync(tplU8);
+    let xml=await zip.file('word/document.xml').async('string');
+    xml=xml.replace(/\{\{([A-Za-z0-9]+)\}\}/g,(m,k)=> k in map ? xmlEsc(map[k]) : '');
+    /* 規範：異動原因超過 22 字就縮成 9pt，免得表頭撐高把單子擠到第二頁 */
+    if(String(map.REASON).length > 22) xml = shrinkReasonRun(xml, xmlEsc(map.REASON));
+    zip.file('word/document.xml',xml);
 
-  const blob=await zip.generateAsync({type:'blob',
-    mimeType:'application/vnd.openxmlformats-officedocument.wordprocessingml.document'});
-  const fn=`${o.no||'單據'}_${(o.reason||o.type||'').replace(/[\\/:*?"<>|]/g,'')}.docx`;
-  const a=document.createElement('a');
-  a.href=URL.createObjectURL(blob); a.download=fn; a.click();
-  setTimeout(()=>URL.revokeObjectURL(a.href),4000);
-  toast(pages>1 ? `已產出 ${fn}（${lines.length} 項，共 ${pages} 頁）` : '已產出 '+fn);
+    const blob=await zip.generateAsync({type:'blob',
+      mimeType:'application/vnd.openxmlformats-officedocument.wordprocessingml.document'});
+    const fn = parts>1 ? `${base}_${p+1}of${parts}.docx` : `${base}.docx`;
+    names.push(fn);
+    const a=document.createElement('a');
+    a.href=URL.createObjectURL(blob); a.download=fn;
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(()=>URL.revokeObjectURL(a.href),8000);
+    /* 連續下載要留點間隔，瀏覽器才不會把後面幾個當成彈出視窗擋掉 */
+    if(p+1<parts) await new Promise(r=>setTimeout(r,700));
+  }
+  toast(parts>1
+    ? `已產出 ${parts} 個 Word 檔（${lines.length} 項，每份 ${DOC_ROWS} 項）：${names.join('、')}`
+    : '已產出 '+names[0]);
 }
 </script>
 <script>
@@ -2561,8 +2554,8 @@ const DRAFTKEY='bom_draft_v2';
 const MOVE_TYPES=['入庫','領料','退料'];
 const HOUSES=['研發倉','物料倉','成品倉'];
 const DEPTS=['製造部','業務部','研發部','品保部','管理部'];
-/* Word 每頁 24 列，超過會自動印第二頁，所以一張單可以放到 4 頁 96 項；
-   再多就分成下一張單，免得單張單據太厚不好簽核。 */
+/* Word 每份 24 列，超過會自動拆成多個檔案，所以一個單號最多放到 4 份 96 項；
+   再多就分成下一張單（新的單號），免得一次要簽太多份。 */
 const MAX_LINES=96;
 
 /* 人員部門對照：依「領料單系統規範」，申請部門由「人員」決定，與用途無關 */
@@ -2822,7 +2815,9 @@ function vMove(){
       請先在「使用者管理 → 人員部門對照表」補上，或在下方自行選一個。</div>`}
     ${over>0?`<div class="ro-banner">目前 ${MVORD.lines.length} 項，超過一張單的上限 ${MAX_LINES} 項。
       送出時只會扣<b>前 ${MAX_LINES} 項</b>並發一個單號，剩下的 ${over} 項會留在這裡，再按一次送出就是下一張單。</div>`
-      :(MVORD.lines.length>DOC_ROWS?`<div class="hint" style="margin-bottom:10px">目前 ${MVORD.lines.length} 項，Word 單會自動印成 <b>${Math.ceil(MVORD.lines.length/DOC_ROWS)} 頁</b>（每頁 ${DOC_ROWS} 項）。</div>`:'')}
+      :(MVORD.lines.length>DOC_ROWS?`<div class="hint" style="margin-bottom:10px">目前 ${MVORD.lines.length} 項，超過一張 Word 單的 ${DOC_ROWS} 列，
+        產出時會自動拆成 <b>${Math.ceil(MVORD.lines.length/DOC_ROWS)} 個 Word 檔</b>（同一個單號，檔名結尾 _1of${Math.ceil(MVORD.lines.length/DOC_ROWS)}…）。
+        瀏覽器第一次連續下載多個檔案時會問「是否允許下載多個檔案」，請按允許。</div>`:'')}
     <div class="row">
       <div><label class="mini">類別</label><br>
         <select id="ov_type" style="width:110px" onchange="mvHead('type',this.value)">
@@ -2872,7 +2867,7 @@ function vMove(){
         <button class="btn" onclick="mvPreviewDoc()">預覽 Word 單</button>
         ${canW?'<button class="btn danger" onclick="mvClear()">清空</button>':''}
         <div class="grow"></div>
-        <span class="mini ${over>0?'':'mut'}">${MVORD.lines.length} / ${MAX_LINES} 項${over>0?`（超過 ${over} 項會留到下一張單）`:(MVORD.lines.length>DOC_ROWS?`　Word ${Math.ceil(MVORD.lines.length/DOC_ROWS)} 頁`:'')}</span>
+        <span class="mini ${over>0?'':'mut'}">${MVORD.lines.length} / ${MAX_LINES} 項${over>0?`（超過 ${over} 項會留到下一張單）`:(MVORD.lines.length>DOC_ROWS?`　Word ${Math.ceil(MVORD.lines.length/DOC_ROWS)} 檔`:'')}</span>
       </div>`
     :`<div class="empty" style="margin-top:12px">到「料號主檔」或「BOM 管理」，在任一列按 <b>異動</b> 就會加到這裡。</div>`}
   </div>`;
