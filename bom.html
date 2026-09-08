@@ -2570,15 +2570,51 @@ function paintMoveBadge(){ const b=document.getElementById('moveBadge');
   if(b) b.textContent = MVORD.lines.length ? String(MVORD.lines.length) : ''; }
 
 /* ---------- 從料號主檔 / BOM 樹狀表加入單據 ---------- */
+/* 成品／半成品（F01、S01、S02、S03…）通常不是直接領走整台，而是領它下一階的零件。
+   這裡取出「下一階」的直屬子件（有獨立 BOM 就以那張 BOM 為準），
+   讓使用者填一個組裝台數，系統自動換算每個子件要領多少。 */
+function mvKidsOf(code){
+  const b=(typeof BIDX!=='undefined'&&BIDX[code])||(typeof VBOM!=='undefined'&&VBOM[code])||null;
+  if(!b||typeof buildTree!=='function') return [];
+  return buildTree(b).filter(x=>x.code).map(x=>({code:x.code,qty:+x.qty||0}));
+}
+const mvRound=v=>Math.round((+v||0)*1e6)/1e6;
+function mvPrev(code){
+  const el=document.getElementById('mv_prev'); if(!el) return;
+  const mode=(document.getElementById('mv_mode')||{}).value||'self';
+  const kids=mvKidsOf(code);
+  if(mode!=='kids'||!kids.length){ el.innerHTML=''; return; }
+  const q=parseFloat((document.getElementById('mv_qty')||{}).value)||0;
+  let short=0;
+  const body=kids.map(k=>{
+    const it=itemOf(k.code), need=mvRound(k.qty*q), lack=(+it.stock||0)<need;
+    if(lack) short++;
+    return `<tr><td class="mono">${esc(k.code)}</td><td>${esc(mName(k.code,it.name))}</td>
+      <td class="num mut">${nf(k.qty)}</td><td class="num"><b>${nf(need)}</b></td>
+      <td class="num">${nf(it.stock)}${lack?' <span class="tag warn">不足</span>':''}</td></tr>`;}).join('');
+  el.innerHTML=`<div class="tblwrap" style="max-height:230px;margin-top:4px"><table class="grid"><thead><tr>
+      <th class="nos">品號</th><th class="nos">品名</th><th class="nos num">單台用量</th>
+      <th class="nos num">本次數量</th><th class="nos num">目前庫存</th></tr></thead><tbody>${body}</tbody></table></div>
+    <div class="hint">送出時會把上面 <b>${kids.length}</b> 項分別加入單據，<b>${esc(code)}</b> 本身不會列進去。
+      ${short?`<span style="color:var(--warn)">其中 ${short} 項庫存不足。</span>`:''}</div>`;
+}
 function addMove(code){
   const i=itemOf(code);
   const ex=MVORD.lines.find(l=>l.code===code);
+  const kids=mvKidsOf(code);
   dialog(`加入異動單　${code}`,`
     <div class="mini mut" style="margin-bottom:10px">${esc(i.name||'')}${i.spec?'　'+esc(i.spec):''}
       　目前庫存 <b>${nf(i.stock)}</b> ${esc(i.unit||'')}</div>
     <div class="fld"><label>類別（整張單同一種）</label>
       <select id="mv_type">${MOVE_TYPES.map(t=>`<option value="${t}"${MVORD.type===t?' selected':''}>${t}</option>`).join('')}</select></div>
-    <div class="fld"><label>數量</label><input id="mv_qty" type="number" min="0" step="any" value="${ex?ex.qty:1}"></div>
+    ${kids.length?`<div class="fld"><label>異動對象</label>
+      <select id="mv_mode" onchange="mvPrev('${esc(code)}')">
+        <option value="self">${esc(code)} 本身（成品／半成品）</option>
+        <option value="kids">改為下一階料件（${kids.length} 項，依用量換算）</option>
+      </select></div>`:''}
+    <div class="fld"><label>數量${kids.length?'<span class="mini mut">（選「下一階料件」時＝組裝台數）</span>':''}</label>
+      <input id="mv_qty" type="number" min="0" step="any" value="${ex?ex.qty:1}"${kids.length?` oninput="mvPrev('${esc(code)}')"`:''}></div>
+    ${kids.length?`<div id="mv_prev"></div>`:''}
     <div class="fld"><label>異動原因／用途（整張單共用）</label>
       <input id="mv_reason" value="${esc(MVORD.reason)}" placeholder="例：研發領料_耳鏡測試裸板"></div>
     <div class="fld"><label>本行備註<span class="mini mut">（只存系統紀錄，依規範不印在 Word 單上）</span></label>
@@ -2594,6 +2630,24 @@ function doAddMove(code){
   MVORD.type=document.getElementById('mv_type').value;
   MVORD.reason=document.getElementById('mv_reason').value.trim();
   const note=document.getElementById('mv_note').value.trim();
+  const modeEl=document.getElementById('mv_mode');
+  if(modeEl && modeEl.value==='kids'){
+    const kids=mvKidsOf(code);
+    if(!kids.length) return toast('這個品號沒有下一階明細');
+    let add=0;
+    kids.forEach(k=>{
+      const need=mvRound(k.qty*qty); if(!(need>0)) return;
+      const it=itemOf(k.code);
+      const nt=note||`${code} × ${nf(qty)} 下階展開`;
+      const ex2=MVORD.lines.find(l=>l.code===k.code);
+      if(ex2){ ex2.qty=mvRound(ex2.qty+need); if(!ex2.note) ex2.note=nt; }
+      else MVORD.lines.push({code:k.code,name:mName(k.code,it.name),
+        unit:mUnit(k.code,it.unit),qty:need,note:nt});
+      add++;
+    });
+    saveDraft(); closeDlg(); vMove();
+    return toast(`已展開 ${code} 的下一階，加入 ${add} 項（單據共 ${MVORD.lines.length} 項）`);
+  }
   const i=itemOf(code);
   const ex=MVORD.lines.find(l=>l.code===code);
   if(ex){ ex.qty=qty; ex.note=note; }
