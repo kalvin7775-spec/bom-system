@@ -235,6 +235,19 @@ function reindex(){IDX={};S.items.forEach(i=>IDX[i.code]=i);
                    if(typeof rebuildVBom==='function') rebuildVBom();}
 async function save(){reindex(); await push();}
 const itemOf=c=>IDX[c]||{code:c,name:'（未建檔）',spec:'',unit:'',stock:0,cost:null,supplier:'',note:'',_ghost:1};
+/* ---------- 單一資料來源：品名／規格／單位一律以「料號主檔」為準 ----------
+   BOM 明細裡也存了一份品名/規格/單位，但那只是建 BOM 當下的複本，
+   料號主檔改版後不會跟著變，因此顯示與匯出一律改讀主檔，
+   只有主檔完全沒有這個品號（未建檔）時，才退回用 BOM 裡的舊值。 */
+function mName(code,fb){const it=IDX[code];
+  if(it&&String(it.name||'').trim()) return it.name;
+  return fb||(it?'':'（未建檔）');}
+function mSpec(code,fb){const it=IDX[code];
+  if(!it) return fb||'';
+  return String(it.spec||'').trim()?it.spec:(fb||'');}
+function mUnit(code,fb){const it=IDX[code];
+  if(it&&String(it.unit||'').trim()) return it.unit;
+  return fb||'pcs';}
 
 /* ---------- BOM 樹狀結構 ---------- */
 function buildTree(bom){
@@ -290,8 +303,8 @@ function resolvedLines(bom){
   const out=[];
   (function walk(nodes,path,lv){
     nodes.forEach(n=>{
-      out.push({level:lv, code:n.code, name:n.name, spec:n.spec,
-                qty:n.qty, unit:n.unit, note:n.note});
+      out.push({level:lv, code:n.code, name:mName(n.code,n.name), spec:mSpec(n.code,n.spec),
+                qty:n.qty, unit:mUnit(n.code,n.unit), note:n.note});
       const {kids}=kidsOf(n,path,true);
       if(kids.length && !path.includes(n.code)) walk(kids,path.concat(n.code),lv+1);
     });
@@ -356,8 +369,8 @@ function rebuildVBom(){
             const lines=flattenSub(n);
             if(lines.length) VBOM[n.code]={
               id:n.code, code:n.code,
-              name:n.name||(IDX[n.code]&&IDX[n.code].name)||'',
-              spec:n.spec||(IDX[n.code]&&IDX[n.code].spec)||'',
+              name:mName(n.code,n.name),
+              spec:mSpec(n.code,n.spec),
               source:'掛在 '+b.code+' 底下', note:'', lines:lines,
               _virtual:true, _from:b.code };
           }
@@ -394,7 +407,7 @@ function explode(bomCode,orderQty,opt){
       if(kids.length){
         let need=qty, used=0;
         if(opt.netting){const a=avail(n.code);used=Math.min(a,qty);pool[n.code]-=used;need=qty-used;}
-        sub.push({code:n.code,name:n.name||itemOf(n.code).name,unit:n.unit||itemOf(n.code).unit,
+        sub.push({code:n.code,name:mName(n.code,n.name),unit:mUnit(n.code,n.unit),
                   gross:qty,fromStock:used,net:need,depth,ref});
         if(need>0) walk(kids,need,path.concat(n.code),depth+1);
       }else{
@@ -1490,8 +1503,8 @@ function renderBom(){
           <td class="no ${path.length===1?'lv1':''}" style="padding-left:${9+(path.length-1)*16}px">
             ${kids.length?`<span class="tw" onclick="tog('${key}')">${open?'▾':'▸'}</span>`:'<span class="tw"></span>'}${no}</td>
           <td class="mono">${esc(n.code)}${ref?' <span class="tag info">引用子BOM</span>':''}${buy?' <span class="tag warn">外購件</span>':''}${under?' <span class="tag gray">參考</span>':''}${(kids.length&&!buy&&!under&&!hasOwnCost(n.code))?' <span class="tag gray" title="料號主檔未設單價，成本以下階加總">主檔無價</span>':''}</td>
-          <td>${esc(n.name||it.name)}</td><td class="mut">${esc(n.spec||it.spec)}</td>
-          <td class="num"><b>${nf(n.qty)}</b></td><td class="mut">${esc(n.unit||it.unit)}</td>
+          <td>${esc(mName(n.code,n.name))}</td><td class="mut">${esc(mSpec(n.code,n.spec))}</td>
+          <td class="num"><b>${nf(n.qty)}</b></td><td class="mut">${esc(mUnit(n.code,n.unit))}</td>
           <td class="num">${(kids.length&&!buy)?'<span class="mut">—</span>':nf(it.stock)}</td>
           <td class="num">${(kids.length&&!buy)
               ? (roll!=null?`<span class="mut" title="下階加總">${nf(roll/(+n.qty||1))}</span>`:'<span class="mut">—</span>')
@@ -1540,8 +1553,8 @@ function exportBom(){
   /* 用解析後的明細，才會跟畫面一致（引用到的子 BOM 以子 BOM 為準） */
   const bom=BIDX[curBom], ex=explode(curBom,1,{}), RL=resolvedLines(bom), nos=lineNos(RL);
   xlsxOut([
-    ['BOM階層',RL.map((l,i)=>({項次:i+1,階層編號:nos[i],階層:l.level,品號:l.code,品名:l.name||itemOf(l.code).name,
-      規格:l.spec,用量:l.qty,單位:l.unit,庫存數量:itemOf(l.code).stock,單位成本:itemOf(l.code).cost,備註:l.note}))],
+    ['BOM階層',RL.map((l,i)=>({項次:i+1,階層編號:nos[i],階層:l.level,品號:l.code,品名:mName(l.code,l.name),
+      規格:mSpec(l.code,l.spec),用量:l.qty,單位:mUnit(l.code,l.unit),庫存數量:itemOf(l.code).stock,單位成本:itemOf(l.code).cost,備註:l.note}))],
     ['展開總用量',Object.entries(ex.leaf).map(([c,q])=>({品號:c,品名:itemOf(c).name,單台用量:q,
       單位:itemOf(c).unit,庫存:itemOf(c).stock,單價:itemOf(c).cost,小計:(itemOf(c).cost||0)*q}))]
   ],`BOM_${curBom}_${new Date().toISOString().slice(0,10).replace(/-/g,'')}.xlsx`);
@@ -1583,16 +1596,16 @@ function splitSubBom(code){
        <b class="mono">${esc(curBom)}</b> 底下的 <b>${lines.length}</b> 行下階，
        複製成一張獨立的 BOM。</p>
     <div class="fld"><label>產品名稱</label>
-      <input id="sb_name" value="${esc(hit.node.name||it.name||'')}"></div>
+      <input id="sb_name" value="${esc(mName(code,hit.node.name))}"></div>
     <div class="fld"><label>規格</label>
-      <input id="sb_spec" value="${esc(hit.node.spec||it.spec||'')}"></div>
+      <input id="sb_spec" value="${esc(mSpec(code,hit.node.spec))}"></div>
     <div class="tblwrap" style="max-height:34vh"><table class="grid"><thead><tr>
       <th class="nos" style="width:80px">階層</th><th class="nos">品號</th><th class="nos">品名</th>
       <th class="nos num">用量</th><th class="nos">單位</th><th class="nos num">單價</th>
       </tr></thead><tbody>
       ${lines.map((l,i)=>`<tr><td class="no">${lineNos(lines)[i]}</td>
-        <td class="mono">${esc(l.code)}</td><td>${esc(l.name||itemOf(l.code).name)}</td>
-        <td class="num">${nf(l.qty)}</td><td class="mut">${esc(l.unit)}</td>
+        <td class="mono">${esc(l.code)}</td><td>${esc(mName(l.code,l.name))}</td>
+        <td class="num">${nf(l.qty)}</td><td class="mut">${esc(mUnit(l.code,l.unit))}</td>
         <td class="num">${itemOf(l.code).cost==null?'<span class="tag gray">未設</span>':nf(itemOf(l.code).cost)}</td>
         </tr>`).join('')}
     </tbody></table></div>
@@ -1743,10 +1756,10 @@ function edRender(){
         <button class="btn sm" onclick="edLv(${i},1)">▶</button></td>
       <td class="ac"><input class="mono" id="ac_${i}" value="${esc(l.code)}" autocomplete="off"
           oninput="edAC(${i})" onblur="setTimeout(()=>edACClose(${i}),180)"></td>
-      <td class="mini" id="nm_${i}">${esc(l.name||it.name)}${it._ghost&&l.code?
+      <td class="mini" id="nm_${i}">${esc(mName(l.code,l.name))}${it._ghost&&l.code?
         ` <span class="tag warn">未建檔</span> <button class="btn sm" onclick="edNewMasterItem('${esc(l.code)}',${i})">建檔</button>`:''}</td>
       <td><input type="number" step="any" value="${l.qty}" oninput="ED.lines[${i}].qty=parseFloat(this.value)||0;edSum()"></td>
-      <td><input value="${esc(l.unit||it.unit||'pcs')}" oninput="ED.lines[${i}].unit=this.value"></td>
+      <td class="mut" id="un_${i}" title="單位以料號主檔為準，要修改請到「料號主檔」">${esc(l.code?mUnit(l.code,l.unit):'')}</td>
       <td><input value="${esc(l.note||'')}" oninput="ED.lines[${i}].note=this.value"></td>
       <td class="num"><button class="btn sm" onclick="edMv(${i},-1)">↑</button>
         <button class="btn sm" onclick="edMv(${i},1)">↓</button>
@@ -1774,8 +1787,9 @@ function edAC(i){
   const inp=document.getElementById('ac_'+i), q=inp.value.trim().toLowerCase();
   ED.lines[i].code=inp.value.trim();
   const it=IDX[ED.lines[i].code];
-  if(it){ED.lines[i].name=it.name;ED.lines[i].unit=ED.lines[i].unit||it.unit;
-    document.getElementById('nm_'+i).textContent=it.name;}
+  if(it){ED.lines[i].name=it.name;ED.lines[i].spec=it.spec;ED.lines[i].unit=it.unit||ED.lines[i].unit||'pcs';
+    document.getElementById('nm_'+i).textContent=it.name;
+    const u=document.getElementById('un_'+i); if(u) u.textContent=it.unit||'pcs';}
   edACClose(i); if(q.length<1)return;
   const hits=S.items.filter(x=>(x.code+' '+x.name+' '+x.spec).toLowerCase().includes(q)).slice(0,25);
   if(!hits.length)return;
@@ -1981,7 +1995,7 @@ function explodeShared(bomCode,qty,opt,pool){
       if(kids.length){
         let need=q,used=0;
         if(opt.netting){const a=avail(n.code);used=Math.min(a,q);pool[n.code]-=used;need=q-used;}
-        sub.push({code:n.code,name:n.name||itemOf(n.code).name,unit:n.unit||itemOf(n.code).unit,
+        sub.push({code:n.code,name:mName(n.code,n.name),unit:mUnit(n.code,n.unit),
                   gross:q,fromStock:used,net:need,depth,ref});
         if(need>0) walk(kids,need,path.concat(n.code),depth+1);
       }else leaf[n.code]=(leaf[n.code]||0)+q;
@@ -2233,6 +2247,48 @@ function showHistory(i){
    ============================================================ */
 const DBSHEET={items:'料號主檔',boms:'BOM主檔',lines:'BOM明細'};
 
+/* ---------- BOM 明細 vs 料號主檔：一致性檢查 ----------
+   BOM 明細裡的品名/規格/單位只是建檔當下的複本，畫面與匯出已一律改讀料號主檔，
+   這裡再把「存起來的舊複本」跟主檔比對出來，可一鍵覆寫，讓資料庫本身也保持一致。 */
+function bomFieldDiffs(){
+  const nz=v=>String(v==null?'':v).trim(), out=[];
+  (S.boms||[]).forEach(b=>(b.lines||[]).forEach((l,i)=>{
+    const it=IDX[l.code];
+    if(!it){ out.push({bom:b.code,seq:i+1,code:l.code,field:'品號',bomVal:nz(l.name),master:'',kind:'ghost'}); return; }
+    if(nz(l.name)&&nz(l.name)!==nz(it.name))
+      out.push({bom:b.code,seq:i+1,code:l.code,field:'品名',bomVal:nz(l.name),master:nz(it.name),kind:'diff'});
+    if(nz(l.spec)&&nz(it.spec)&&nz(l.spec)!==nz(it.spec))
+      out.push({bom:b.code,seq:i+1,code:l.code,field:'規格',bomVal:nz(l.spec),master:nz(it.spec),kind:'diff'});
+    if(nz(l.spec)&&!nz(it.spec))
+      out.push({bom:b.code,seq:i+1,code:l.code,field:'規格',bomVal:nz(l.spec),master:'',kind:'blank'});
+    if(nz(l.unit)&&nz(it.unit)&&nz(l.unit)!==nz(it.unit))
+      out.push({bom:b.code,seq:i+1,code:l.code,field:'單位',bomVal:nz(l.unit),master:nz(it.unit),kind:'diff'});
+  }));
+  return out;
+}
+async function syncBomFromMaster(){
+  if(!canWrite()) return denyWrite();
+  const d=bomFieldDiffs().filter(x=>x.kind==='diff');
+  if(!d.length) return toast('BOM 明細已與料號主檔一致');
+  if(!confirm('將以「料號主檔」的品名／規格／單位覆寫 '+d.length+' 處不一致的 BOM 明細。\n畫面顯示本來就已經以主檔為準，這一步只是把資料庫裡的舊複本也一起更新。確定？')) return;
+  let cnt=0;
+  (S.boms||[]).forEach(b=>(b.lines||[]).forEach(l=>{
+    const it=IDX[l.code]; if(!it) return; let ch=false;
+    if(String(it.name||'').trim()&&String(l.name||'')!==it.name){l.name=it.name;ch=true;}
+    if(String(it.spec||'').trim()&&String(l.spec||'')!==it.spec){l.spec=it.spec;ch=true;}
+    if(String(it.unit||'').trim()&&String(l.unit||'')!==it.unit){l.unit=it.unit;ch=true;}
+    if(ch)cnt++;
+  }));
+  await save(); renderAll(); toast('已用料號主檔覆寫 '+cnt+' 行 BOM 明細');
+}
+function exportBomDiffs(){
+  const d=bomFieldDiffs();
+  if(!d.length) return toast('沒有不一致的項目');
+  xlsxOut([['BOM與料號不一致',d.map(x=>({BOM品號:x.bom,項次:x.seq,品號:x.code,欄位:x.field,
+    BOM明細舊值:x.bomVal,料號主檔:x.master,
+    類型:x.kind==='diff'?'兩邊不同':(x.kind==='blank'?'主檔未填':'主檔未建檔')}))]],
+    `BOM一致性檢查_${new Date().toISOString().slice(0,10).replace(/-/g,'')}.xlsx`);
+}
 function dbRows(){
   const items=S.items.slice().sort((a,b)=>a.code.localeCompare(b.code)).map(i=>({
     品號:i.code,品名:i.name||'',規格:i.spec||'',單位:i.unit||'pcs',
@@ -2244,8 +2300,8 @@ function dbRows(){
   const lines=[];
   S.boms.forEach(b=>{const nos=lineNos(b.lines);
     b.lines.forEach((l,i)=>lines.push({BOM品號:b.code,項次:i+1,階層編號:nos[i],階層:l.level,
-      品號:l.code,品名:l.name||itemOf(l.code).name||'',規格:l.spec||'',
-      用量:l.qty,單位:l.unit||'pcs',備註:l.note||''}));});
+      品號:l.code,品名:mName(l.code,l.name),規格:mSpec(l.code,l.spec),
+      用量:l.qty,單位:mUnit(l.code,l.unit),備註:l.note||''}));});
   return {items,boms,lines};
 }
 function exportDB(){
@@ -2989,6 +3045,31 @@ function vData(){
         <div class="hint">若自身單價才是實際採購價，請把該料號的下階從 BOM 移除，或改用「自身單價優先」規則。</div>
       </div>`:''})()}
   </div>
+  ${(()=>{const d=bomFieldDiffs();
+    const df=d.filter(x=>x.kind==='diff'), bl=d.filter(x=>x.kind==='blank'), gh=d.filter(x=>x.kind==='ghost');
+    return `<div class="card" style="border-color:${df.length?'#e8c98f':'var(--ok)'}"><h2>BOM 與料號主檔一致性
+      <span class="sub">品名／規格／單位一律以料號主檔為準</span></h2>
+    ${df.length?`<b style="color:var(--warn)">${df.length} 處 BOM 明細裡存的舊複本與料號主檔不同</b>
+      <div class="hint" style="margin:6px 0 10px">畫面與匯出已自動改用料號主檔的內容，所以看到的一定是最新的；
+        下面列的是資料庫裡還留著的舊值，按「以料號主檔覆寫」可以一併清乾淨。</div>
+      <div class="tblwrap" style="max-height:260px"><table class="grid"><thead><tr>
+        <th class="nos">BOM</th><th class="nos">品號</th><th class="nos">欄位</th>
+        <th class="nos">BOM 明細舊值</th><th class="nos">料號主檔（正確）</th>
+        </tr></thead><tbody>${df.slice(0,200).map(x=>`<tr>
+          <td class="mono mut">${esc(x.bom)}</td><td class="mono">${esc(x.code)}</td>
+          <td>${esc(x.field)}</td>
+          <td class="mut" style="text-decoration:line-through">${esc(x.bomVal)}</td>
+          <td><b>${esc(x.master)}</b></td></tr>`).join('')}
+      </tbody></table></div>${df.length>200?`<div class="mini mut">（僅顯示前 200 筆，完整清單請匯出 Excel）</div>`:''}`
+      :`<b style="color:var(--ok)">BOM 明細與料號主檔完全一致</b>`}
+    ${bl.length?`<div class="hint" style="margin-top:8px"><b>${bl.length} 處</b>：BOM 明細有規格、但料號主檔的規格是空的（目前先沿用 BOM 上的舊值）。
+      建議到「料號主檔」把規格補上：${bl.slice(0,8).map(x=>esc(x.code)).join('、')}${bl.length>8?' …':''}</div>`:''}
+    ${gh.length?`<div class="hint" style="margin-top:8px"><b style="color:var(--bad)">${gh.length} 行</b> BOM 明細的品號在料號主檔查不到，請先建檔。</div>`:''}
+    <div class="row" style="margin-top:10px">
+      ${canWrite()&&df.length?'<button class="btn pri" onclick="syncBomFromMaster()">以料號主檔覆寫 BOM 明細</button>':''}
+      ${d.length?'<button class="btn" onclick="exportBomDiffs()">匯出檢查清單 Excel</button>':''}
+    </div>
+  </div>`;})()}
   <div class="card"><h2>資料來源</h2>
     <dl class="kv">
       <dt>料號總表</dt><dd>${esc(S.meta.itemFile||'—')}</dd>
@@ -3040,7 +3121,7 @@ function expAllBoms(){
     return {品號:b.code,產品名稱:b.name,規格:b.spec,行數:b.lines.length,葉料號數:c.leafN,單台材料成本:c.cost};})]];
   S.boms.forEach(b=>{const nos=lineNos(b.lines);
     sheets.push([b.code,b.lines.map((l,i)=>({項次:i+1,階層編號:nos[i],階層:l.level,品號:l.code,
-    品名:l.name||itemOf(l.code).name,規格:l.spec,用量:l.qty,單位:l.unit,
+    品名:mName(l.code,l.name),規格:mSpec(l.code,l.spec),用量:l.qty,單位:mUnit(l.code,l.unit),
     庫存數量:itemOf(l.code).stock,單位成本:itemOf(l.code).cost,備註:l.note}))]);});
   xlsxOut(sheets,`全部BOM_${new Date().toISOString().slice(0,10).replace(/-/g,'')}.xlsx`);
 }
@@ -3359,8 +3440,8 @@ function bomFormSheets(bom){
     const it=itemOf(l.code);
     const qty=(+l.qty||0), cost=(it.cost==null||it.cost==='')?null:+it.cost;
     return {seq:i+1, lv:l.level, code:l.code,
-      name:l.name||it.name||'', spec:(l.spec||it.spec||''),
-      qty:qty, unit:l.unit||it.unit||'pcs',
+      name:mName(l.code,l.name), spec:mSpec(l.code,l.spec),
+      qty:qty, unit:mUnit(l.code,l.unit),
       cost:cost, price:(cost==null?null:Math.round(cost*qty*100)/100),
       stock:(it.stock==null?'':it.stock), note:l.note||''};
   });
