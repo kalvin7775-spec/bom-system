@@ -31,7 +31,8 @@ const HEAD = {
   items:['品號','品名','規格','單位','庫存數量','單位成本','安全庫存','供應商','交期','儲位','MSB','備註'],
   boms :['BOM品號','產品名稱','規格','來源','備註'],
   lines:['BOM品號','項次','階層','品號','品名','規格','用量','單位','備註'],
-  hist :['時間','來源','新增','消失','庫存變動','單價變動','其他','操作者'],
+  /* 明細JSON：刪除單據時，把被刪掉的每一列原樣存起來，日後可查、可還原 */
+  hist :['時間','來源','新增','消失','庫存變動','單價變動','其他','操作者','明細JSON'],
   users:['ID','Email','姓名','密碼','角色','狀態','建立時間','最後登入','備註'],
   /* 一張單多列；欄位參考「簡易領料紀錄」，另加單頭欄位方便還原成 Word */
   moves:['單號','日期','類別','倉別','申請部門','異動原因','項次','品號','品名','數量','單位',
@@ -81,6 +82,13 @@ function sheet(key){
     sh.getRange(1,1,1,HEAD[key].length).setValues([HEAD[key]])
       .setFontWeight('bold').setBackground('#eef2f7');
     sh.setFrozenRows(1);
+  } else if(HEAD[key]){
+    /* 舊表比新版少欄位（例如後來才加的「明細JSON」）→ 自動把缺的表頭補上 */
+    const have = sh.getLastColumn(), need = HEAD[key].length;
+    if(have > 0 && have < need){
+      sh.getRange(1, have+1, 1, need-have).setValues([HEAD[key].slice(have)])
+        .setFontWeight('bold').setBackground('#eef2f7');
+    }
   }
   _SH[key] = sh;
   return sh;
@@ -227,7 +235,10 @@ function readState(){
     ts:fmtTS(r['時間']), file:String(r['來源']||''),
     sum:{added:num(r['新增']), removed:num(r['消失']), stock:num(r['庫存變動']),
          cost:num(r['單價變動']), other:num(r['其他'])},
-    by:String(r['操作者']||''), diff:{added:[],removed:[],stock:[],cost:[],other:[],
+    by:String(r['操作者']||''),
+    voided:(function(){ try{ const t=String(r['明細JSON']||'').trim();
+      return t ? JSON.parse(t) : null; }catch(e){ return null; } })(),
+    diff:{added:[],removed:[],stock:[],cost:[],other:[],
          sum:{added:num(r['新增']),removed:num(r['消失']),stock:num(r['庫存變動']),
               cost:num(r['單價變動']),other:num(r['其他'])}}
   }));
@@ -303,7 +314,9 @@ function writeState(st, who){
     writeRows('hist', hist200.map(h=>({
       '時間':h.ts||'', '來源':h.file||'', '新增':(h.sum&&h.sum.added)||0,
       '消失':(h.sum&&h.sum.removed)||0, '庫存變動':(h.sum&&h.sum.stock)||0,
-      '單價變動':(h.sum&&h.sum.cost)||0, '其他':(h.sum&&h.sum.other)||0, '操作者':h.by||''
+      '單價變動':(h.sum&&h.sum.cost)||0, '其他':(h.sum&&h.sum.other)||0, '操作者':h.by||'',
+      '明細JSON':(function(){ try{ return h.voided ? JSON.stringify(h.voided) : ''; }
+                              catch(e){ return ''; } })()
     })));
     if(st.settings) sysSet('settings', JSON.stringify(st.settings));
     const rev = (Number(sysGet('rev',0))||0) + 1;
@@ -631,6 +644,28 @@ function voidOrder(auth, p){
       ish.getRange(idx[code]+2, kStock+1).setValue(touched[code]);
     });
 
+    /* --- 刪掉之前，先把整張單的明細原樣留一份，寫進「異動紀錄」的「明細JSON」 --- */
+    const snapRows = hit.map(function(i){
+      const o = {};
+      head.forEach(function(h,k){
+        const v = body[i][k];
+        o[h] = (v instanceof Date)
+          ? Utilities.formatDate(v,'Asia/Taipei','yyyy/MM/dd HH:mm:ss')
+          : ((v===null||v===undefined) ? '' : v);
+      });
+      return o;
+    });
+    let snapJson = '';
+    try{
+      snapJson = JSON.stringify({no:no, why:why, at:nowTS(), by:(auth.name||''),
+        restored: Object.keys(touched).map(function(c){return {code:c, stock:touched[c]};}),
+        rows: snapRows});
+      /* 試算表單一儲存格上限 5 萬字，太長就只留摘要，免得整筆寫不進去 */
+      if(snapJson.length > 45000)
+        snapJson = JSON.stringify({no:no, why:why, at:nowTS(), by:(auth.name||''),
+          truncated:true, count:snapRows.length});
+    }catch(e){ snapJson = ''; }
+
     /* --- 由下往上刪列，索引才不會位移 --- */
     for(let k=hit.length-1;k>=0;k--) msh.deleteRow(hit[k]+2);
 
@@ -642,7 +677,7 @@ function voidOrder(auth, p){
 
     const now = nowTS();
     sheet('hist').appendRow([now, '刪除庫存異動單 '+no+(why?'（'+why+'）':''),
-      0, hit.length, Object.keys(touched).length, 0, 0, auth.name||'']);
+      0, hit.length, Object.keys(touched).length, 0, 0, auth.name||'', snapJson]);
 
     const rev = (Number(sysGet('rev',0))||0) + 1;
     sysSet('rev', rev);

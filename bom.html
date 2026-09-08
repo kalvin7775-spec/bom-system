@@ -1026,9 +1026,11 @@ function vDash(){
       <th class="nos">時間</th><th class="nos">來源檔</th><th class="nos">摘要</th><th class="nos"></th>
       </tr></thead><tbody>${S.history.slice(0,10).map((h,i)=>`<tr>
         <td class="mono">${esc(h.ts)}</td><td>${esc(h.file||'')}</td>
-        <td><span class="tag add">新增 ${h.sum.added}</span> <span class="tag del">移除 ${h.sum.removed}</span>
+        <td>${h.voided?`<span class="tag del">已刪除單據 ${esc(h.voided.no||'')}</span>
+            <span class="tag info">${(h.voided.rows||[]).length} 項已回沖</span>`
+          :`<span class="tag add">新增 ${h.sum.added}</span> <span class="tag del">移除 ${h.sum.removed}</span>
             <span class="tag info">庫存 ${h.sum.stock}</span> <span class="tag warn">單價 ${h.sum.cost}</span>
-            <span class="tag gray">其他 ${h.sum.other}</span></td>
+            <span class="tag gray">其他 ${h.sum.other}</span>`}</td>
         <td><button class="btn sm" onclick="showHistory(${i})">明細</button></td></tr>`).join('')}
       </tbody></table></div>`:'<div class="empty">尚無更新紀錄。到「更新比對」上傳新版料號總表即可產生。</div>'}
   </div>`;
@@ -2131,7 +2133,8 @@ function vSync(){
       <th class="nos">時間</th><th class="nos">來源檔</th><th class="nos num">新增</th><th class="nos num">消失</th>
       <th class="nos num">庫存變動</th><th class="nos num">單價變動</th><th class="nos num">其他</th><th class="nos"></th>
       </tr></thead><tbody>${S.history.map((h,i)=>`<tr>
-        <td class="mono">${esc(h.ts)}</td><td>${esc(h.file||'')}</td>
+        <td class="mono">${esc(h.ts)}</td>
+        <td>${esc(h.file||'')}${h.voided?` <span class="tag del">可查明細</span>`:''}</td>
         <td class="num">${h.sum.added}</td><td class="num">${h.sum.removed}</td>
         <td class="num">${h.sum.stock}</td><td class="num">${h.sum.cost}</td><td class="num">${h.sum.other}</td>
         <td><button class="btn sm" onclick="showHistory(${i})">明細</button></td></tr>`).join('')}
@@ -2255,8 +2258,49 @@ function exportDiff(){
 }
 function showHistory(i){
   const h=S.history[i];
+  if(h && h.voided) return showVoided(h);
   dialog(`異動明細　${h.ts}　${h.file||''}`,diffHTML(h.diff,h.file||'',(h.sum.added+h.sum.removed+h.sum.stock+h.sum.cost+h.sum.other)+' 項異動'),
     '<button class="btn" value="x">關閉</button>');
+}
+/* 已刪除的庫存異動單：把當初被刪掉的每一列原樣列出來，方便查帳或重開 */
+function showVoided(h){
+  const v=h.voided||{}, rows=v.rows||[];
+  const g=(r,k)=>String(r[k]==null?'':r[k]);
+  if(v.truncated) return dialog(`已刪除的單據　${esc(v.no||'')}`,
+    `<p>這張單當初有 <b>${v.count||0}</b> 列明細，內容太長沒有完整存下來。</p>
+     <div class="hint">可到 Google 試算表的「檔案 → 版本記錄」找回刪除前的內容。</div>`,
+    '<button class="btn" value="x">關閉</button>');
+  const first=rows[0]||{};
+  dialog(`已刪除的單據　${esc(v.no||'')}`,`
+    <dl class="kv" style="margin-bottom:10px">
+      <dt>刪除時間</dt><dd>${esc(v.at||h.ts||'')}　${esc(v.by||h.by||'')}</dd>
+      ${v.why?`<dt>刪除原因</dt><dd>${esc(v.why)}</dd>`:''}
+      <dt>原單資料</dt><dd>${esc(g(first,'日期'))}　${esc(g(first,'類別'))}　${esc(g(first,'倉別'))}
+        ${g(first,'申請部門')?'　'+esc(g(first,'申請部門')):''}</dd>
+      <dt>異動原因</dt><dd>${esc(g(first,'異動原因'))}</dd>
+      <dt>明細</dt><dd>${rows.length} 項</dd>
+    </dl>
+    <div class="tblwrap" style="max-height:300px"><table class="grid"><thead><tr>
+      <th class="nos">項次</th><th class="nos">品號</th><th class="nos">品名</th>
+      <th class="nos num">數量</th><th class="nos">單位</th>
+      <th class="nos num">當時異動前</th><th class="nos num">當時異動後</th>
+      </tr></thead><tbody>${rows.map((r,ix)=>`<tr>
+        <td class="no">${esc(g(r,'項次')||(ix+1))}</td>
+        <td class="mono">${esc(g(r,'品號'))}</td><td>${esc(g(r,'品名'))}</td>
+        <td class="num"><b>${esc(g(r,'數量'))}</b></td><td class="mut">${esc(g(r,'單位'))}</td>
+        <td class="num mut">${esc(g(r,'異動前庫存'))}</td><td class="num mut">${esc(g(r,'異動後庫存'))}</td>
+      </tr>`).join('')}</tbody></table></div>
+    ${(v.restored&&v.restored.length)?`<div class="hint">刪除時已把庫存回沖成：
+      ${v.restored.map(x=>esc(x.code)+' → '+nf(x.stock)).join('　')}</div>`:''}
+    <div class="hint">單號 <b>${esc(v.no||'')}</b> 已作廢，不會再被重複使用。
+      要重開的話，請照上表在「庫存異動」重新開一張單（會拿到新的單號）。</div>`,
+    `<button class="btn" type="button" onclick="exportVoided(${S.history.indexOf(h)})">匯出這張單 Excel</button>
+     <button class="btn" value="x">關閉</button>`);
+}
+function exportVoided(i){
+  const h=S.history[i], v=(h&&h.voided)||{}, rows=v.rows||[];
+  if(!rows.length) return toast('沒有可匯出的明細');
+  xlsxOut([['已刪除單據 '+(v.no||''),rows]],`已刪除單據_${(v.no||'')}.xlsx`);
 }
 </script>
 <script>
