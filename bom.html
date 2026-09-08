@@ -276,11 +276,27 @@ function isBuyPoint(code){
   const it=IDX[code];
   return !!(costMode()!=='sum' && it && it.cost!=null && it.cost!=='' && !isNaN(it.cost));
 }
+/* 下階來源：品號只要有自己的獨立 BOM，就一律以那張 BOM 為準，
+   父 BOM 明細裡自帶的那份下階只是舊複本，會被蓋過去。
+   這樣半成品 BOM 一改，所有引用它的成品都會跟著變，不必逐張手動同步。 */
 function rawKids(node,path){
-  if(node.children&&node.children.length) return {kids:node.children,ref:false};
   const sub=BIDX[node.code];
   if(sub && !path.includes(node.code)) return {kids:buildTree(sub),ref:true};
+  if(node.children&&node.children.length) return {kids:node.children,ref:false};
   return {kids:[],ref:false};
+}
+/* 把一張 BOM 解析成「實際會用到」的平面明細（引用到的子 BOM 已展開） */
+function resolvedLines(bom){
+  const out=[];
+  (function walk(nodes,path,lv){
+    nodes.forEach(n=>{
+      out.push({level:lv, code:n.code, name:n.name, spec:n.spec,
+                qty:n.qty, unit:n.unit, note:n.note});
+      const {kids}=kidsOf(n,path,true);
+      if(kids.length && !path.includes(n.code)) walk(kids,path.concat(n.code),lv+1);
+    });
+  })(buildTree(bom),[bom.code],1);
+  return out;
 }
 function kidsOf(node,path,structural){
   const r=rawKids(node,path);
@@ -1433,11 +1449,12 @@ function renderBom(){
     if(typeof applyReadonlyUI==='function') applyReadonlyUI(); return;}
   const bom=BIDX[curBom], ex=explode(curBom,1,{}), c=bomCost(bom);
   const tree=buildTree(bom);
+  const RL=resolvedLines(bom);
   const leafVal=Object.entries(ex.leaf).reduce((s,[k,q])=>s+(itemOf(k).cost||0)*q,0);
   const short=Object.entries(ex.leaf).filter(([k,q])=>(itemOf(k).stock||0)<q).length;
   let head=`<div class="stats" style="margin-bottom:14px">
     <div class="stat"><div class="k">產品品號</div><div class="v" style="font-size:16px">${esc(bom.code)}</div></div>
-    <div class="stat"><div class="k">BOM 行數 / 葉料號</div><div class="v">${bom.lines.length} / ${Object.keys(ex.leaf).length}</div></div>
+    <div class="stat"><div class="k">BOM 行數 / 葉料號</div><div class="v"${RL.length!==bom.lines.length?` title="明細本身存了 ${bom.lines.length} 行；引用到的子 BOM 已改以子 BOM 為準，實際展開為 ${RL.length} 行"`:''}>${RL.length} / ${Object.keys(ex.leaf).length}</div></div>
     <div class="stat ok"><div class="k">單台材料成本</div><div class="v">${money(leafVal)}</div></div>
     <div class="stat ${short?'bad':'ok'}"><div class="k">單台缺料項數</div><div class="v">${short}</div></div>
     <div class="stat ${c.missing?'warn':''}"><div class="k">未設單價料號</div><div class="v">${c.missing}</div></div>
@@ -1520,9 +1537,10 @@ async function dupBom(){
   await save(); curBom=code; vBoms(); toast('已複製');
 }
 function exportBom(){
-  const bom=BIDX[curBom], ex=explode(curBom,1,{}), nos=lineNos(bom.lines);
+  /* 用解析後的明細，才會跟畫面一致（引用到的子 BOM 以子 BOM 為準） */
+  const bom=BIDX[curBom], ex=explode(curBom,1,{}), RL=resolvedLines(bom), nos=lineNos(RL);
   xlsxOut([
-    ['BOM階層',bom.lines.map((l,i)=>({項次:i+1,階層編號:nos[i],階層:l.level,品號:l.code,品名:l.name||itemOf(l.code).name,
+    ['BOM階層',RL.map((l,i)=>({項次:i+1,階層編號:nos[i],階層:l.level,品號:l.code,品名:l.name||itemOf(l.code).name,
       規格:l.spec,用量:l.qty,單位:l.unit,庫存數量:itemOf(l.code).stock,單位成本:itemOf(l.code).cost,備註:l.note}))],
     ['展開總用量',Object.entries(ex.leaf).map(([c,q])=>({品號:c,品名:itemOf(c).name,單台用量:q,
       單位:itemOf(c).unit,庫存:itemOf(c).stock,單價:itemOf(c).cost,小計:(itemOf(c).cost||0)*q}))]
@@ -3335,8 +3353,9 @@ function CL(v,st){
 function A1(col,row){ let s='',n=col; while(n>0){ const m=(n-1)%26; s=String.fromCharCode(65+m)+s; n=(n-m-1)/26; } return s+row; }
 
 function bomFormSheets(bom){
-  const nos=lineNos(bom.lines);
-  const lines=bom.lines.map((l,i)=>{
+  const RL=resolvedLines(bom);
+  const nos=lineNos(RL);
+  const lines=RL.map((l,i)=>{
     const it=itemOf(l.code);
     const qty=(+l.qty||0), cost=(it.cost==null||it.cost==='')?null:+it.cost;
     return {seq:i+1, lv:l.level, code:l.code,
