@@ -3055,7 +3055,7 @@ function mvPreviewDoc(){
 function moveAmt(code, qty){
   const c = itemOf(code).cost;
   if(c===null || c===undefined || c==='' || isNaN(c)) return '無單價';
-  return Math.round((+c) * (+qty||0) * 10000) / 10000;
+  return Math.round((+c) * (+qty||0) * 100) / 100;   /* 金額取到小數 2 位 */
 }
 function exportMoves(){
   const src=S.moves||[];
