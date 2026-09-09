@@ -3049,6 +3049,14 @@ function mvPreviewDoc(){
   docFromOrder(Object.assign({},MVORD,{no:'(未送出)',date:todayStr().replace(/-/g,'/'),
     by:(ME&&ME.name)||WHO||''}));
 }
+/* 匯出用的「金額」＝ 領用單價 × 數量。
+   單價一律取「料號主檔」目前的單位成本；主檔沒設單價就填「無單價」，
+   免得算成 0 元讓人以為這筆真的不用錢。 */
+function moveAmt(code, qty){
+  const c = itemOf(code).cost;
+  if(c===null || c===undefined || c==='' || isNaN(c)) return '無單價';
+  return Math.round((+c) * (+qty||0) * 10000) / 10000;
+}
 function exportMoves(){
   const src=S.moves||[];
   if(!src.length) return toast('沒有可匯出的紀錄');
@@ -3058,7 +3066,7 @@ function exportMoves(){
     '單號':m.no,'日期':m.date,'類別':m.type,'倉別':m.house,'申請部門':m.dept,
     '異動原因':m.reason,'項次':m.seq,'品號':m.code,'品名':m.name,'數量':m.qty,'單位':m.unit,
     '異動前庫存':m.before,'異動後庫存':m.after,'領用人':m.taker,'填表人':m.by,
-    '備註':m.note,'單據備註':m.memo,'建立時間':m.at}))),'庫存異動');
+    '備註':m.note,'金額':moveAmt(m.code,m.qty),'單據備註':m.memo,'建立時間':m.at}))),'庫存異動');
   /* 分頁二：對齊庫存系統「簡易領料紀錄」的欄位，可直接貼回原本的 Excel */
   let lastNo='';
   XLSX.utils.book_append_sheet(wb,XLSX.utils.json_to_sheet(src.map(m=>{
@@ -3483,7 +3491,9 @@ function exportMovesMonth(){
     '項次':m.seq,'品號':m.code,'品名':m.name,'數量':m.qty,'單位':m.unit,
     '進出':(m.type==='領料'?-1:1)*(+m.qty||0),
     '異動前庫存':m.before,'異動後庫存':m.after,
-    '領用人':m.taker,'填表人':m.by,'備註':m.note,'單據備註':m.memo,'建立時間':m.at}));
+    '領用人':m.taker,'填表人':m.by,'備註':m.note,
+    '金額':moveAmt(m.code,m.qty),
+    '單據備註':m.memo,'建立時間':m.at}));
 
   /* 分頁二：依單號彙總 */
   const byNo={}, order=[];
@@ -3510,7 +3520,9 @@ function exportMovesMonth(){
   const wb=XLSX.utils.book_new();
   const s1=XLSX.utils.json_to_sheet(detail);
   s1['!cols']=[{wch:12},{wch:11},{wch:7},{wch:9},{wch:9},{wch:22},{wch:6},{wch:17},{wch:26},
-               {wch:7},{wch:6},{wch:7},{wch:11},{wch:11},{wch:9},{wch:9},{wch:18},{wch:18},{wch:19}];
+               {wch:7},{wch:6},{wch:7},{wch:11},{wch:11},{wch:9},{wch:9},{wch:18},
+               {wch:11},                                   /* 金額 */
+               {wch:18},{wch:19}];
   XLSX.utils.book_append_sheet(wb,s1,'明細');
   const s2=XLSX.utils.json_to_sheet(orders);
   s2['!cols']=[{wch:12},{wch:11},{wch:7},{wch:9},{wch:9},{wch:24},{wch:6},{wch:9},{wch:9},{wch:9},{wch:20},{wch:19}];
