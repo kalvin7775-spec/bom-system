@@ -378,9 +378,39 @@ function readSerial(){
             model:   String(r['型號']||'')};
   });
   return {ok:true, records:list,
+          factories: readSerialFacs(),
           rev: Number(sysGet('serialRev',0))||0,
           updatedAt: fmtTS(sysGet('serialAt','')),
           updatedBy: String(sysGet('serialBy',''))};
+}
+
+/* 代工廠編碼（批序號第 1 碼）：存在「系統」表的 serialFactories，整包 JSON。
+   A＝廠內自製為出廠預設，沒設定過就給這三筆。 */
+function readSerialFacs(){
+  var facs = [];
+  try{
+    var t = String(sysGet('serialFactories','')).trim();
+    if(t) facs = JSON.parse(t);
+  }catch(e){ facs = []; }
+  if(!Array.isArray(facs) || !facs.length)
+    facs = [{code:'A', name:'廠內自製', note:'安德斯廠內生產', on:true},
+            {code:'P', name:'啟鑫',     note:'',             on:true},
+            {code:'T', name:'大量',     note:'',             on:true}];
+  return facs;
+}
+function writeSerialFacs(facs){
+  if(!Array.isArray(facs) || !facs.length) return false;
+  var clean = [];
+  for(var i=0;i<facs.length && clean.length<200;i++){
+    var f = facs[i] || {};
+    var c = String(f.code||'').trim().toUpperCase();
+    if(!/^[A-Z]$/.test(c)) continue;
+    if(clean.some(function(x){ return x.code===c; })) continue;
+    clean.push({code:c, name:String(f.name||''), note:String(f.note||''), on:f.on!==false});
+  }
+  if(!clean.length) return false;
+  sysSet('serialFactories', JSON.stringify(clean));
+  return true;
 }
 
 /* 日期欄可能被試算表轉成日期物件，也可能是 20240513 / 202406 這種數字，統一轉字串 */
@@ -390,7 +420,7 @@ function fmtCell(v){
   return String(v===null||v===undefined?'':v);
 }
 
-function writeSerial(list, who){
+function writeSerial(list, who, facs){
   if(!Array.isArray(list)) throw new Error('資料格式不正確，未寫入');
   const cur = serialRows().length;
   if(list.length === 0 && cur > 0)
@@ -414,6 +444,7 @@ function writeSerial(list, who){
     /* 日期欄一律當文字，避免 202406 被試算表當成數字或日期 */
     const sh = sheet('serial');
     if(list.length) sh.getRange(2,2,list.length,1).setNumberFormat('@');
+    if(facs) writeSerialFacs(facs);
     const rev = (Number(sysGet('serialRev',0))||0) + 1;
     sysSet('serialRev', rev);
     sysSet('serialAt', Utilities.formatDate(new Date(),'Asia/Taipei','yyyy/MM/dd HH:mm:ss'));
@@ -1042,8 +1073,9 @@ function doPost(e){
                   updatedBy:String(sysGet('serialBy',''))});
     }
     try{
-      const rev = writeSerial(body.payload||[], auth.name || body.who || '');
-      return out({ok:true, rev:rev, updatedAt:fmtTS(sysGet('serialAt',''))});
+      const rev = writeSerial(body.payload||[], auth.name || body.who || '', body.factories);
+      return out({ok:true, rev:rev, updatedAt:fmtTS(sysGet('serialAt','')),
+                  factories:readSerialFacs()});
     }catch(err){
       return out({error:'寫入失敗：'+err.message});
     }

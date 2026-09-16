@@ -110,6 +110,7 @@ input[type=file]{display:none}
 .codebox{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:22px;letter-spacing:4px;
   background:#f2f5f8;border:1px solid var(--line);border-radius:8px;padding:14px 16px;text-align:center}
 .codebox span{display:inline-block;padding:0 2px;border-radius:4px}
+.c-f{background:#f3e7f7;color:#6b2d80}
 .c-y{background:#dfeef2;color:#1d5a68}
 .c-m{background:#fdf0d8;color:#8a5a06}
 .c-b{background:#e4ecfb;color:#1a4ea8}
@@ -298,9 +299,10 @@ async function pull(silent){
       return false;
     }
     R = (d.records||[]).map(normRec);
+    if(Array.isArray(d.factories) && d.factories.length) FACS=d.factories;
     REV = d.rev||0; LASTSYNC = d.updatedAt||'';
     META = {updatedAt:d.updatedAt||'', updatedBy:d.updatedBy||''};
-    await DB.set('cache',JSON.parse(JSON.stringify({R:R,REV:REV,META:META})));
+    await DB.set('cache',JSON.parse(JSON.stringify({R:R,REV:REV,META:META,FACS:FACS})));
     setNet('ok');
     return true;
   }catch(e){
@@ -312,12 +314,12 @@ async function pull(silent){
 async function pullNow(){ if(await pull()){ await whoAmI(); renderAll(); toast('已重新讀取雲端資料'); } }
 
 async function push(force){
-  if(!CLOUD){ await DB.set('cache',JSON.parse(JSON.stringify({R:R,REV:REV,META:META}))); return true; }
+  if(!CLOUD){ await DB.set('cache',JSON.parse(JSON.stringify({R:R,REV:REV,META:META,FACS:FACS}))); return true; }
   if(!canWrite()){ denyWrite(); return false; }
   if(SAVING){ return false; }
   SAVING=true; setNet('save');
   try{
-    const d=await apiPost('saveSerial',R,{baseRev:force?null:REV,force:!!force});
+    const d=await apiPost('saveSerial',R,{baseRev:force?null:REV,force:!!force,factories:FACS});
     SAVING=false;
     if(d.conflict){
       setNet('conflict');
@@ -333,7 +335,7 @@ async function push(force){
     if(d.error){ setNet('err'); toast(d.error); return false; }
     REV=d.rev||REV; LASTSYNC=d.updatedAt||nowts();
     META={updatedAt:LASTSYNC, updatedBy:(ME&&ME.name)||WHO||''};
-    await DB.set('cache',JSON.parse(JSON.stringify({R:R,REV:REV,META:META})));
+    await DB.set('cache',JSON.parse(JSON.stringify({R:R,REV:REV,META:META,FACS:FACS})));
     setNet('ok');
     return true;
   }catch(e){ SAVING=false; setNet('err'); toast('儲存失敗：'+(e.message||'網路逾時')); return false; }
@@ -405,11 +407,45 @@ async function doLegacy(){
 
 <script>
 /* ============================================================
-   批號規則
-   批號 3 碼 ＝ 年碼 + 月碼 + 當月批次碼；序號 4 碼接在批號後面
+   批號規則（依 QS RD-3-01-A 編碼作業指導書 6.6）
+   完整序號 8 碼 ＝ 代工廠碼 + 年碼 + 月碼 + 當月批次碼 + 流水 4 碼
+   代工廠碼：A=廠內自製、P=啟鑫、T=大量（可在「批號規則」頁維護）
    年碼：A=2024、B=2025、C=2026 …　月碼：A=1月 … L=12月　批次碼：A、B、C …
+   2026/09 之前配發的 7 碼舊碼沒有廠碼，一律視為廠內（A）。
    ============================================================ */
 const YEAR0 = 2024;
+
+/* ---------- 代工廠碼（第 1 碼） ---------- */
+const FAC_DEFAULT = 'A';
+const FACS_SEED = [
+  {code:'A', name:'廠內自製', note:'安德斯廠內生產', on:true},
+  {code:'P', name:'啟鑫',     note:'',             on:true},
+  {code:'T', name:'大量',     note:'',             on:true}
+];
+let FACS = JSON.parse(JSON.stringify(FACS_SEED));
+function facList(){ return (FACS||[]).filter(f=>f && String(f.code||'').trim()); }
+function facActive(){ return facList().filter(f=>f.on!==false); }
+function facOf(code){
+  const c=String(code||'').trim().toUpperCase();
+  return facList().find(f=>String(f.code).trim().toUpperCase()===c) || null;
+}
+function facName(code){ const f=facOf(code); return f?f.name:''; }
+function facLabel(code){
+  const c=String(code||'').trim().toUpperCase();
+  if(!c) return '（無廠碼·舊制）';
+  const f=facOf(c); return f ? (c+'＝'+f.name) : (c+'（未登錄的廠碼）');
+}
+/* 下拉選單用；cur 不在清單裡也會補進去，避免舊資料選不到 */
+function facOptions(cur){
+  const c=String(cur||FAC_DEFAULT).toUpperCase();
+  const list=facActive().slice();
+  if(c && !list.some(f=>String(f.code).toUpperCase()===c)){
+    const hit=facOf(c); list.unshift(hit||{code:c,name:'未登錄'});
+  }
+  return list.map(f=>'<option value="'+esc(f.code)+'"'+
+    (String(f.code).toUpperCase()===c?' selected':'')+'>'+
+    esc(f.code+'　'+(f.name||''))+'</option>').join('');
+}
 function letterYear(ch){ const i=ch.charCodeAt(0)-65; return (i>=0&&i<=25)?YEAR0+i:null; }
 function yearLetter(y){ const i=y-YEAR0; return (i>=0&&i<=25)?String.fromCharCode(65+i):null; }
 function letterMonth(ch){ const i=ch.charCodeAt(0)-64; return (i>=1&&i<=12)?i:null; }
@@ -420,8 +456,9 @@ function decodeSn(sn){
   const m=String(sn||'').toUpperCase().match(/([A-Z]{2,})\s*(\d{3,4})?/);
   if(!m) return null;
   const L=m[1]; if(L.length<3) return null;
-  const core=L.slice(-3);
-  return {prefix:L.slice(0,-3), core:core, serial:m[2]||'',
+  const core=L.slice(-3), pre=L.slice(0,-3);
+  /* 前綴剛好 1 碼 → 視為代工廠碼；PRBEA0001 的 PR 是 2 碼舊前綴，不算廠碼 */
+  return {prefix:pre, fac:(pre.length===1?pre:''), core:core, serial:m[2]||'',
           year:letterYear(core[0]), month:letterMonth(core[1]), batch:core[2]};
 }
 /* 日期欄可能是 20240513 / 202406 / 2026 / 2026/03/13 */
@@ -439,19 +476,25 @@ function snMatch(rec){
   if(a.month===null) return '';
   return (a.year===b.y && a.month===b.m)?'ok':'diff';
 }
-/* 指定年月，算出下一個批次碼：接在當月「已用過的最大字母」之後，
-   不回頭補中間的空缺（空缺可能是已配發但未登錄，補用會撞號） */
-function nextBatch(y,m){
+/* 指定年月與代工廠，算出下一個批號（含廠碼，共 4 碼）。
+   批次碼接在「該廠當月已用過的最大字母」之後，不回頭補中間的空缺
+   （空缺可能是已配發但未登錄，補用會撞號）。
+   各廠各自從 A 起算；7 碼舊紀錄沒有廠碼，一律併入 A（廠內自製）那一條，
+   讓原本的序列接著往下走，不會在同月重複出現 A 批。 */
+function nextBatch(y,m,fac){
   const yl=yearLetter(y), ml=monthLetter(m);
   if(!yl||!ml) return '';
+  const f=String(fac||FAC_DEFAULT).trim().toUpperCase();
+  if(!/^[A-Z]$/.test(f)) return '';
   let max=-1;
   R.forEach(r=>{ const d=decodeSn(r.sn);
-    if(d && d.core[0]===yl && d.core[1]===ml){
-      const i=d.core.charCodeAt(2)-65;
-      if(i>=0 && i<=25 && i>max) max=i;
-    }});
+    if(!d || d.core[0]!==yl || d.core[1]!==ml) return;
+    if((d.fac||FAC_DEFAULT).toUpperCase()!==f) return;
+    const i=d.core.charCodeAt(2)-65;
+    if(i>=0 && i<=25 && i>max) max=i;
+  });
   if(max>=25) return '';           /* A–Z 用完 */
-  return yl+ml+String.fromCharCode(65+max+1);
+  return f+yl+ml+String.fromCharCode(65+max+1);
 }
 
 /* 產品型號表 — 依「安德斯內視鏡產品型號樹狀圖 20260820」
@@ -486,16 +529,17 @@ const PRODUCTS=[
 ];
 const PIDX={}; PRODUCTS.forEach(p=>PIDX[p.m]=p);
 function prodOf(model){ return PIDX[String(model||'').trim()]||null; }
-/* 依產品與數量產生批號／序號 */
-function genSn(model, qty){
+/* 依產品、數量與代工廠產生批號／序號 */
+function genSn(model, qty, fac){
   const p=prodOf(model); if(!p) return null;
+  const f=String(fac||FAC_DEFAULT).trim().toUpperCase();
   const d=new Date(), y=d.getFullYear(), m=d.getMonth()+1;
-  const b=nextBatch(y,m);
+  const b=nextBatch(y,m,f);
   if(!b) return null;
   const n=Math.max(1, Math.floor(Number(qty)||1));
-  if(p.k==='B') return {batch:b, sn:b, kind:'批號'};
-  if(n===1)     return {batch:b, sn:b+'0001', kind:'序號'};
-  return {batch:b, sn:b+'0001-'+b+String(n).padStart(4,'0'), kind:'序號'};
+  if(p.k==='B') return {batch:b, sn:b, kind:'批號', fac:f};
+  if(n===1)     return {batch:b, sn:b+'0001', kind:'序號', fac:f};
+  return {batch:b, sn:b+'0001-'+b+String(n).padStart(4,'0'), kind:'序號', fac:f};
 }
 function todayYMD(){
   const d=new Date(), p=n=>(n<10?'0':'')+n;
@@ -648,6 +692,7 @@ function editRec(i){
   EDIT=i;
   const r = i>=0 ? R[i] : {no:nextNo(),date:'',product:'',model:'',qty:'',sn:'',doer:'',checker:WHO||'',use:'',note:''};
   const products=[...new Set(R.map(x=>x.product).filter(Boolean))].sort((a,b)=>a.localeCompare(b,'zh-Hant'));
+  const d0=decodeSn(r.sn); const fac0=(d0&&d0.fac)||FAC_DEFAULT;
   dialog(i>=0?'編輯紀錄　#'+esc(r.no):'新增批序號紀錄',
     '<div class="f2">'+
       '<div class="fld"><label>項次</label><input id="f_no" value="'+esc(r.no)+'"></div>'+
@@ -664,8 +709,12 @@ function editRec(i){
     '</div>'+
     '<div class="fld"><label>備註</label><textarea id="f_note" rows="2">'+esc(r.note)+'</textarea></div>'+
     '<div class="row" style="margin-top:2px">'+
-      '<button class="btn sm" type="button" onclick="suggestSn()">依日期建議批號</button>'+
-      '<span class="hint" id="snInfo" style="margin:0"></span></div>',
+      '<div style="width:170px"><div class="fld" style="margin:0"><label>代工廠（第 1 碼）</label>'+
+        '<select id="f_fac">'+facOptions(fac0)+'</select></div></div>'+
+      '<div style="align-self:end;padding-bottom:2px">'+
+        '<button class="btn sm" type="button" onclick="suggestSn()">依日期建議批號</button></div>'+
+      '<div style="align-self:end;padding-bottom:2px">'+
+        '<span class="hint" id="snInfo" style="margin:0"></span></div></div>',
     (i>=0?'<button class="btn danger" type="button" onclick="delRec()">刪除</button>':'')+
     '<button class="btn pri" type="button" onclick="saveRec()">儲存</button>'+
     '<button class="btn" value="x">取消</button>');
@@ -679,17 +728,21 @@ function paintSnInfo(){
   const d=decodeSn(sn);
   if(!d||d.year===null){ el.textContent = sn?'批號格式無法解析':''; return; }
   const b=parseYM(dt);
-  let t='解析：'+d.core+' → '+d.year+' 年 '+(d.month?d.month+' 月':'月碼 '+d.core[1]+' 無效')+
+  let t='解析：'+(d.fac?d.fac+'／':'')+d.core+' → '+
+        (d.fac?facLabel(d.fac)+'　':'')+
+        d.year+' 年 '+(d.month?d.month+' 月':'月碼 '+d.core[1]+' 無效')+
         '　第 '+d.batch+' 批'+(d.serial?'　序號 '+d.serial:'');
+  if(!d.fac && !d.prefix) t+='　（7 碼舊制，無廠碼）';
   if(b && d.month && (b.y!==d.year || (b.m!==null && b.m!==d.month))) t+='　⚠ 與日期欄不一致';
   el.textContent=t;
 }
 function suggestSn(){
   const dt=(document.getElementById('f_date')||{}).value||'';
+  const fac=((document.getElementById('f_fac')||{}).value||FAC_DEFAULT);
   const b=parseYM(dt);
   if(!b||b.m===null) return toast('請先填日期（例 202608 或 20260828）');
-  const c=nextBatch(b.y,b.m);
-  if(!c) return toast('這個年月超出批號可表示範圍');
+  const c=nextBatch(b.y,b.m,fac);
+  if(!c) return toast('這個年月的批次碼已用到 Z，或超出批號可表示範圍');
   document.getElementById('f_sn').value=c+'0001';
   paintSnInfo();
 }
@@ -740,7 +793,12 @@ function openGen(){
   dialog('產生批序號',
     '<div class="f2">'+
       '<div class="fld"><label>產品 *</label><select id="g_model">'+opts+'</select></div>'+
+      '<div class="fld"><label>代工廠（第 1 碼）*</label><select id="g_fac">'+facOptions(FAC_DEFAULT)+'</select>'+
+        '<div class="hint" style="margin:6px 0 0">預設 A＝廠內自製；委外生產請改選對應廠碼。</div></div>'+
+    '</div>'+
+    '<div class="f2">'+
       '<div class="fld"><label>數量 *</label><input id="g_qty" type="number" min="1" step="1" value="1"></div>'+
+      '<div></div>'+
     '</div>'+
     '<div id="g_prev" class="genbox">選擇產品後，這裡會顯示要配發的批號／序號</div>'+
     '<details style="margin-top:12px"><summary class="mut" style="cursor:pointer;font-size:12.5px">'+
@@ -753,7 +811,7 @@ function openGen(){
     '</details>',
     '<button class="btn pri" type="button" id="g_ok" onclick="saveGen()" disabled>產生並儲存</button>'+
     '<button class="btn" value="x">取消</button>');
-  ['g_model','g_qty'].forEach(id=>{ const el=document.getElementById(id);
+  ['g_model','g_qty','g_fac'].forEach(id=>{ const el=document.getElementById(id);
     if(el){ el.onchange=genPreview; el.oninput=genPreview; } });
   setTimeout(()=>{ const el=document.getElementById('g_model'); if(el) el.focus(); },60);
   genPreview();
@@ -764,11 +822,12 @@ function genPreview(){
   if(!box) return;
   const model=(document.getElementById('g_model')||{}).value||'';
   const qty=parseInt((document.getElementById('g_qty')||{}).value,10);
+  const fac=((document.getElementById('g_fac')||{}).value||FAC_DEFAULT);
   GENPEND=null; if(ok) ok.disabled=true;
   if(!model){ box.className='genbox'; box.textContent='選擇產品後，這裡會顯示要配發的批號／序號'; return; }
   if(!qty||qty<1){ box.className='genbox'; box.textContent='請填寫數量（至少 1）'; return; }
-  const p=prodOf(model), g=genSn(model,qty);
-  if(!g){ box.className='genbox'; box.textContent='無法產生：本月批次碼已用到 Z，請聯絡管理員'; return; }
+  const p=prodOf(model), g=genSn(model,qty,fac);
+  if(!g){ box.className='genbox'; box.textContent='無法產生：這個廠本月批次碼已用到 Z，請聯絡管理員'; return; }
   GENPEND={p:p,qty:qty,g:g};
   if(ok) ok.disabled=false;
   const d=decodeSn(g.batch);
@@ -778,6 +837,7 @@ function genPreview(){
     '<div class="genmeta">'+
       '<span class="tag '+(p.k==='B'?'warn':'info')+'">'+esc(g.kind)+'</span>'+
       esc(p.n)+'　'+esc(p.m)+'　×'+qty+'　'+
+      '<span class="tag" style="background:#f3e7f7;color:#6b2d80">'+esc(facLabel(g.fac))+'</span>'+
       '批號 <b>'+esc(g.batch)+'</b>（'+d.year+' 年 '+d.month+' 月　第 '+esc(d.batch)+' 批）'+
       (p.k==='B'?'　整批共用一個批號，不編流水序號':'　流水序號 0001'+(qty>1?'–'+String(qty).padStart(4,'0'):''))+
     '</div>';
@@ -802,23 +862,29 @@ function vRule(){
   const years=[]; for(let i=0;i<6;i++) years.push([YEAR0+i, String.fromCharCode(65+i)]);
   const months=[]; for(let i=1;i<=12;i++) months.push([i, monthLetter(i)]);
   $('#v-rule').innerHTML =
-  '<div class="card"><h2>批號編碼規則<span class="sub">批號 3 碼 ＋ 序號 4 碼</span></h2>'+
-    '<div class="codebox"><span class="c-y">C</span><span class="c-m">H</span><span class="c-b">D</span>'+
-      '<span class="c-s">0003</span></div>'+
+  '<div class="card"><h2>批號編碼規則<span class="sub">依 QS RD-3-01-A　批號 4 碼 ＋ 流水 4 碼</span></h2>'+
+    '<div class="codebox"><span class="c-f">A</span><span class="c-y">C</span><span class="c-m">H</span>'+
+      '<span class="c-b">D</span><span class="c-s">0003</span></div>'+
     '<div class="rule" style="margin-top:14px">'+
-      '<div class="rulebox"><div class="h"><span class="tag" style="background:#dfeef2;color:#1d5a68">第 1 碼</span> 年碼</div>'+
+      '<div class="rulebox"><div class="h"><span class="tag" style="background:#f3e7f7;color:#6b2d80">第 1 碼</span> 代工廠</div>'+
+        '<div class="b">'+facActive().map(f=>'<i><b>'+esc(f.code)+'</b> = '+esc(f.name||'')+'</i>').join('')+'</div>'+
+        '<div class="hint">廠內自製為 <b>A</b>；委外生產依下方「代工廠編碼」表選用。</div></div>'+
+      '<div class="rulebox"><div class="h"><span class="tag" style="background:#dfeef2;color:#1d5a68">第 2 碼</span> 年碼</div>'+
         '<div class="b">'+years.map(a=>'<i><b>'+a[1]+'</b> = '+a[0]+' 年</i>').join('')+'</div>'+
         '<div class="hint">'+YEAR0+' 年起，每年往後一個字母。</div></div>'+
-      '<div class="rulebox"><div class="h"><span class="tag" style="background:#fdf0d8;color:#8a5a06">第 2 碼</span> 月碼</div>'+
-        '<div class="b">'+months.map(a=>'<b>'+a[1]+'</b>='+a[0]+'月').join('　')+'</div></div>'+
-      '<div class="rulebox"><div class="h"><span class="tag" style="background:#e4ecfb;color:#1a4ea8">第 3 碼</span> 當月批次</div>'+
-        '<div class="b">A＝當月第一批，B＝第二批，依序往後。</div>'+
+      '<div class="rulebox"><div class="h"><span class="tag" style="background:#fdf0d8;color:#8a5a06">第 3 碼</span> 月碼</div>'+
+        '<div class="b">'+months.map(a=>'<b>'+a[1]+'</b>='+a[0]+'月').join('　')+'</div>'+
+        '<div class="hint">以工單開立之月份為主。</div></div>'+
+      '<div class="rulebox"><div class="h"><span class="tag" style="background:#e4ecfb;color:#1a4ea8">第 4 碼</span> 當月批次</div>'+
+        '<div class="b">A＝當月第一批，B＝第二批，依序往後。<b>每個代工廠各自從 A 起算。</b></div>'+
         '<div class="hint">Z 在既有紀錄中被拿來標示特殊／補編的批次。</div></div>'+
-      '<div class="rulebox"><div class="h"><span class="tag" style="background:#eaf3ea;color:#1a6b38">後 4 碼</span> 序號</div>'+
-        '<div class="b">同一批內的流水號，0001 起算。<br>完整序號＝批號 3 碼 ＋ 序號 4 碼。</div></div>'+
+      '<div class="rulebox"><div class="h"><span class="tag" style="background:#eaf3ea;color:#1a6b38">第 5–8 碼</span> 流水號</div>'+
+        '<div class="b">同一批內的流水號，0001 起算，至 9999。<br>完整序號＝批號 4 碼 ＋ 流水 4 碼。</div></div>'+
     '</div>'+
-    '<div class="hint">部分品項另有前綴（例如 <b>PR</b>BEA0001 的 PR），解析時前綴會被忽略，只看最後 3 個字母。</div>'+
+    '<div class="hint"><b>舊碼不動：</b>2026/09 之前配發的 7 碼序號（例 CHD0003）沒有廠碼，系統一律當成廠內（A）解析與統計，'+
+      '不會回頭改寫。部分早期品項另有 2 碼前綴（例如 <b>PR</b>BEA0001 的 PR），解析時會被忽略，只看最後 3 個字母。</div>'+
   '</div>'+
+  facCardHTML()+
   '<div class="card"><h2>產品型號與編碼方式<span class="sub">依產品型號樹狀圖 20260820</span></h2>'+
     '<div class="tblwrap" style="max-height:420px"><table><thead><tr>'+
     '<th class="nos">類別</th><th class="nos">產品線</th><th class="nos">品項</th>'+
@@ -826,11 +892,11 @@ function vRule(){
     '</tr></thead><tbody>'+
     PRODUCTS.map(p=>'<tr><td>'+esc(p.g)+'</td><td class="mut">'+esc(p.f)+'</td><td>'+esc(p.n)+'</td>'+
       '<td class="mono">'+esc(p.m)+'</td>'+
-      '<td><span class="tag '+(p.k==='B'?'warn':'info')+'">'+(p.k==='B'?'批號 3 碼':'序號 7 碼')+'</span></td>'+
-      '<td class="mono mut">'+(p.k==='B'?'CHA':'CHA0001')+'</td></tr>').join('')+
+      '<td><span class="tag '+(p.k==='B'?'warn':'info')+'">'+(p.k==='B'?'批號 4 碼':'序號 8 碼')+'</span></td>'+
+      '<td class="mono mut">'+(p.k==='B'?'ACHA':'ACHA0001')+'</td></tr>').join('')+
     '</tbody></table></div>'+
-    '<div class="hint">只有<b>一次性軟式輸尿管鏡（URS 700-01）</b>與<b>一次性閉鎖器（BBE-01）</b>採整批共用的 3 碼批號，'+
-      '其餘品項一律配發 7 碼序號（批號 3 碼 ＋ 流水 4 碼）。</div>'+
+    '<div class="hint">只有<b>一次性軟式輸尿管鏡（URS 700-01）</b>與<b>一次性閉鎖器（BBE-01）</b>採整批共用的 4 碼批號，'+
+      '其餘品項一律配發 8 碼序號（批號 4 碼 ＋ 流水 4 碼）。範例以廠內自製（A）為準。</div>'+
   '</div>'+
   '<div class="card"><h2>批號查詢 / 產生<span class="sub">輸入批號解析，或選年月取得下一個批次碼</span></h2>'+
     '<div class="row">'+
@@ -844,10 +910,12 @@ function vRule(){
         '<input id="ny" type="number" value="'+y+'"></div></div>'+
       '<div style="width:110px"><div class="fld" style="margin:0"><label>月</label>'+
         '<input id="nm" type="number" value="'+m+'"></div></div>'+
+      '<div style="width:170px"><div class="fld" style="margin:0"><label>代工廠</label>'+
+        '<select id="nf">'+facOptions(FAC_DEFAULT)+'</select></div></div>'+
       '<div style="align-self:end;padding-bottom:2px">'+
         '<button class="btn" onclick="calcNext()">查下一個批次碼</button></div>'+
       '<div style="align-self:end;padding-bottom:2px"><span class="hint" id="nOut" style="margin:0">'+
-        '本月批號前 2 碼為 <b>'+yl+ml+'</b></span></div>'+
+        '本月年月碼為 <b>'+yl+ml+'</b>（完整批號還要加前面的廠碼）</span></div>'+
     '</div>'+
   '</div>'+
   '<div class="card"><h2>各月已用批次<span class="sub">依批號解析出的年月統計</span></h2>'+
@@ -857,37 +925,117 @@ function vRule(){
     const d=decodeSn(rq.value);
     $('#rqOut').innerHTML = (!d||d.year===null)
       ? (rq.value?'無法解析':'—')
-      : '<b>'+esc(d.core)+'</b> → '+d.year+' 年 '+(d.month?d.month+' 月':'月碼無效')+
+      : '<b>'+esc((d.fac||'')+d.core)+'</b> → '+
+        (d.fac?esc(facLabel(d.fac))+'　':'<span class="mut">無廠碼·7 碼舊制（視為廠內）</span>　')+
+        d.year+' 年 '+(d.month?d.month+' 月':'月碼無效')+
         '　第 '+esc(d.batch)+' 批'+(d.serial?'　序號 '+esc(d.serial):'')+
-        (d.prefix?'　（前綴 '+esc(d.prefix)+'）':'')+
+        (d.prefix&&d.prefix.length>1?'　（前綴 '+esc(d.prefix)+'）':'')+
         '　共 '+R.filter(r=>{const x=decodeSn(r.sn);return x&&x.core===d.core;}).length+' 筆使用此批號';
   };
 }
 function calcNext(){
   const y=parseInt($('#ny').value,10), m=parseInt($('#nm').value,10);
+  const f=(($('#nf')||{}).value)||FAC_DEFAULT;
   if(isNaN(y)||isNaN(m)||m<1||m>12) return toast('請輸入正確的年與月');
-  const c=nextBatch(y,m);
-  $('#nOut').innerHTML = c ? '下一個批號：<b>'+esc(c)+'</b>（完整序號例 '+esc(c)+'0001）'
-                           : '這個年月的批次碼已用到 Z，或超出批號可表示範圍';
+  const c=nextBatch(y,m,f);
+  $('#nOut').innerHTML = c ? '下一個批號：<b>'+esc(c)+'</b>（'+esc(facLabel(f))+'，完整序號例 '+esc(c)+'0001）'
+                           : '這個廠在該年月的批次碼已用到 Z，或超出批號可表示範圍';
 }
 function monthTableHTML(){
   const g={};
   R.forEach(r=>{ const d=decodeSn(r.sn); if(!d||d.year===null||!d.month) return;
-    const k=d.year+'-'+String(d.month).padStart(2,'0');
+    const f=(d.fac||FAC_DEFAULT).toUpperCase();
+    const k=d.year+'-'+String(d.month).padStart(2,'0')+'|'+f;
     (g[k]=g[k]||{})[d.batch]=((g[k]||{})[d.batch]||0)+1; });
   const keys=Object.keys(g).sort().reverse();
   if(!keys.length) return '<div class="empty">尚無資料</div>';
   return '<div class="tblwrap" style="max-height:340px"><table><thead><tr>'+
-    '<th class="nos">年月</th><th class="nos">批號前 2 碼</th><th class="nos">已用批次</th>'+
-    '<th class="nos num">批數</th><th class="nos num">紀錄筆數</th></tr></thead><tbody>'+
-    keys.map(k=>{ const [y,m]=k.split('-').map(Number);
+    '<th class="nos">年月</th><th class="nos">代工廠</th><th class="nos">批號前 3 碼</th>'+
+    '<th class="nos">已用批次</th><th class="nos num">批數</th><th class="nos num">紀錄筆數</th>'+
+    '</tr></thead><tbody>'+
+    keys.map(k=>{ const [ym,f]=k.split('|'); const [y,m]=ym.split('-').map(Number);
       const bs=Object.keys(g[k]).sort();
       const n=bs.reduce((s,b)=>s+g[k][b],0);
       return '<tr><td class="mono">'+y+'/'+String(m).padStart(2,'0')+'</td>'+
-        '<td class="mono">'+(yearLetter(y)||'?')+(monthLetter(m)||'?')+'</td>'+
+        '<td>'+esc(facLabel(f))+'</td>'+
+        '<td class="mono">'+esc(f)+(yearLetter(y)||'?')+(monthLetter(m)||'?')+'</td>'+
         '<td class="mono">'+bs.join(' ')+'</td>'+
         '<td class="num">'+bs.length+'</td><td class="num">'+n+'</td></tr>';
     }).join('')+'</tbody></table></div>';
+}
+/* ---------- 代工廠編碼維護 ---------- */
+function facCardHTML(){
+  const ro=CLOUD&&!canWrite();
+  const used={};
+  R.forEach(r=>{ const d=decodeSn(r.sn); if(d) used[(d.fac||FAC_DEFAULT).toUpperCase()]=(used[(d.fac||FAC_DEFAULT).toUpperCase()]||0)+1; });
+  return '<div class="card"><h2>代工廠編碼<span class="sub">序號第 1 碼　可新增／修改，所有人共用</span></h2>'+
+    '<div class="tblwrap"><table><thead><tr>'+
+      '<th class="nos" style="width:80px">代碼</th><th class="nos" style="width:180px">廠商名稱</th>'+
+      '<th class="nos">說明</th><th class="nos" style="width:90px">狀態</th>'+
+      '<th class="nos num" style="width:100px">已配發</th>'+(ro?'':'<th class="nos" style="width:110px"></th>')+
+    '</tr></thead><tbody>'+
+    (facList().length?facList().map((f,i)=>{
+      const c=String(f.code).toUpperCase();
+      return '<tr><td class="mono"><b>'+esc(f.code)+'</b>'+(c===FAC_DEFAULT?' <span class="tag info">預設</span>':'')+'</td>'+
+        '<td>'+esc(f.name||'')+'</td><td class="mut">'+esc(f.note||'')+'</td>'+
+        '<td>'+(f.on===false?'<span class="tag gray">停用</span>':'<span class="tag ok">啟用</span>')+'</td>'+
+        '<td class="num">'+(used[c]||0)+'</td>'+
+        (ro?'':'<td><button class="btn sm" onclick="editFac('+i+')">編輯</button></td>')+
+        '</tr>';
+    }).join(''):'<tr><td colspan="6" class="empty">尚未設定</td></tr>')+
+    '</tbody></table></div>'+
+    (ro?'':'<div class="row" style="margin-top:10px">'+
+      '<button class="btn pri" onclick="editFac(-1)">＋ 新增代工廠</button></div>')+
+    '<div class="hint">「已配發」含 7 碼舊紀錄——舊碼沒有廠碼，一律計入 <b>A 廠內自製</b>。'+
+      '停用的廠碼不會出現在產生視窗的下拉選單，但既有紀錄仍可正常解析。</div>'+
+  '</div>';
+}
+let FEDIT=-1;
+function editFac(i){
+  if(!canWrite()) return denyWrite();
+  FEDIT=i;
+  const f = i>=0 ? FACS[i] : {code:'',name:'',note:'',on:true};
+  dialog(i>=0?'編輯代工廠　'+esc(f.code):'新增代工廠',
+    '<div class="f2">'+
+      '<div class="fld"><label>代碼 *<span class="mut">（單一大寫英文字母）</span></label>'+
+        '<input id="fc_code" maxlength="1" value="'+esc(f.code)+'" style="text-transform:uppercase"></div>'+
+      '<div class="fld"><label>廠商名稱 *</label><input id="fc_name" value="'+esc(f.name||'')+'"></div>'+
+    '</div>'+
+    '<div class="fld"><label>說明</label><input id="fc_note" value="'+esc(f.note||'')+'"></div>'+
+    '<div class="fld"><label>狀態</label><select id="fc_on">'+
+      '<option value="1"'+(f.on===false?'':' selected')+'>啟用（可在產生視窗選用）</option>'+
+      '<option value="0"'+(f.on===false?' selected':'')+'>停用（不再配發新號）</option></select></div>'+
+    '<div class="hint">代碼一旦用過就不要改，否則既有序號會對不到廠商。要換廠商請改成「停用」再新增一個。</div>',
+    (i>=0 && String(f.code).toUpperCase()!==FAC_DEFAULT
+      ? '<button class="btn danger" type="button" onclick="delFac()">刪除</button>' : '')+
+    '<button class="btn pri" type="button" onclick="saveFac()">儲存</button>'+
+    '<button class="btn" value="x">取消</button>');
+}
+async function saveFac(){
+  if(!canWrite()) return denyWrite();
+  const gv=id=>((document.getElementById(id)||{}).value||'').trim();
+  const code=gv('fc_code').toUpperCase(), name=gv('fc_name');
+  if(!/^[A-Z]$/.test(code)) return toast('代碼請填單一大寫英文字母 A–Z');
+  if(!name) return toast('請填廠商名稱');
+  const dup=FACS.findIndex((x,ix)=>ix!==FEDIT && String(x.code).toUpperCase()===code);
+  if(dup>=0) return toast('代碼 '+code+' 已被「'+(FACS[dup].name||'')+'」使用');
+  const rec={code:code, name:name, note:gv('fc_note'), on:gv('fc_on')!=='0'};
+  const backup=JSON.parse(JSON.stringify(FACS));
+  if(FEDIT>=0) FACS[FEDIT]=rec; else FACS.push(rec);
+  closeDlg();
+  if(await push()){ renderAll(); toast(FEDIT>=0?'已更新代工廠':'已新增代工廠 '+code); }
+  else { FACS=backup; renderAll(); }
+}
+async function delFac(){
+  if(FEDIT<0) return;
+  const f=FACS[FEDIT], c=String(f.code).toUpperCase();
+  if(c===FAC_DEFAULT) return toast('預設的廠內自製（A）不能刪除');
+  const used=R.filter(r=>{const d=decodeSn(r.sn);return d&&(d.fac||'').toUpperCase()===c;}).length;
+  if(used) return toast('已有 '+used+' 筆紀錄使用 '+c+'，請改用「停用」而不是刪除');
+  const backup=JSON.parse(JSON.stringify(FACS));
+  FACS.splice(FEDIT,1); closeDlg();
+  if(await push()){ renderAll(); toast('已刪除代工廠 '+c); }
+  else { FACS=backup; renderAll(); }
 }
 
 /* ---------- 資料管理頁 ---------- */
@@ -992,7 +1140,9 @@ $('#dlgForm').addEventListener('submit',e=>{});
   if(CLOUD){
     try{
       const c=await DB.get('cache');
-      if(c&&c.R){ R=c.R.map(normRec); REV=c.REV||0; META=c.META||META; renderAll(); setNet('load'); }
+      if(c&&c.R){ R=c.R.map(normRec); REV=c.REV||0; META=c.META||META;
+                  if(Array.isArray(c.FACS)&&c.FACS.length) FACS=c.FACS;
+                  renderAll(); setNet('load'); }
     }catch(e){}
     if(!TOKEN && !PW){ renderAll(); openGate('login'); return; }
     if(await whoAmI()) await pull();
@@ -1004,6 +1154,7 @@ $('#dlgForm').addEventListener('submit',e=>{});
     const c=await DB.get('cache');
     R = (c&&c.R&&c.R.length) ? c.R.map(normRec) : SEED.map(normRec);
     REV=(c&&c.REV)||0; META=(c&&c.META)||META;
+    if(c&&Array.isArray(c.FACS)&&c.FACS.length) FACS=c.FACS;
   }catch(e){ R=SEED.map(normRec); }
   setNet('local'); renderAll();
 })();
