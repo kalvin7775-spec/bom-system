@@ -1205,8 +1205,8 @@ $('#dlgForm').addEventListener('submit',e=>{});
     renderAll();
     const okMe = await whoAmI();
     AUTHWAIT = false;
-    if(okMe) await pull();
-    renderAll();
+    renderAll();                 /* 身分一確認就解鎖畫面，不必等資料整份讀完 */
+    if(okMe){ await pull(); renderAll(); }
     return;
   }
   ME={name:'本機使用者', role:'admin', roleName:'管理員'};
