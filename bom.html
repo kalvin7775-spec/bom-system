@@ -2319,6 +2319,76 @@ function exportVoided(i){
    ============================================================ */
 const DBSHEET={items:'料號主檔',boms:'BOM主檔',lines:'BOM明細'};
 
+/* ---------- 關鍵零組件總覽 ----------
+   marks ＝備註實際寫在哪張 BOM 的哪一行；
+   usedIn＝展開後真的會出現在哪些 BOM（含透過子 BOM 帶進去的成品階）。 */
+function keyParts(){
+  const map={};
+  const get=c=>(map[c]=map[c]||{code:c, marks:[], usedIn:[]});
+  (S.boms||[]).forEach(b=>(b.lines||[]).forEach((l,i)=>{
+    if(!l.code || !isKeyPart(l.note)) return;
+    get(l.code).marks.push({bom:b.code, seq:i+1, note:String(l.note||'').trim()});
+  }));
+  (S.boms||[]).forEach(b=>{
+    let rl=[]; try{ rl=resolvedLines(b); }catch(e){ rl=[]; }
+    const seen={};
+    rl.forEach(l=>{ if(l.code && isKeyPart(l.note) && !seen[l.code]){
+      seen[l.code]=1; get(l.code).usedIn.push(b.code); } });
+  });
+  return Object.keys(map).sort().map(c=>map[c]);
+}
+function keyPartCardHTML(){
+  const ks=keyParts();
+  const rows=ks.map(k=>{
+    const it=itemOf(k.code);
+    const extra=k.marks.map(m=>m.note.split(KEYPART).join('').trim()).filter(Boolean);
+    return `<tr>
+      <td class="mono"><b>${esc(k.code)}</b></td>
+      <td>${esc(mName(k.code,it.name))}</td>
+      <td class="mut">${esc(it.supplier||'')}</td>
+      <td class="num">${it.cost==null?'<span class="tag gray">未設</span>':nf(it.cost)}</td>
+      <td class="num ${(+it.stock||0)<=0?'':''}">${nf(it.stock)}</td>
+      <td class="mono mut">${k.marks.map(m=>esc(m.bom)).join('<br>')}</td>
+      <td class="mono">${k.usedIn.length?k.usedIn.map(esc).join('<br>'):'<span class="mut">—</span>'}</td>
+      <td class="mut">${esc(extra.join('；'))}</td>
+    </tr>`;}).join('');
+  return `<div class="card" style="border-color:${ks.length?'#e8c98f':'var(--line)'}">
+    <h2>關鍵零組件總覽<span class="sub">備註標「${KEYPART}」的料件　共 ${ks.length} 項</span></h2>
+    ${ks.length?`<div class="tblwrap" style="max-height:340px"><table class="grid"><thead><tr>
+      <th class="nos" style="width:150px">品號</th><th class="nos">品名</th>
+      <th class="nos" style="width:90px">供應商</th><th class="nos num" style="width:80px">單價</th>
+      <th class="nos num" style="width:70px">庫存</th>
+      <th class="nos" style="width:130px">標註於</th><th class="nos" style="width:150px">出現於 BOM</th>
+      <th class="nos">其他備註</th>
+      </tr></thead><tbody>${rows}</tbody></table></div>
+    <div class="row" style="margin-top:10px">
+      <button class="btn" onclick="exportKeyParts()">匯出 Excel</button></div>`
+    :`<div class="empty">目前沒有標註為「${KEYPART}」的料件。</div>`}
+    <div class="hint">要標註：到「BOM 管理」找到那一行按<b>編輯</b>（或用 BOM 編輯器），在<b>備註</b>填入
+      「${KEYPART}」即可，該列會自動變成淺黃底。取消標註就把備註裡這四個字刪掉。<br>
+      「標註於」是備註實際存放的那張 BOM；「出現於 BOM」是展開後真的會看到它的所有 BOM
+      —— 標在半成品上，用到該半成品的成品會自動帶入，不必逐張標。</div>
+  </div>`;
+}
+function exportKeyParts(){
+  const ks=keyParts();
+  if(!ks.length) return toast('目前沒有標註為「'+KEYPART+'」的料件');
+  const it=c=>itemOf(c);
+  xlsxOut([
+    ['關鍵零組件', ks.map((k,i)=>({
+      項次:i+1, 品號:k.code, 品名:mName(k.code,it(k.code).name), 規格:mSpec(k.code,it(k.code).spec),
+      單位:mUnit(k.code,it(k.code).unit), 供應商:it(k.code).supplier||'',
+      單價:it(k.code).cost==null?'':it(k.code).cost, 庫存:it(k.code).stock,
+      標註於:k.marks.map(m=>m.bom).join('、'),
+      出現於BOM:k.usedIn.join('、'), 出現BOM數:k.usedIn.length,
+      其他備註:k.marks.map(m=>m.note.split(KEYPART).join('').trim()).filter(Boolean).join('；')}))],
+    ['明細對照', ks.reduce((a,k)=>a.concat(k.usedIn.map(b=>({
+      品號:k.code, 品名:mName(k.code,it(k.code).name), BOM品號:b,
+      BOM名稱:(BIDX[b]&&BIDX[b].name)||'', 是否為標註來源:k.marks.some(m=>m.bom===b)?'是':'（由子BOM帶入）'
+    }))),[])]
+  ],`關鍵零組件_${new Date().toISOString().slice(0,10).replace(/-/g,'')}.xlsx`);
+}
+
 /* ---------- BOM 明細 vs 料號主檔：一致性檢查 ----------
    BOM 明細裡的品名/規格/單位只是建檔當下的複本，畫面與匯出已一律改讀料號主檔，
    這裡再把「存起來的舊複本」跟主檔比對出來，可一鍵覆寫，讓資料庫本身也保持一致。 */
@@ -3215,6 +3285,7 @@ function vData(){
       ${d.length?'<button class="btn" onclick="exportBomDiffs()">匯出檢查清單 Excel</button>':''}
     </div>
   </div>`;})()}
+  ${keyPartCardHTML()}
   <div class="card"><h2>資料來源</h2>
     <dl class="kv">
       <dt>料號總表</dt><dd>${esc(S.meta.itemFile||'—')}</dd>
