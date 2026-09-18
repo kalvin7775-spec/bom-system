@@ -3550,9 +3550,8 @@ $('#dlgForm').addEventListener('submit',e=>{});
       if(c&&c.S&&c.S.items){ S=c.S; REV=c.REV||0; reindex(); renderAll(); setNet('load'); }
     }catch(e){}
     if(!TOKEN && !PW){ AUTHWAIT=false; paintNet(); renderAll(); openGate('login'); return; }
-    renderAll();
     await pull();
-    AUTHWAIT=false;
+    AUTHWAIT=false;              /* 身分確認完才允許顯示「唯讀」 */
     renderAll();
     paintNet();
     return;
