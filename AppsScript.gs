@@ -873,6 +873,19 @@ function makeToken(id){
   const payload = id + '|' + (Date.now() + TOKEN_DAYS*86400000);
   return b64u(payload) + '.' + sign(payload);
 }
+/* 憑證剩不到一半效期就換一張新的：常用系統的人就不會用到一半突然被登出 */
+function renewToken(tk, auth){
+  if(!auth || !auth.id || auth.legacy) return '';
+  try{
+    var parts = String(tk||'').split('.');
+    if(parts.length !== 2) return '';
+    var payload = Utilities.newBlob(Utilities.base64DecodeWebSafe(parts[0])).getDataAsString();
+    var exp = Number(payload.split('|')[1]);
+    if(!exp) return '';
+    if((exp - Date.now()) < (TOKEN_DAYS * 86400000 / 2)) return makeToken(String(auth.id));
+  }catch(e){}
+  return '';
+}
 function readToken(token){
   const parts = String(token||'').split('.');
   if(parts.length !== 2) return null;
@@ -1042,6 +1055,8 @@ function doPost(e){
 
   if(action === 'me')         return out({ok:true, role:auth.role, name:auth.name,
                                           email:auth.email, legacy:!!auth.legacy,
+                                          id:auth.id||'',
+                                          token: renewToken(body.token, auth),
                                           roleName: ROLES[auth.role]||'唯讀'});
   if(action === 'changePw')   return out(acChangePw(auth, body));
   if(action === 'postOrder')  return out(postOrder(auth, body));

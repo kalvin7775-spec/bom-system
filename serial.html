@@ -222,7 +222,7 @@ const DB=(()=>{ let p;
 /* ============================================================
    登入 / 權限 / 雲端同步（與 BOM 系統共用同一組憑證）
    ============================================================ */
-const TKKEY='bom_token_v1', PWKEY='bom_pw_v2', WHOKEY='bom_who_v1';
+const TKKEY='bom_token_v1', PWKEY='bom_pw_v2', WHOKEY='bom_who_v1', MEKEY='bom_me_v1';
 const LS={get:k=>{try{return localStorage.getItem(k)||'';}catch(e){return '';}},
           set:(k,v)=>{try{localStorage.setItem(k,v);}catch(e){}},
           del:k=>{try{localStorage.removeItem(k);}catch(e){}}};
@@ -231,9 +231,16 @@ let ME=null, REV=0, NET='idle', LASTSYNC='', SAVING=false;
 const ROLE_NAME={admin:'管理員', editor:'編輯', viewer:'唯讀'};
 function myRole(){ return (ME&&ME.role)||'viewer'; }
 function canWrite(){ return !CLOUD || myRole()==='admin' || myRole()==='editor'; }
-function denyWrite(){ toast(ME&&ME.legacy
+function denyWrite(){
+  if(authPending()) return toast('正在跟雲端確認登入身分，請稍候一下再試');
+  toast(ME&&ME.legacy
   ? '共用密碼為唯讀模式，請註冊個人帳號後由管理員給予編輯權限'
   : '你的權限為「唯讀」，無法修改資料。請聯絡管理員調整權限'); }
+
+/* 開頁後還在跟雲端確認身分的那幾秒：不要顯示「未登入／唯讀」，避免誤以為被登出 */
+let AUTHWAIT = CLOUD && !!(TOKEN||PW);
+function authPending(){ return CLOUD && AUTHWAIT; }
+function roMode(){ return CLOUD && !AUTHWAIT && !canWrite(); }
 
 function setNet(s){ NET=s; paintNet(); }
 function paintNet(){
@@ -249,8 +256,10 @@ function paintNet(){
 function paintMe(){
   const el=$('#meBox'); if(!el) return;
   if(!CLOUD){ el.innerHTML=''; return; }
-  if(!ME){ el.innerHTML='<span class="tag bad">未登入</span>'+
-      '<button class="btn sm" onclick="openGate(\'login\')">登入</button>'; return; }
+  if(!ME){ el.innerHTML = AUTHWAIT
+      ? '<span class="tag info">確認身分中…</span>'
+      : '<span class="tag bad">未登入</span>'+
+        '<button class="btn sm" onclick="openGate(\'login\')">登入</button>'; return; }
   const t = ME.legacy ? '<span class="tag warn">共用密碼·唯讀</span>'
     : '<span class="tag '+(myRole()==='viewer'?'gray':'ok')+'">'+esc(ME.roleName||ROLE_NAME[myRole()])+'</span>';
   el.innerHTML='<b>'+esc(ME.name||'')+'</b>'+t+'<button class="btn sm" onclick="logout()">登出</button>';
@@ -258,7 +267,7 @@ function paintMe(){
   if(na) na.style.display = (ME && !ME.legacy) ? '' : 'none';
 }
 function logout(){
-  TOKEN=''; PW=''; ME=null; LS.del(TKKEY); LS.del(PWKEY);
+  TOKEN=''; PW=''; ME=null; AUTHWAIT=false; LS.del(TKKEY); LS.del(PWKEY); LS.del(MEKEY);
   R=[]; REV=0; renderAll(); openGate('login','已登出');
 }
 
@@ -280,11 +289,19 @@ async function apiPost(action,payload,extra){
 async function whoAmI(){
   try{
     const d=await apiPost('me',null);
-    if(d.error){ if(d.needLogin) openGate('login', d.error); return false; }
+    if(d.error){ if(d.needLogin){ LS.del(MEKEY); openGate('login', d.error); } return false; }
+    /* 後端在憑證快到期時會回一張新的，換上去就不會用到一半突然被登出 */
+    if(d.token){ TOKEN=d.token; LS.set(TKKEY,TOKEN); }
     ME={id:d.id,name:d.name,email:d.email,role:d.role,legacy:!!d.legacy,
         roleName:d.roleName||ROLE_NAME[d.role]||'唯讀'};
+    try{ LS.set(MEKEY, JSON.stringify(ME)); }catch(e2){}
     WHO=ME.name||WHO; closeGate(); paintMe(); return true;
-  }catch(e){ return false; }
+  }catch(e){
+    /* 只是連不上雲端（不是憑證失效）：沿用上次確認過的身分，不要誤判成登出 */
+    try{ const m=JSON.parse(LS.get(MEKEY)||'null');
+         if(m&&m.role){ ME=m; WHO=ME.name||WHO; paintMe(); } }catch(e2){}
+    return false;
+  }
 }
 
 async function pull(silent){
@@ -313,13 +330,50 @@ async function pull(silent){
 }
 async function pullNow(){ if(await pull()){ await whoAmI(); renderAll(); toast('已重新讀取雲端資料'); } }
 
+/* 存檔逾時時，回頭跟雲端核對這批資料是不是其實已經寫進去了，
+   避免明明存成功卻因為回應掉了而被當成失敗（同事回報的「無法建立批號」） */
+async function confirmSaved(){
+  const want=R.length, wantSn=R.map(x=>String(x.sn||'')).join('|');
+  for(let i=0;i<2;i++){
+    await new Promise(r=>setTimeout(r,2500));
+    try{
+      const d=await apiPost('loadSerial',null);
+      if(d && !d.error && Array.isArray(d.records)){
+        const got=d.records.map(normRec);
+        if(got.length===want && got.map(x=>String(x.sn||'')).join('|')===wantSn){
+          REV=d.rev||REV; LASTSYNC=d.updatedAt||LASTSYNC;
+          META={updatedAt:d.updatedAt||'', updatedBy:d.updatedBy||''};
+          if(Array.isArray(d.factories)&&d.factories.length) FACS=d.factories;
+          try{ await DB.set('cache',JSON.parse(JSON.stringify({R:R,REV:REV,META:META,FACS:FACS}))); }catch(e){}
+          return true;
+        }
+      }
+    }catch(e){}
+  }
+  return false;
+}
+
 async function push(force){
   if(!CLOUD){ await DB.set('cache',JSON.parse(JSON.stringify({R:R,REV:REV,META:META,FACS:FACS}))); return true; }
   if(!canWrite()){ denyWrite(); return false; }
-  if(SAVING){ return false; }
+  if(SAVING){ toast('前一筆還在儲存中，請稍候幾秒再試'); return false; }
   SAVING=true; setNet('save');
   try{
-    const d=await apiPost('saveSerial',R,{baseRev:force?null:REV,force:!!force,factories:FACS});
+    const args={baseRev:force?null:REV,force:!!force,factories:FACS};
+    let d=null;
+    try{ d=await apiPost('saveSerial',R,args); }
+    catch(e1){
+      setNet('load');
+      if(await confirmSaved()){ SAVING=false; setNet('ok'); return true; }
+      setNet('save');
+      try{ d=await apiPost('saveSerial',R,args); }
+      catch(e2){
+        if(await confirmSaved()){ SAVING=false; setNet('ok'); return true; }
+        SAVING=false; setNet('err');
+        toast('儲存失敗：'+(e2.message||'網路逾時')+'。資料還在畫面上，請按 ↻ 重新讀取確認後再存一次');
+        return false;
+      }
+    }
     SAVING=false;
     if(d.conflict){
       setNet('conflict');
@@ -611,11 +665,12 @@ function vList(){
   const thisY=new Date().getFullYear();
   const nThisY=R.filter(r=>{const b=parseYM(r.date);return b&&b.y===thisY;}).length;
   const nBad=R.filter(r=>snMatch(r)==='diff').length;
-  const ro = CLOUD && !canWrite();
+  const ro = roMode(), pend = authPending();
 
   $('#v-list').innerHTML =
+  (pend?'<div class="ro-banner">正在跟雲端確認登入身分，稍候一下就可以操作…</div>':'')+
   (ro?'<div class="ro-banner">目前是<b>唯讀</b>身分，可以查詢與匯出，但無法新增或修改紀錄。</div>':'')+
-  (CLOUD && !R.length && canWrite()
+  (CLOUD && !pend && !R.length && canWrite()
     ? '<div class="seed-banner">雲端的「產品批序號」工作表目前是空的。'+
       '可以先把內建的 <b>'+SEED.length+' 筆</b>歷史紀錄（2024/05 起）寫上去做為起始資料。'+
       '<div style="margin-top:9px"><button class="btn pri" onclick="seedCloud()">將內建 '+SEED.length+' 筆寫入雲端</button></div></div>'
@@ -637,8 +692,8 @@ function vList(){
       checkers.map(c=>'<option'+(FC===c?' selected':'')+'>'+esc(c)+'</option>').join('')+'</select>'+
     '<span class="chip'+(FBAD?' on':'')+'" onclick="FBAD=!FBAD;vList()">只看批號不符</span>'+
     '<button class="btn" onclick="clearFilter()">清除</button>'+
-    (ro?'':'<button class="btn pri" onclick="openGen()">＋ 產生批序號</button>')+
-    (ro?'':'<button class="btn" onclick="editRec(-1)">手動新增</button>')+
+    (ro?'':'<button class="btn pri"'+(pend?' disabled title="確認身分中…"':'')+' onclick="openGen()">＋ 產生批序號</button>')+
+    (ro?'':'<button class="btn"'+(pend?' disabled title="確認身分中…"':'')+' onclick="editRec(-1)">手動新增</button>')+
     '<button class="btn" onclick="exportXlsx()">匯出 Excel</button>'+
   '</div></div>'+
   '<div class="tblwrap"><table><thead><tr>'+
@@ -662,7 +717,7 @@ function rowHTML(r){
   const st=snMatch(r);
   const d=decodeSn(r.sn);
   const tip=d&&d.year!==null?('年 '+d.core[0]+'='+d.year+'　月 '+d.core[1]+'='+(d.month||'?')+'　批 '+d.batch):'';
-  const ro=CLOUD&&!canWrite();
+  const ro=roMode();
   return '<tr>'+
     '<td class="num mut">'+esc(r.no)+'</td>'+
     '<td class="mono">'+esc(fmtDate(r.date))+'</td>'+
@@ -778,8 +833,10 @@ async function delRecGo(){
 
 
 /* ---------- 自動產生批序號（只填產品與數量） ---------- */
-function openGen(){
+async function openGen(){
   if(!canWrite()) return denyWrite();
+  /* 先跟雲端對一次，避免兩個人同時配號拿到同一個批次碼、或存檔時撞版本 */
+  if(CLOUD){ await pull(true); renderAll(); }
   const byGroup={};
   PRODUCTS.forEach(p=>{ (byGroup[p.g]=byGroup[p.g]||{}); (byGroup[p.g][p.f]=byGroup[p.g][p.f]||[]).push(p); });
   let opts='<option value="">— 請選擇產品 —</option>';
@@ -965,7 +1022,7 @@ function monthTableHTML(){
 }
 /* ---------- 代工廠編碼維護 ---------- */
 function facCardHTML(){
-  const ro=CLOUD&&!canWrite();
+  const ro=roMode();
   const used={};
   R.forEach(r=>{ const d=decodeSn(r.sn); if(d) used[(d.fac||FAC_DEFAULT).toUpperCase()]=(used[(d.fac||FAC_DEFAULT).toUpperCase()]||0)+1; });
   return '<div class="card"><h2>代工廠編碼<span class="sub">序號第 1 碼　可新增／修改，所有人共用</span></h2>'+
@@ -1040,7 +1097,7 @@ async function delFac(){
 
 /* ---------- 資料管理頁 ---------- */
 function vData(){
-  const ro=CLOUD&&!canWrite();
+  const ro=roMode();
   $('#v-data').innerHTML =
   '<div class="card"><h2>匯出</h2><div class="row">'+
     '<button class="btn" onclick="exportXlsx()">匯出 Excel（產品批序號記錄表）</button>'+
@@ -1144,8 +1201,11 @@ $('#dlgForm').addEventListener('submit',e=>{});
                   if(Array.isArray(c.FACS)&&c.FACS.length) FACS=c.FACS;
                   renderAll(); setNet('load'); }
     }catch(e){}
-    if(!TOKEN && !PW){ renderAll(); openGate('login'); return; }
-    if(await whoAmI()) await pull();
+    if(!TOKEN && !PW){ AUTHWAIT=false; renderAll(); openGate('login'); return; }
+    renderAll();
+    const okMe = await whoAmI();
+    AUTHWAIT = false;
+    if(okMe) await pull();
     renderAll();
     return;
   }

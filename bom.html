@@ -509,7 +509,7 @@ const closeDlg2=()=>$('#dlg2').close();
    雲端同步層（Google Sheets + Apps Script）
    ============================================================ */
 /* PWKEY 用 v2：讓舊版存在瀏覽器裡的共用密碼失效，改版後一律先看到登入畫面 */
-const TKKEY='bom_token_v1', PWKEY='bom_pw_v2', WHOKEY='bom_who_v1';
+const TKKEY='bom_token_v1', PWKEY='bom_pw_v2', WHOKEY='bom_who_v1', MEKEY='bom_me_v1';
 const LS={get:k=>{try{return localStorage.getItem(k)||'';}catch(e){return '';}},
           set:(k,v)=>{try{localStorage.setItem(k,v);}catch(e){}},
           del:k=>{try{localStorage.removeItem(k);}catch(e){}}};
@@ -525,10 +525,15 @@ function myRole(){ return (ME && ME.role) || 'viewer'; }
 function canWrite(){ return !CLOUD || myRole()==='admin' || myRole()==='editor'; }
 function isAdmin(){ return CLOUD && myRole()==='admin'; }
 function denyWrite(){
+  if(authPending()) return toast('正在跟雲端確認登入身分，請稍候一下再試');
   toast(ME && ME.legacy
     ? '共用密碼為唯讀模式，請註冊個人帳號後由管理員給予編輯權限'
     : '你的權限為「唯讀」，無法修改資料。請聯絡管理員調整權限');
 }
+/* 開頁後還在跟雲端確認身分的那幾秒：不要顯示「未登入／唯讀」，避免誤以為被登出 */
+let AUTHWAIT = CLOUD && !!(TOKEN||PW);
+function authPending(){ return CLOUD && AUTHWAIT; }
+function roMode(){ return CLOUD && !AUTHWAIT && !canWrite(); }
 
 function setNet(s){ NET=s; paintNet(); }
 function paintNet(){
@@ -566,13 +571,14 @@ async function pull(silent, force){
     const d=await apiPost('load',null,{haveRev:have});
     if(d.error){
       setNet('err');
-      if(d.needLogin){ openGate('login', d.error); return false; }
+      if(d.needLogin){ LS.del(MEKEY); openGate('login', d.error); return false; }
       if(!silent) dialog('讀取雲端失敗',`<p>${esc(d.error)}</p>
         <div class="hint">畫面顯示的是本機快取資料，按上方 ↻ 可重試。</div>`);
       return false;
     }
     if(d.auth){ ME=d.auth; ME.roleName=ME.roleName||ROLE_NAME[ME.role]||'唯讀';
-                WHO=ME.name||WHO; closeGate(); }
+                WHO=ME.name||WHO; closeGate();
+                try{ LS.set(MEKEY, JSON.stringify(ME)); }catch(e2){} }
     /* 雲端版本與本機相同：沿用快取，不重建 S */
     if(d.notModified){
       REV = d.rev || REV;
@@ -591,6 +597,9 @@ async function pull(silent, force){
     reindex(); await DB.set('cache',JSON.parse(JSON.stringify({S:S,REV:REV})));
     setNet('ok'); return true;
   }catch(e){ setNet('err');
+    /* 只是連不上雲端（不是憑證失效）：沿用上次確認過的身分，不要誤判成登出 */
+    if(!ME){ try{ const m=JSON.parse(LS.get(MEKEY)||'null');
+                  if(m&&m.role){ ME=m; WHO=ME.name||WHO; paintMe(); } }catch(e2){} }
     if(!silent) toast('連不上雲端（'+(e.message||'網路逾時')+'），顯示的是本機快取。可按 ↻ 重試');
     return false; }
 }
@@ -767,8 +776,8 @@ async function doLegacy(){
 }
 
 function logout(){
-  LS.del(TKKEY); LS.del(PWKEY);
-  TOKEN=''; PW=''; ME=null;
+  LS.del(TKKEY); LS.del(PWKEY); LS.del(MEKEY);
+  TOKEN=''; PW=''; ME=null; AUTHWAIT=false;
   location.reload();
 }
 
@@ -799,7 +808,9 @@ async function doChangeMyPw(){
 function paintMe(){
   const el=document.getElementById('meBox'); if(!el) return;
   if(!CLOUD){ el.innerHTML=''; return; }
-  if(!ME){ el.innerHTML=`<span class="tag bad">未登入</span>
+  if(!ME){ el.innerHTML = AUTHWAIT
+    ? '<span class="tag info">確認身分中…</span>'
+    : `<span class="tag bad">未登入</span>
     <button class="btn sm pri" style="margin:0" onclick="openGate('login')">登入</button>`; return; }
   const tag = ME.legacy ? '<span class="tag warn">共用密碼·唯讀</span>'
             : `<span class="tag ${ME.role==='admin'?'ok':(ME.role==='editor'?'info':'gray')}">${esc(ME.roleName||'')}</span>`;
@@ -3189,7 +3200,7 @@ function vData(){
         ${ME?`<span class="tag ${ME.legacy?'warn':(ME.role==='admin'?'ok':(ME.role==='editor'?'info':'gray'))}">${esc(ME.legacy?'共用密碼·唯讀':(ME.roleName||''))}</span>`:''}
         ${ME&&ME.email?`<span class="mini">${esc(ME.email)}</span>`:''}</dd>
     </dl>
-    ${canWrite()?'':`<div class="ro-banner">你目前是<b>唯讀</b>權限，可以查詢、試算與匯出，但不能新增或修改資料。
+    ${(canWrite()||authPending())?'':`<div class="ro-banner">你目前是<b>唯讀</b>權限，可以查詢、試算與匯出，但不能新增或修改資料。
       ${ME&&ME.legacy?'這是舊共用密碼的過渡模式，請按「登出」後改用個人帳號登入。':'需要編輯權限請聯絡管理員。'}</div>`}
     <div class="row">
       <button class="btn pri" onclick="pullNow()">重新讀取雲端</button>
@@ -3504,7 +3515,7 @@ const HIDE_FNS = WRITE_FNS.concat(['newItem']);
 /* 這幾個是唯讀也能用的（只讀不寫），不要被上面的清單藏起來 */
 const KEEP_FNS = ['mvPreviewDoc','mvDoc','mvToggle','exportMoves'];
 function applyReadonlyUI(){
-  const ro = CLOUD && !canWrite();
+  const ro = roMode();
   document.body.classList.toggle('ro', ro);
   document.querySelectorAll('main [onclick]').forEach(function(el){
     const m = String(el.getAttribute('onclick')||'').match(/^\s*([A-Za-z0-9_]+)\s*\(/);
@@ -3538,8 +3549,11 @@ $('#dlgForm').addEventListener('submit',e=>{});
       const c=await DB.get('cache');
       if(c&&c.S&&c.S.items){ S=c.S; REV=c.REV||0; reindex(); renderAll(); setNet('load'); }
     }catch(e){}
-    if(!TOKEN && !PW){ paintNet(); renderAll(); openGate('login'); return; }
-    if(await pull()) renderAll(); else renderAll();
+    if(!TOKEN && !PW){ AUTHWAIT=false; paintNet(); renderAll(); openGate('login'); return; }
+    renderAll();
+    await pull();
+    AUTHWAIT=false;
+    renderAll();
     paintNet();
     return;
   }
