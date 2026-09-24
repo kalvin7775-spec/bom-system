@@ -238,7 +238,7 @@ function toast(m){const t=$('#toast');t.textContent=m;t.classList.add('on');
 function reindex(){IDX={};S.items.forEach(i=>IDX[i.code]=i);
                    BIDX={};S.boms.forEach(b=>BIDX[b.code]=b);
                    if(typeof rebuildVBom==='function') rebuildVBom();}
-async function save(){reindex(); await push();}
+async function save(){reindex(); return await push();}
 const itemOf=c=>IDX[c]||{code:c,name:'（未建檔）',spec:'',unit:'',stock:0,cost:null,supplier:'',note:'',_ghost:1};
 /* ---------- 單一資料來源：品名／規格／單位一律以「料號主檔」為準 ----------
    BOM 明細裡也存了一份品名/規格/單位，但那只是建 BOM 當下的複本，
@@ -494,13 +494,13 @@ function pickFile(accept){
 function dialog(title,bodyHTML,footHTML){
   $('#dlgTitle').textContent=title; $('#dlgBody').innerHTML=bodyHTML;
   $('#dlgFoot').innerHTML=footHTML||'<button class="btn" value="x">關閉</button>';
-  $('#dlg').showModal(); return $('#dlgBody');
+  const _d=$('#dlg'); if(!_d.open) _d.showModal(); return $('#dlgBody');
 }
 const closeDlg=()=>$('#dlg').close();
 function dialog2(title,bodyHTML,footHTML){
   $('#dlg2Title').textContent=title; $('#dlg2Body').innerHTML=bodyHTML;
   $('#dlg2Foot').innerHTML=footHTML||'<button class="btn" value="x">關閉</button>';
-  $('#dlg2').showModal(); return $('#dlg2Body');
+  const _d2=$('#dlg2'); if(!_d2.open) _d2.showModal(); return $('#dlg2Body');
 }
 const closeDlg2=()=>$('#dlg2').close();
 </script>
@@ -535,35 +535,63 @@ let AUTHWAIT = CLOUD && !!(TOKEN||PW);
 function authPending(){ return CLOUD && AUTHWAIT; }
 function roMode(){ return CLOUD && !AUTHWAIT && !canWrite(); }
 
-function setNet(s){ NET=s; paintNet(); }
+let NET_T0=0, NET_TICK=null;
+function setNet(s){
+  const busy=(s==='load'||s==='save');
+  if(busy && !(NET===s && NET_T0)) NET_T0=Date.now();
+  if(!busy) NET_T0=0;
+  NET=s; paintNet();
+  if(busy && !NET_TICK) NET_TICK=setInterval(()=>{ if(NET==='load'||NET==='save') paintNet();
+                                                   else { clearInterval(NET_TICK); NET_TICK=null; } },1000);
+}
 function paintNet(){
   const el=document.getElementById('netBox'); if(!el) return;
   const map={idle:['','gray'],load:['讀取雲端中…','info'],ok:['已同步','ok'],
     save:['儲存中…','info'],err:['雲端連線失敗','bad'],conflict:['版本衝突','warn'],local:['本機模式','gray']};
-  const [t,c]=map[NET]||['',''];
+  let [t,c]=map[NET]||['',''];
+  if((NET==='load'||NET==='save') && NET_T0){ const sec=Math.floor((Date.now()-NET_T0)/1000);
+    if(sec>=5) t+=' '+sec+' 秒'; }
   el.innerHTML = CLOUD
     ? `<span class="tag ${c}">${t}${NET==='ok'&&LASTSYNC?' '+LASTSYNC.slice(-8):''}</span>
        <button class="btn sm" onclick="pullNow()" title="重新讀取雲端資料">↻</button>`
     : `<span class="tag gray">本機模式</span>`;
 }
+/* 只有純讀取的指令才自動重試；寫入（save／領料／作廢…）重試可能造成重複寫入 */
+const API_READONLY={load:1,listUsers:1,me:1,ping:1};
+/* 逾時：讀取 25 秒（Apps Script 冷啟動常要 10～30 秒），寫入 90 秒 */
+const API_TIMEOUT_READ=25000, API_TIMEOUT_WRITE=90000;
 async function apiPost(action,payload,extra){
   const body=Object.assign({action:action,payload:payload,token:TOKEN,pw:PW,who:WHO},extra||{});
+  const ro=!!API_READONLY[action];
+  const tries = ro ? 2 : 1;
   let lastErr;
-  /* 只有讀取才自動重試；寫入若重試，可能第一次其實已成功而造成假性版本衝突 */
-  const tries = (action==='save') ? 1 : 2;
   for(let i=0;i<tries;i++){
+    const ctl=(typeof AbortController!=='undefined')?new AbortController():null;
+    const timer=ctl?setTimeout(()=>ctl.abort(), ro?API_TIMEOUT_READ:API_TIMEOUT_WRITE):null;
     try{
-      const res=await fetch(API_URL,{method:'POST',
+      const res=await fetch(API_URL,{method:'POST',signal:ctl?ctl.signal:undefined,
         headers:{'Content-Type':'text/plain;charset=utf-8'},body:JSON.stringify(body)});
       if(!res.ok) throw new Error('HTTP '+res.status);
-      return await res.json();
-    }catch(e){ lastErr=e; if(i+1<tries) await new Promise(r=>setTimeout(r,1200)); }
+      const txt=await res.text();
+      try{ return JSON.parse(txt); }
+      catch(pe){ throw new Error('雲端回傳非預期內容（Apps Script 可能忙碌或逾時）'); }
+    }catch(e){
+      lastErr = (e && e.name==='AbortError')
+        ? new Error('雲端超過 '+Math.round((ro?API_TIMEOUT_READ:API_TIMEOUT_WRITE)/1000)+' 秒未回應') : e;
+      if(i+1<tries) await new Promise(r=>setTimeout(r,1500));
+    }finally{ if(timer) clearTimeout(timer); }
   }
   throw lastErr;
 }
 /* 讀取雲端 → 覆蓋本地 */
-async function pull(silent, force){
-  if(!CLOUD) return false;
+let PULLING=null;
+function pull(silent, force){
+  if(!CLOUD) return Promise.resolve(false);
+  if(PULLING) return PULLING;
+  PULLING=_pull(silent, force).finally(()=>{ PULLING=null; });
+  return PULLING;
+}
+async function _pull(silent, force){
   setNet('load');
   try{
     /* 手上已經有一份完整快取時，把版本號送上去；雲端沒變就不必整份重傳 */
@@ -572,7 +600,7 @@ async function pull(silent, force){
     if(d.error){
       setNet('err');
       if(d.needLogin){ LS.del(MEKEY); openGate('login', d.error); return false; }
-      if(!silent) dialog('讀取雲端失敗',`<p>${esc(d.error)}</p>
+      if(!silent) dialog2('讀取雲端失敗',`<p>${esc(d.error)}</p>
         <div class="hint">畫面顯示的是本機快取資料，按上方 ↻ 可重試。</div>`);
       return false;
     }
@@ -608,11 +636,11 @@ async function pullNow(){ if(await pull(false,true)) { renderAll(); toast('已�
 async function push(force){
   if(!CLOUD){ await DB.set('state',JSON.parse(JSON.stringify(S))); return true; }
   if(!canWrite()){ denyWrite(); return false; }
-  if(SAVING) { DIRTY=true; return false; }
+  if(SAVING) { DIRTY=true; return 'queued'; }
   /* 送出前先確認資料合理，避免把雲端寫空 */
   if(!S.items || !S.items.length){
     setNet('err');
-    dialog('已阻止寫入雲端',
+    dialog2('已阻止寫入雲端',
       `<p>目前記憶體中沒有任何料號，若寫回雲端會清空所有人的資料，因此已擋下。</p>
        <div class="hint">請按 ↻ 重新讀取雲端，或到「資料管理」上傳資料庫 Excel。</div>`);
     return false;
@@ -624,20 +652,20 @@ async function push(force){
     const d=await apiPost('save',S,{baseRev:force?null:REV,force:!!force});
     if(d.conflict){
       setNet('conflict'); SAVING=false;
-      dialog('雲端資料已被別人更新',`
+      dialog2('雲端資料已被別人更新',`
         <p>你載入資料後，<b>${esc(d.updatedBy||'其他使用者')}</b> 在
            <b>${esc(d.updatedAt||'')}</b> 也存過一次（雲端版本 ${d.serverRev}，你的是 ${REV}）。</p>
         <div class="hint">為避免蓋掉對方的修改，請選擇處理方式。建議先「放棄我的修改並重新載入」，
           確認雲端目前的內容；若你的修改其實已經存進去了，重新載入後就會看到。</div>`,
-        `<button class="btn danger" type="button" onclick="closeDlg();push(true)">強制覆蓋雲端</button>
-         <button class="btn pri" type="button" onclick="closeDlg();pullNow()">放棄我的修改並重新載入</button>
+        `<button class="btn danger" type="button" onclick="closeDlg2();push(true)">強制覆蓋雲端</button>
+         <button class="btn pri" type="button" onclick="closeDlg2();pullNow()">放棄我的修改並重新載入</button>
          <button class="btn" value="x">稍後再說</button>`);
       return false;
     }
     if(d.error){
       setNet('err'); SAVING=false;
       if(d.needLogin){ openGate('login', d.error); return false; }
-      if(d.denied){ dialog('無法儲存',`<p>${esc(d.error)}</p>
+      if(d.denied){ dialog2('無法儲存',`<p>${esc(d.error)}</p>
         <div class="hint">你在畫面上的修改沒有寫進雲端。重新整理後會回到雲端目前的資料。</div>`); return false; }
       toast('儲存失敗：'+d.error); return false;
     }
@@ -1047,7 +1075,9 @@ function vDash(){
       <th class="nos">時間</th><th class="nos">來源檔</th><th class="nos">摘要</th><th class="nos"></th>
       </tr></thead><tbody>${S.history.slice(0,10).map((h,i)=>`<tr>
         <td class="mono">${esc(h.ts)}</td><td>${esc(h.file||'')}</td>
-        <td>${h.voided?`<span class="tag del">已刪除單據 ${esc(h.voided.no||'')}</span>
+        <td>${h.voided&&h.voided.kind==='items'?`<span class="tag del">刪除料號 ${h.voided.count||(h.voided.items||[]).length} 筆</span>
+            ${h.voided.restoredAt?'<span class="tag add">已還原</span>':'<span class="tag warn">可還原</span>'}`
+          :h.voided?`<span class="tag del">已刪除單據 ${esc(h.voided.no||'')}</span>
             <span class="tag info">${(h.voided.rows||[]).length} 項已回沖</span>`
           :`<span class="tag add">新增 ${h.sum.added}</span> <span class="tag del">移除 ${h.sum.removed}</span>
             <span class="tag info">庫存 ${h.sum.stock}</span> <span class="tag warn">單價 ${h.sum.cost}</span>
@@ -1383,7 +1413,22 @@ async function saveItem(orig){
     if(ix>=0)S.items[ix]=o; else S.items.push(o);
     if(orig!==code) S.boms.forEach(b=>b.lines.forEach(l=>{if(l.code===orig)l.code=code;}));
   } else S.items.push(o);
-  await save(); closeDlg(); vItems(); toast('已儲存');
+  if(!(await save())) return;
+  closeDlg(); vItems(); toast('已儲存');
+}
+/* ---------- 刪除料號時留存整列資料，日後可從「異動紀錄」一鍵還原 ---------- */
+function logDeletedItems(list, why){
+  if(!list.length) return;
+  const items=JSON.parse(JSON.stringify(list));
+  let v={kind:'items', items, at:nowts(), by:(ME&&ME.name)||WHO||'', why:why||''};
+  if(JSON.stringify(v).length>40000)      /* 試算表單格上限 5 萬字，太多筆時只留品號 */
+    v={kind:'items', truncated:true, codes:items.map(i=>i.code), count:items.length, at:v.at, by:v.by, why:v.why};
+  const names=items.slice(0,3).map(i=>i.code).join('、')+(items.length>3?` 等 ${items.length} 筆`:'');
+  S.history=S.history||[];
+  S.history.unshift({ts:v.at, file:'刪除料號 '+names, by:v.by,
+    sum:{added:0,removed:items.length,stock:0,cost:0,other:0},
+    diff:{added:[],removed:[],stock:[],cost:[],other:[],sum:{added:0,removed:items.length,stock:0,cost:0,other:0}},
+    voided:v});
 }
 /* ---------- 刪除料號：仍被 BOM 引用則阻擋 ---------- */
 async function delItem(code){
@@ -1401,9 +1446,11 @@ async function delItem(code){
       <div class="hint">請先到「BOM 管理」把這些 BOM 中引用此料號的行刪掉，再回來刪除料號。</div>`,
       '<button class="btn" value="x">知道了</button>');
   }
-  if(!confirm(`確定刪除料號 ${code}？此料號未被任何 BOM 使用。`)) return;
+  if(!confirm(`確定刪除料號 ${code}？此料號未被任何 BOM 使用。\n（刪除後可在「更新比對 → 異動紀錄」還原）`)) return;
+  logDeletedItems(S.items.filter(i=>i.code===code),'單筆刪除');
   S.items=S.items.filter(i=>i.code!==code);
-  await save(); vItems(); vDash(); setHdr(); toast('已刪除料號 '+code);
+  if(!(await save())) return;
+  vItems(); vDash(); setHdr(); toast('已刪除料號 '+code);
 }
 /* ---------- 批次新增 ---------- */
 function bulkAdd(){
@@ -1443,7 +1490,8 @@ async function bulkSave(){
   let a=0,u=0;
   rows.forEach(r=>{const ix=S.items.findIndex(i=>i.code===r.code);
     if(ix>=0){S.items[ix]={...S.items[ix],...r};u++;} else {S.items.push(r);a++;}});
-  await save(); closeDlg(); vItems(); vDash(); setHdr();
+  if(!(await save())) return;
+  closeDlg(); vItems(); vDash(); setHdr();
   toast(`批次完成：新增 ${a} 筆、更新 ${u} 筆`);
 }
 /* ---------- 由 Excel 匯入料號（新增/更新，不做刪除） ---------- */
@@ -1454,7 +1502,8 @@ async function importItemsFile(){
   let a=0,u=0;
   its.forEach(r=>{const ix=S.items.findIndex(i=>i.code===r.code);
     if(ix>=0){S.items[ix]={...S.items[ix],...r};u++;} else {S.items.push(r);a++;}});
-  await save(); vItems(); vDash(); setHdr();
+  if(!(await save())) return;
+  vItems(); vDash(); setHdr();
   toast(`匯入完成：新增 ${a} 筆、更新 ${u} 筆（此功能不刪除料號，需比對差異請用「更新比對」）`);
 }
 function exportItems(){
@@ -1576,19 +1625,19 @@ function renderBom(){
   if(typeof applyReadonlyUI==='function') applyReadonlyUI();
 }
 function tog(k){collapsed[k]=!collapsed[k];renderBom();}
-async function setCostMode(m){SET().costMode=m;delete SET().purchaseStop;await save();renderAll();
+async function setCostMode(m){SET().costMode=m;delete SET().purchaseStop;if(!(await save()))return;renderAll();
   toast('成本規則已改為：'+({max:'取較高者',buy:'自身單價優先',sum:'一律下階加總'}[m]));}
 async function togBuy(){setCostMode(costMode()==='sum'?'max':'sum');}
 async function delBom(){
   if(!confirm(`確定刪除 BOM「${curBom}」？`))return;
-  S.boms=S.boms.filter(b=>b.code!==curBom); curBom=null; await save(); vBoms(); toast('已刪除');
+  S.boms=S.boms.filter(b=>b.code!==curBom); curBom=null; if(!(await save()))return; vBoms(); toast('已刪除');
 }
 async function dupBom(){
   const src=BIDX[curBom]; const code=prompt('新 BOM 品號：',src.code+'-COPY'); if(!code)return;
   if(BIDX[code])return toast('品號已有 BOM');
   S.boms.push({id:code,code,name:src.name+'（複製）',spec:src.spec,source:'手動複製',
     lines:JSON.parse(JSON.stringify(src.lines))});
-  await save(); curBom=code; vBoms(); toast('已複製');
+  if(!(await save()))return; curBom=code; vBoms(); toast('已複製');
 }
 function exportBom(){
   /* 用解析後的明細，才會跟畫面一致（引用到的子 BOM 以子 BOM 為準） */
@@ -1663,7 +1712,8 @@ async function doSplitSubBom(code){
     name:document.getElementById('sb_name').value.trim()||itemOf(code).name||'',
     spec:document.getElementById('sb_spec').value.trim()||'',
     source:`由 ${src} 拆出`, note:'', lines:lines});
-  await save(); closeDlg(); curBom=code; collapsed={}; vBoms(); vDash();
+  if(!(await save())) return;
+  closeDlg(); curBom=code; collapsed={}; vBoms(); vDash();
   toast(`已建立 BOM ${code}（${lines.length} 行）`);
 }
 
@@ -1725,8 +1775,10 @@ async function masterDelApply(){
   if(!codes.length) return toast('尚未選擇可刪除的品號');
   if(!confirm(`確定刪除 ${codes.length} 個料號主檔品號？`))return;
   const set=new Set(codes);
+  logDeletedItems(S.items.filter(i=>set.has(i.code)),'刪減料號主檔品號');
   S.items=S.items.filter(i=>!set.has(i.code));
-  await save(); closeDlg(); vItems(); vBoms(); vDash(); setHdr();
+  if(!(await save())) return;
+  closeDlg(); vItems(); vBoms(); vDash(); setHdr();
   toast(`已刪除 ${codes.length} 個品號`);
 }
 async function importBomFile(){
@@ -1746,7 +1798,7 @@ async function importBomFile(){
         ex.cost=l._cost; fill++;
         ex.note=(ex.note?ex.note+'；':'')+`單價 ${l._cost} 取自 BOM 表`;}});
   });
-  await save(); curBom=bs[0].code; vBoms(); vItems();
+  if(!(await save()))return; curBom=bs[0].code; vBoms(); vItems();
   toast(`匯入完成：新增 ${add} 張、更新 ${upd} 張 BOM`+(fill?`，回填 ${fill} 筆單價`:''));
 }
 </script>
@@ -1913,7 +1965,7 @@ async function edSaveMasterItem(rowIx){
     msb:g('msb'),note:g('note')};
   const ix=S.items.findIndex(x=>x.code===code);
   if(ix>=0) S.items[ix]={...S.items[ix],...o}; else S.items.push(o);
-  await save();
+  if(!(await save())) return;
   if(rowIx!=null&&ED.lines[rowIx]){ED.lines[rowIx].code=code;ED.lines[rowIx].name=o.name;
     ED.lines[rowIx].spec=o.spec;ED.lines[rowIx].unit=o.unit;}
   else if(ED) ED.lines.push({level:1,code,name:o.name,spec:o.spec,qty:1,unit:o.unit,note:''});
@@ -1932,7 +1984,8 @@ async function saveBom(){
     unit:l.unit||'pcs',stock:0,cost:null,safety:null,supplier:'',loc:'',lead:'',msb:'',note:'（BOM 編輯自動建檔）'});});
   const ix=ED.orig?S.boms.findIndex(b=>b.code===ED.orig):-1;
   if(ix>=0)S.boms[ix]=bom; else S.boms.push(bom);
-  await save(); closeDlg(); curBom=code; collapsed={}; vBoms(); toast('BOM 已儲存');
+  if(!(await save())) return;
+  closeDlg(); curBom=code; collapsed={}; vBoms(); toast('BOM 已儲存');
 }
 </script>
 <script>
@@ -2155,7 +2208,9 @@ function vSync(){
       <th class="nos num">庫存變動</th><th class="nos num">單價變動</th><th class="nos num">其他</th><th class="nos"></th>
       </tr></thead><tbody>${S.history.map((h,i)=>`<tr>
         <td class="mono">${esc(h.ts)}</td>
-        <td>${esc(h.file||'')}${h.voided?` <span class="tag del">可查明細</span>`:''}</td>
+        <td>${esc(h.file||'')}${h.voided&&h.voided.kind==='items'
+          ?(h.voided.restoredAt?' <span class="tag add">已還原</span>':' <span class="tag warn">可還原</span>')
+          :h.voided?` <span class="tag del">可查明細</span>`:''}</td>
         <td class="num">${h.sum.added}</td><td class="num">${h.sum.removed}</td>
         <td class="num">${h.sum.stock}</td><td class="num">${h.sum.cost}</td><td class="num">${h.sum.other}</td>
         <td><button class="btn sm" onclick="showHistory(${i})">明細</button></td></tr>`).join('')}
@@ -2264,7 +2319,8 @@ async function applySync(){
   S.history=S.history.slice(0,50);
   S.meta.itemFile=PEND.file; S.meta.updatedAt=nowts();
   PEND=null;
-  await save(); vSync(); vItems(); vDash(); setHdr();
+  if(!(await save())) return;
+  vSync(); vItems(); vDash(); setHdr();
   toast('已套用更新');
 }
 function exportDiff(){
@@ -2279,9 +2335,64 @@ function exportDiff(){
 }
 function showHistory(i){
   const h=S.history[i];
+  if(h && h.voided && h.voided.kind==='items') return showDeletedItems(i);
   if(h && h.voided) return showVoided(h);
   dialog(`異動明細　${h.ts}　${h.file||''}`,diffHTML(h.diff,h.file||'',(h.sum.added+h.sum.removed+h.sum.stock+h.sum.cost+h.sum.other)+' 項異動'),
     '<button class="btn" value="x">關閉</button>');
+}
+/* 已刪除的料號：列出刪除當下的整列資料，可一鍵還原 */
+function showDeletedItems(i){
+  const h=S.history[i], v=(h&&h.voided)||{};
+  if(v.truncated) return dialog(`已刪除的料號　${esc(h.ts)}`,
+    `<p>這次刪除了 <b>${v.count||0}</b> 筆料號，資料量太大，只留下品號清單：</p>
+     <p class="mono">${(v.codes||[]).map(esc).join('、')}</p>
+     <div class="hint">完整內容請到 Google 試算表「檔案 → 版本記錄」找刪除前的版本，從「料號主檔」複製回來。</div>`,
+    '<button class="btn" value="x">關閉</button>');
+  const items=v.items||[];
+  const exist=items.filter(it=>IDX[it.code]).map(it=>it.code);
+  dialog(`已刪除的料號　${esc(h.ts)}`,`
+    <dl class="kv" style="margin-bottom:10px">
+      <dt>刪除時間</dt><dd>${esc(v.at||h.ts||'')}　${esc(v.by||h.by||'')}</dd>
+      ${v.why?`<dt>方式</dt><dd>${esc(v.why)}</dd>`:''}
+      ${v.restoredAt?`<dt>已還原</dt><dd>${esc(v.restoredAt)}　${esc(v.restoredBy||'')}</dd>`:''}
+    </dl>
+    <div class="tblwrap" style="max-height:300px"><table class="grid"><thead><tr>
+      <th class="nos">品號</th><th class="nos">品名</th><th class="nos">規格</th>
+      <th class="nos num">刪除時庫存</th><th class="nos">單位</th><th class="nos num">單價</th><th class="nos">供應商</th><th class="nos">目前</th>
+      </tr></thead><tbody>${items.map(it=>`<tr>
+        <td class="mono">${esc(it.code)}</td><td>${esc(it.name||'')}</td><td class="mut">${esc(it.spec||'')}</td>
+        <td class="num"><b>${nf(it.stock)}</b></td><td class="mut">${esc(it.unit||'')}</td>
+        <td class="num">${it.cost==null?'':nf(it.cost)}</td><td class="mut">${esc(it.supplier||'')}</td>
+        <td>${IDX[it.code]?'<span class="tag gray">主檔已有</span>':'<span class="tag warn">已刪除</span>'}</td>
+      </tr>`).join('')}</tbody></table></div>
+    <div class="hint">還原會把上表「已刪除」的料號照刪除當下的內容（含庫存）加回料號主檔；
+      主檔已有同品號的不會覆蓋。${exist.length?`目前有 ${exist.length} 筆已存在，會略過。`:''}</div>`,
+    `${(!v.restoredAt && exist.length<items.length && canWrite())
+        ?`<button class="btn pri" type="button" onclick="restoreDeleted(${i})">還原 ${items.length-exist.length} 筆料號</button>`:''}
+     <button class="btn" type="button" onclick="xlsxOut([['已刪除料號',S.history[${i}].voided.items]],'已刪除料號.xlsx')">匯出 Excel</button>
+     <button class="btn" value="x">關閉</button>`);
+}
+async function restoreDeleted(i){
+  const h0=S.history[i]; if(!h0||!h0.voided) return;
+  const key=h0.ts+'|'+h0.file;
+  if(!confirm('確定還原這次刪除的料號？')) return;
+  closeDlg();
+  /* 先讀最新雲端，避免拿舊資料蓋掉別人的修改 */
+  if(CLOUD && !(await pull(true,true))) return toast('讀不到雲端最新資料，請稍後再試');
+  const h=(S.history||[]).find(x=>(x.ts+'|'+x.file)===key);
+  if(!h||!h.voided) return toast('雲端已找不到這筆刪除紀錄');
+  if(h.voided.restoredAt) { renderAll(); return toast('這筆已經在 '+h.voided.restoredAt+' 還原過了'); }
+  const back=[], skip=[];
+  (h.voided.items||[]).forEach(it=>{ if(IDX[it.code]) skip.push(it.code); else { S.items.push(JSON.parse(JSON.stringify(it))); back.push(it.code); } });
+  if(!back.length){ renderAll(); return toast('要還原的料號都已存在主檔，沒有變動'); }
+  const who=(ME&&ME.name)||WHO||'', at=nowts();
+  h.voided.restoredAt=at; h.voided.restoredBy=who;
+  S.history.unshift({ts:at, file:'還原料號 '+back.slice(0,3).join('、')+(back.length>3?` 等 ${back.length} 筆`:'')+'（原刪除於 '+h.ts+'）',
+    by:who, sum:{added:back.length,removed:0,stock:0,cost:0,other:0},
+    diff:{added:[],removed:[],stock:[],cost:[],other:[],sum:{added:back.length,removed:0,stock:0,cost:0,other:0}}});
+  if(!(await save())) return;
+  renderAll();
+  toast(`已還原 ${back.length} 筆料號`+(skip.length?`，略過 ${skip.length} 筆（主檔已有）`:''));
 }
 /* 已刪除的庫存異動單：把當初被刪掉的每一列原樣列出來，方便查帳或重開 */
 function showVoided(h){
@@ -2432,7 +2543,8 @@ async function syncBomFromMaster(){
     if(String(it.unit||'').trim()&&String(l.unit||'')!==it.unit){l.unit=it.unit;ch=true;}
     if(ch)cnt++;
   }));
-  await save(); renderAll(); toast('已用料號主檔覆寫 '+cnt+' 行 BOM 明細');
+  if(!(await save())) return;
+  renderAll(); toast('已用料號主檔覆寫 '+cnt+' 行 BOM 明細');
 }
 function exportBomDiffs(){
   const d=bomFieldDiffs();
@@ -2660,7 +2772,8 @@ async function applyLoose(){
   if(LOOSE.boms.length) S.meta.bomFile=LOOSE.file;
   S.meta.updatedAt=nowts();
   const f=LOOSE.file, nf2=filled.length; LOOSE=null; curBom=null; RES=null;
-  await save(); closeDlg(); renderAll();
+  if(!(await save())) return;
+  closeDlg(); renderAll();
   toast(`${f} 匯入完成：料號 +${a}/更新 ${u}，BOM +${ba}/更新 ${bu}`+
         (nf2?`，回填 ${nf2} 筆單價`:''));
 }
@@ -2675,7 +2788,8 @@ async function applyDB(){
   S.history=S.history.slice(0,50);
   S.meta.itemFile=DBPEND.file; S.meta.bomFile=DBPEND.file; S.meta.updatedAt=nowts();
   DBPEND=null; curBom=null; RES=null;
-  await save(); closeDlg(); renderAll();
+  if(!(await save())) return;
+  closeDlg(); renderAll();
   toast('資料庫已套用'+(keep.length?`（移除 ${keep.length} 筆舊料號）`:''));
 }
 </script>
@@ -2830,6 +2944,10 @@ function doMvClear(){ MVORD=blankDraft(); saveDraft(); vMove(); toast('已清空
 async function applyMoveResult(d, opt){
   opt = opt || {};
   if(d.rev == null) return false;
+  /* 單據送出後雲端版本只會 +1；若跳了好幾號，代表這段期間別人也改過資料。
+     這時不能直接把 REV 設成新版號（否則本機舊資料會被當成最新版，下次儲存就蓋掉別人的修改），
+     改回傳 false 讓呼叫端重新整份讀取雲端。 */
+  if(Number(d.rev) !== Number(REV) + 1) return false;
   if(!opt.removeNo && !Array.isArray(d.moves)) return false;
   if(opt.removeNo) S.moves = (S.moves||[]).filter(m => m.no !== opt.removeNo);
   if(Array.isArray(d.moves) && d.moves.length) S.moves = (S.moves||[]).concat(d.moves);
@@ -3340,7 +3458,7 @@ async function impJSON(){
     if(!o.items||!o.boms) throw 0;
     if(!confirm(`匯入將覆蓋目前資料（料號 ${o.items.length} 筆 / BOM ${o.boms.length} 張），確定？`))return;
     S={items:o.items,boms:o.boms,history:o.history||[],meta:o.meta||{}};
-    await save(); renderAll(); toast('已匯入備份');
+    if(!(await save()))return; renderAll(); toast('已匯入備份');
   }catch(e){toast('檔案格式不正確');}
 }
 function expAllBoms(){
@@ -3354,11 +3472,11 @@ function expAllBoms(){
 }
 async function resetSeed(){
   if(!confirm('將還原成最初由 Excel 匯入的資料，所有後續編輯與紀錄都會消失。確定？'))return;
-  S=JSON.parse(JSON.stringify(SEED)); S.history=[]; S.settings={purchaseStop:true}; await save(); renderAll(); toast('已重設');
+  S=JSON.parse(JSON.stringify(SEED)); S.history=[]; S.settings={purchaseStop:true}; if(!(await save()))return; renderAll(); toast('已重設');
 }
 async function wipe(){
   if(!confirm('清空全部資料？此動作無法復原。'))return;
-  S={items:[],boms:[],history:[],moves:[],staff:[],meta:{},settings:{purchaseStop:true}}; curBom=null; RES=null; await save(); renderAll(); toast('已清空');
+  S={items:[],boms:[],history:[],moves:[],staff:[],meta:{},settings:{purchaseStop:true}}; curBom=null; RES=null; if(!(await save()))return; renderAll(); toast('已清空');
 }
 
 /* ============================================================
