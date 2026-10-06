@@ -25,7 +25,8 @@ const LEGACY_PW_ENABLED = true;                 // 全部同事都註冊完後�
 /* ================== */
 
 const SH = {items:'料號主檔', boms:'BOM主檔', lines:'BOM明細', hist:'異動紀錄', sys:'系統',
-            users:'使用者', moves:'庫存異動', serial:'產品批序號', ecr:'文件變更審查'};
+            users:'使用者', moves:'庫存異動', serial:'產品批序號', ecr:'文件變更審查',
+            pr:'請購單'};
 
 const HEAD = {
   items:['品號','品名','規格','單位','庫存數量','單位成本','安全庫存','供應商','交期','儲位','MSB','備註'],
@@ -41,7 +42,11 @@ const HEAD = {
   serial:['項次','日期','產品名稱','數量','批號/序號','執行者','確認者','用途','備註1','型號'],
   /* 文件/工程變更審查表 QA-2-01-01-A：前面是給人看的欄位，最後一欄存完整內容供還原 Word */
   ecr:['編號','日期','文件/工程名稱','文件/工程編號','版本','變更性質','製作單位','修訂單位',
-       '製作人','變更理由','評估異常項目','變更內容','備註','簽核單位','填表人','建立時間','資料JSON']
+       '製作人','變更理由','評估異常項目','變更內容','備註','簽核單位','填表人','建立時間','資料JSON'],
+  /* 請購單 MR-2-06-02-A：一張單一列，最後一欄存完整品項供還原 Word */
+  pr:['請購單號','請購日期','請購單別','請購部門','請購人員','請購幣別','營業稅率','備註',
+      '項數','數量合計','單位','金額合計(未稅)','品項摘要','總經理','採購承辦人','主管','請購人',
+      '填表人','建立時間','資料JSON']
 };
 
 /* 角色權限：admin 全部；editor 可讀可寫；viewer 只能讀 */
@@ -57,7 +62,7 @@ function ss(){
 
 /* 首次使用：在編輯器選這個函式按「執行」，建立所有工作表並完成授權 */
 function setup(){
-  ['items','boms','lines','hist','sys','users','moves','serial','ecr'].forEach(sheet);
+  ['items','boms','lines','hist','sys','users','moves','serial','ecr','pr'].forEach(sheet);
   if(String(sysGet('rev',''))==='') { sysSet('rev', 0); sysFlush(); }
   const s = ss();
   const d = s.getSheetByName('工作表1');
@@ -825,6 +830,114 @@ function voidEcr(auth, p){
 }
 
 /* ============================================================
+   請購單 MR-2-06-02-A（form-pr.html 使用）
+   一張請購單一列；「資料JSON」存完整品項，前端才能原樣還原成 Word。
+   版本號存在「系統」表的 prRev，與 BOM、審查表各自獨立。
+   ============================================================ */
+function readPr(){
+  return rows('pr').map(function(r){
+    let data = {};
+    try{ data = JSON.parse(String(r['資料JSON']||'{}')); }catch(e){ data = {}; }
+    return {no:String(r['請購單號']||''), date:fmtDate(r['請購日期']),
+      kind:String(r['請購單別']||''), dept:String(r['請購部門']||''),
+      user:String(r['請購人員']||''), cur:String(r['請購幣別']||''),
+      tax:String(r['營業稅率']||''), memo:String(r['備註']||''),
+      count:String(r['項數']||''), tqty:String(r['數量合計']||''),
+      tunit:String(r['單位']||''), tamt:String(r['金額合計(未稅)']||''),
+      brief:String(r['品項摘要']||''),
+      gm:String(r['總經理']||''), buyer:String(r['採購承辦人']||''),
+      mgr:String(r['主管']||''), req:String(r['請購人']||''),
+      by:String(r['填表人']||''), at:fmtTS(r['建立時間']), data:data};
+  });
+}
+
+/* 送出一張請購單：單號由填表人自己填，這裡負責擋重號並寫入 */
+function postPr(auth, p){
+  if(!canWrite(auth.role))
+    return {error: auth.legacy ? '共用密碼為唯讀模式，無法送出請購單。'
+                              : '你的權限為「唯讀」，無法送出請購單。', denied:true};
+  const rec = (p && p.rec) || {};
+  const sum = (p && p.summary) || {};
+  const no  = String(rec.no||'').trim();
+  if(!no) return {error:'「請購單號」必填'};
+  if(no.length > 30) return {error:'「請購單號」太長'};
+  const items = rec.items || [];
+  if(!items.length) return {error:'請至少填一項請購品項'};
+
+  const lock = LockService.getScriptLock();
+  lock.waitLock(25000);
+  try{
+    /* 手動單號一定要擋重複，否則兩個人可能撞號 */
+    const dup = rows('pr').some(function(r){ return String(r['請購單號']||'').trim() === no; });
+    if(dup) return {error:'請購單號 '+no+' 已經存在，請換一個單號'};
+
+    const now = nowTS();
+    const dateStr = String(rec.date||'').trim() ||
+      Utilities.formatDate(new Date(),'Asia/Taipei','yyyy.MM.dd');
+    const row = [no, dateStr, String(rec.kind||''), String(rec.dept||''), String(rec.user||''),
+      String(rec.cur||''), String(rec.tax||''), String(rec.memo||''),
+      Number(sum.count||items.length)||items.length, String(sum.tqty||''), String(sum.tunit||''),
+      String(sum.tamt||''), String(sum.brief||''),
+      String(rec.gm||''), String(rec.buyer||''), String(rec.mgr||''), String(rec.req||''),
+      auth.name||'', now, JSON.stringify(rec)];
+
+    const sh = sheet('pr');
+    const at0 = sh.getLastRow()+1;
+    markTextCol(sh, at0, HEAD.pr.indexOf('請購單號')+1, 1);
+    markTextCol(sh, at0, HEAD.pr.indexOf('請購日期')+1, 1);
+    markTextCol(sh, at0, HEAD.pr.indexOf('建立時間')+1, 1);
+    sh.getRange(at0, 1, 1, HEAD.pr.length).setValues([row]);
+
+    const rev = (Number(sysGet('prRev',0))||0) + 1;
+    sysSet('prRev', rev);
+    sysSet('prAt', now);
+    sysSet('prBy', (auth.name||'') + '（送出 ' + no + '）');
+    sysFlush();
+    SpreadsheetApp.flush();
+    return {ok:true, no:no, rev:rev, date:dateStr, at:now, by:auth.name||''};
+  } finally { lock.releaseLock(); }
+}
+
+/* 刪除一張請購單（僅管理員）；送出後不能改，打錯只能刪掉重開 */
+function voidPr(auth, p){
+  if(!isAdmin(auth.role))
+    return {error:'只有管理員可以刪除已送出的請購單。', denied:true};
+  const no  = String((p && p.no)  || '').trim();
+  const why = String((p && p.why) || '').trim();
+  if(!no) return {error:'沒有指定要刪除的單號'};
+
+  const lock = LockService.getScriptLock();
+  lock.waitLock(25000);
+  try{
+    const sh = sheet('pr');
+    const last = sh.getLastRow(), lastC = sh.getLastColumn();
+    if(last < 2) return {error:'「請購單」還沒有任何紀錄'};
+    const head = sh.getRange(1,1,1,lastC).getValues()[0].map(String);
+    const cNo = head.indexOf('請購單號');
+    if(cNo < 0) return {error:'「請購單」缺少「請購單號」欄'};
+    const body = sh.getRange(2,1,last-1,lastC).getValues();
+    const hit = [];
+    for(let i=0;i<body.length;i++)
+      if(String(body[i][cNo]).trim() === no) hit.push(i);
+    if(!hit.length)
+      return {error:'找不到單號 '+no+'，可能已經被別人刪掉了，請按 ↻ 重新讀取'};
+    for(let k=hit.length-1;k>=0;k--) sh.deleteRow(hit[k]+2);
+
+    const now = nowTS();
+    sheet('hist').appendRow([now, '刪除請購單 '+no+(why?'（'+why+'）':''),
+      0, hit.length, 0, 0, 0, auth.name||'']);
+
+    const rev = (Number(sysGet('prRev',0))||0) + 1;
+    sysSet('prRev', rev);
+    sysSet('prAt', now);
+    sysSet('prBy', (auth.name||'') + '（刪除 ' + no + '）');
+    sysFlush();
+    SpreadsheetApp.flush();
+    return {ok:true, no:no, rev:rev, removed:hit.length};
+  } finally { lock.releaseLock(); }
+}
+
+/* ============================================================
    使用者與登入
    ============================================================ */
 
@@ -1073,6 +1186,21 @@ function doPost(e){
   if(action === 'postEcr')    return out(postEcr(auth, body));
   if(action === 'voidEcr')    return out(voidEcr(auth, body));
 
+  /* 請購單／其他表單用：只回料號主檔的幾個欄位，比整包 load 輕很多 */
+  if(action === 'loadItems')
+    return out({ok:true, rev:Number(sysGet('rev',0))||0,
+      items: rows('items').map(function(r){
+        return {code:String(r['品號']||'').trim(), name:String(r['品名']||''),
+                spec:String(r['規格']||''), unit:String(r['單位']||''),
+                supplier:String(r['供應商']||''), cost:numOrNull(r['單位成本'])};
+      }).filter(function(x){ return x.code; })});
+
+  if(action === 'loadPr')
+    return out({ok:true, records:readPr(), rev:Number(sysGet('prRev',0))||0,
+                updatedAt:fmtTS(sysGet('prAt','')), updatedBy:String(sysGet('prBy',''))});
+  if(action === 'postPr')     return out(postPr(auth, body));
+  if(action === 'voidPr')     return out(voidPr(auth, body));
+
   if(action === 'loadSerial') return out(readSerial());
 
   if(action === 'saveSerial'){
@@ -1132,4 +1260,38 @@ function doPost(e){
     }
   }
   return out({error:'未知的指令：'+action});
+}
+
+/* ============================================================
+   每日自動備份：把整份試算表複製到 Drive「BOM資料庫_自動備份」資料夾，保留最近 30 份
+   啟用方式：在 Apps Script 編輯器選 installBackupTrigger → 按「執行」一次（會要求 Drive 權限）
+   之後每天凌晨 2～3 點自動執行；想先試一次可直接執行 dailyBackup
+   ============================================================ */
+const BACKUP_FOLDER = 'BOM資料庫_自動備份';
+const BACKUP_KEEP   = 30;
+
+function dailyBackup(){
+  const file = DriveApp.getFileById(ss().getId());
+  const it = DriveApp.getFoldersByName(BACKUP_FOLDER);
+  const folder = it.hasNext() ? it.next() : DriveApp.createFolder(BACKUP_FOLDER);
+  const stamp = Utilities.formatDate(new Date(), 'Asia/Taipei', 'yyyyMMdd_HHmm');
+  const rev = Number(sysGet('rev', 0)) || 0;
+  file.makeCopy(ss().getName() + '_自動備份_' + stamp + '_rev' + rev, folder);
+  /* 只保留最近 BACKUP_KEEP 份，較舊的移到垃圾桶（30 天內仍可從垃圾桶救回） */
+  const all = [];
+  const fs = folder.getFiles();
+  while(fs.hasNext()){ const f = fs.next(); all.push({f:f, t:f.getDateCreated().getTime()}); }
+  all.sort(function(a,b){ return b.t - a.t; });
+  all.slice(BACKUP_KEEP).forEach(function(x){ x.f.setTrashed(true); });
+  return folder.getUrl();
+}
+
+function installBackupTrigger(){
+  ScriptApp.getProjectTriggers().forEach(function(t){
+    if(t.getHandlerFunction() === 'dailyBackup') ScriptApp.deleteTrigger(t);
+  });
+  ScriptApp.newTrigger('dailyBackup').timeBased().everyDays(1).atHour(2)
+    .inTimezone('Asia/Taipei').create();
+  const url = dailyBackup();          /* 立刻先備份一次，確認權限與資料夾都正常 */
+  Logger.log('每日備份已啟用，備份資料夾：' + url);
 }
