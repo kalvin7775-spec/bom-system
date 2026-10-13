@@ -4,6 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>請購單 MR-2-06-02-A</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <style>
 :root{ --line:#000; --ink:#111; --mut:#6b7280; --acc:#1f5fbf; --fill:#f5f8fc; }
 *{box-sizing:border-box}
@@ -133,7 +134,14 @@ col.n4{width:9.5%} col.n5{width:11%} col.n6{width:12.5%} col.n7{width:11%}
 .histwrap .btn{padding:4px 9px;font-size:12px;margin-right:4px}
 .histwrap .btn.danger{color:#b3261e;border-color:#f0c3bd}
 .hsearch{width:100%;font:inherit;font-size:13px;padding:7px 10px;border:1px solid #cfd6de;
-  border-radius:7px;margin-bottom:10px}
+  border-radius:7px}
+.htools{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:10px}
+.htools .grow{flex:1 1 240px;min-width:200px}
+.htools select{font:inherit;font-size:13px;padding:7px 8px;border:1px solid #cfd6de;border-radius:7px;
+  background:#fff;min-width:120px}
+.histwrap .htools .btn{padding:7px 14px;font-size:13px;margin:0}
+.histwrap .tblwrap{max-height:60vh;overflow:auto}
+.histwrap .tblwrap th{position:sticky;top:0;z-index:1}
 
 /* ---------- 品號建議清單 ---------- */
 #sug{position:absolute;z-index:400;background:#fff;border:1px solid #cfd6de;border-radius:8px;
@@ -258,7 +266,12 @@ https://github.com/nodeca/pako/blob/main/LICENSE
 <div class="histwrap" id="histWrap">
   <h2>已送出的請購單 <span id="histCount" class="sub" style="font-weight:400"></span></h2>
   <div class="sub">送出後內容就鎖住不能改；打錯的話請管理員刪掉再重開一張。</div>
-  <input type="search" class="hsearch" id="hq" placeholder="搜尋單號 / 部門 / 請購人員 / 品號 / 廠商…">
+  <div class="htools">
+    <div class="grow"><input type="search" class="hsearch" id="hq" placeholder="搜尋單號 / 部門 / 請購人員 / 品號 / 廠商…"></div>
+    <select id="hym"><option value="">全部月份</option></select>
+    <button class="btn pri" id="hxMonth" onclick="exportPrMonth()">匯出本月 Excel</button>
+    <button class="btn" onclick="exportPrAll()">匯出全部</button>
+  </div>
   <div id="histBody"></div>
 </div>
 
@@ -575,7 +588,7 @@ const LS = {
 };
 let TOKEN = LS.get(TKKEY), PW = LS.get(PWKEY), WHO = LS.get(WHOKEY);
 let ME = null, REV = 0, NET = 'idle', LASTSYNC = '';
-let RECS = [], MODE = 'new', VIEWNO = '', HQ = '';
+let RECS = [], MODE = 'new', VIEWNO = '', HQ = '', HYM = '';
 
 const ROLE_NAME = {admin:'管理員', editor:'編輯', viewer:'唯讀'};
 const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g,
@@ -884,11 +897,101 @@ async function submitPr(){
 }
 
 /* ---------- 歷史單據 ---------- */
+function ymOf(d){ const s = String(d||'').replace(/[^0-9]/g,''); return s.length >= 6 ? s.slice(0,6) : ''; }
+function ymTxt(ym){ return ym.slice(0,4) + '/' + ym.slice(4); }
+function thisYM(){ const d = new Date(); return '' + d.getFullYear() + ('0' + (d.getMonth()+1)).slice(-2); }
+function prItems(r){ return (r.data && r.data.items) || []; }
+function prMonths(){
+  const set = {}; RECS.forEach(r => { const y = ymOf(r.date); if(y) set[y] = 1; });
+  return Object.keys(set).sort().reverse();
+}
 function filtered(){
   const q = HQ.trim().toLowerCase();
-  if(!q) return RECS;
-  return RECS.filter(r => [r.no, r.dept, r.user, r.kind, r.brief, r.by]
-    .join(' ').toLowerCase().includes(q));
+  let list = RECS;
+  if(HYM) list = list.filter(r => ymOf(r.date) === HYM);
+  if(!q) return list;
+  return list.filter(r => ([r.no, r.dept, r.user, r.kind, r.brief, r.by, r.memo].join(' ') + ' ' +
+    prItems(r).map(it => [it.code, it.name, it.vendor, it.proj].join(' ')).join(' '))
+    .toLowerCase().includes(q));
+}
+function paintMonths(){
+  const sel = $('hym'); if(!sel) return;
+  const ms = prMonths();
+  if(HYM && ms.indexOf(HYM) < 0) ms.unshift(HYM);
+  sel.innerHTML = '<option value="">全部月份</option>' +
+    ms.map(m => '<option value="' + m + '"' + (m === HYM ? ' selected' : '') + '>' + ymTxt(m) + '</option>').join('');
+  const b = $('hxMonth'); if(b) b.textContent = (HYM ? '匯出 ' + ymTxt(HYM) : '匯出本月') + ' Excel';
+}
+
+/* ---------- 匯出 Excel ---------- */
+const n2 = v => { const x = num(v); return x ? Math.round(x * 100) / 100 : ''; };
+function prDetailRows(src){
+  const out = [];
+  src.forEach(r => {
+    const d = r.data || {};
+    const items = prItems(r);
+    const base = {'單號':r.no, '請購日期':r.date, '請購單別':r.kind, '請購部門':r.dept, '請購人員':r.user,
+      '請購幣別':r.cur, '營業稅率':r.tax};
+    const tail = {'單據備註':r.memo, '總經理':r.gm, '採購承辦人':r.buyer, '主管':r.mgr, '請購人':r.req,
+      '填表人':r.by, '建立時間':r.at};
+    if(!items.length){ out.push(Object.assign({}, base, {'項次':'', '品號':'', '品名規格':r.brief}, tail)); return; }
+    items.forEach((it, i) => out.push(Object.assign({}, base, {
+      '項次':i+1, '品號':it.code||'', '品名規格':it.name||'', '請購數量':n2(it.qty), '單位':it.unit||'',
+      '請購單價':n2(it.price), '請購金額(未稅)':n2(num(it.qty) * num(it.price)),
+      '供應廠商/備註':it.vendor||'', '專案代號':it.proj||''}, tail)));
+  });
+  return out;
+}
+function prOrderRows(src){
+  return src.map(r => { const its = prItems(r);
+    const q = its.length ? its.reduce((s, it) => s + num(it.qty), 0) : num(r.tqty);
+    const a = its.length ? its.reduce((s, it) => s + num(it.qty) * num(it.price), 0) : num(r.tamt);
+    return {'單號':r.no, '請購日期':r.date, '請購單別':r.kind, '請購部門':r.dept,
+    '請購人員':r.user, '請購幣別':r.cur, '營業稅率':r.tax, '項數':its.length || n2(r.count), '數量合計':n2(q),
+    '單位':r.tunit, '金額合計(未稅)':n2(a), '品項摘要':r.brief, '單據備註':r.memo,
+    '總經理':r.gm, '採購承辦人':r.buyer, '主管':r.mgr, '請購人':r.req, '填表人':r.by, '建立時間':r.at}; });
+}
+function prCodeRows(src){
+  const g = {}, order = [];
+  src.forEach(r => prItems(r).forEach(it => {
+    const k = (it.code || '').trim() || '（無品號）' + (it.name || '');
+    if(!g[k]){ g[k] = {code:it.code||'', name:it.name||'', unit:it.unit||'', q:0, a:0, nos:{}, v:{}}; order.push(k); }
+    const b = g[k]; b.q += num(it.qty); b.a += num(it.qty) * num(it.price); b.nos[r.no] = 1;
+    if(it.vendor) b.v[it.vendor] = 1;
+  }));
+  return order.map(k => { const b = g[k]; return {'品號':b.code, '品名規格':b.name, '單位':b.unit,
+    '請購數量合計':n2(b.q), '請購金額合計(未稅)':n2(b.a), '請購單數':Object.keys(b.nos).length,
+    '請購單號':Object.keys(b.nos).join('、'), '供應廠商':Object.keys(b.v).join('、')}; });
+}
+function writeXlsx(sheets, file){
+  if(typeof XLSX === 'undefined') return alert('Excel 元件還沒載入完成（需要網路），請稍候再試一次。');
+  const wb = XLSX.utils.book_new();
+  sheets.forEach(([name, rows]) => {
+    const ws = XLSX.utils.json_to_sheet(rows.length ? rows : [{'說明':'沒有資料'}]);
+    const keys = Object.keys(rows[0] || {'說明':''});
+    ws['!cols'] = keys.map(k => ({wch: Math.min(40, Math.max(k.length * 2 + 2,
+      ...rows.slice(0, 200).map(r => String(r[k] == null ? '' : r[k]).length + 2)))}));
+    XLSX.utils.book_append_sheet(wb, ws, name.slice(0, 30));
+  });
+  XLSX.writeFile(wb, file);
+}
+function exportPrMonth(){
+  if(!ME) return toast('請先登入');
+  if(!RECS.length) return toast('還沒有任何已送出的請購單');
+  const ym = HYM || thisYM();
+  const src = RECS.filter(r => ymOf(r.date) === ym);
+  if(!src.length) return toast(ymTxt(ym) + ' 沒有請購單');
+  writeXlsx([['請購明細', prDetailRows(src)], ['單號彙總', prOrderRows(src)], ['品號彙總', prCodeRows(src)]],
+    '請購單_' + ym + '.xlsx');
+  toast('已匯出 ' + ymTxt(ym) + '，共 ' + src.length + ' 張');
+}
+function exportPrAll(){
+  if(!ME) return toast('請先登入');
+  if(!RECS.length) return toast('還沒有任何已送出的請購單');
+  const d = new Date(), p = n => (n < 10 ? '0' : '') + n;
+  writeXlsx([['請購明細', prDetailRows(RECS)], ['單號彙總', prOrderRows(RECS)], ['品號彙總', prCodeRows(RECS)]],
+    '請購單_全部_' + d.getFullYear() + p(d.getMonth()+1) + p(d.getDate()) + '.xlsx');
+  toast('已匯出全部，共 ' + RECS.length + ' 張');
 }
 function renderHist(){
   const box = $('histBody'), cnt = $('histCount');
@@ -898,13 +1001,16 @@ function renderHist(){
     box.innerHTML = '<div class="empty">登入後才看得到已送出的請購單。</div>';
     return;
   }
+  paintMonths();
   const list = filtered().slice().reverse();
-  cnt.textContent = '共 ' + RECS.length + ' 張' + (HQ.trim() ? '，符合 ' + list.length + ' 張' : '');
+  const nItems = RECS.reduce((s, r) => s + (prItems(r).length || 0), 0);
+  cnt.textContent = '共 ' + RECS.length + ' 張' + (nItems ? ' / ' + nItems + ' 筆明細' : '') +
+    ((HQ.trim() || HYM) ? '，' + (HYM ? ymTxt(HYM) + ' ' : '') + '符合 ' + list.length + ' 張' : '');
   if(!list.length){
     box.innerHTML = '<div class="empty">' + (RECS.length ? '查無符合的請購單' : '還沒有任何已送出的請購單') + '</div>';
     return;
   }
-  box.innerHTML = '<table><thead><tr>' +
+  box.innerHTML = '<div class="tblwrap"><table><thead><tr>' +
     '<th>單號</th><th>日期</th><th>單別</th><th>部門</th><th>請購人員</th>' +
     '<th>項數</th><th>數量</th><th>金額(未稅)</th><th>填表人</th><th>操作</th></tr></thead><tbody>' +
     list.map(r => '<tr>' +
@@ -922,7 +1028,7 @@ function renderHist(){
         '<button class="btn" onclick="wordOf(\'' + esc(r.no) + '\')">Word</button>' +
         (isAdmin() ? '<button class="btn danger" onclick="delRec(\'' + esc(r.no) + '\')">刪除</button>' : '') +
       '</td></tr>').join('') +
-    '</tbody></table>';
+    '</tbody></table></div>';
 }
 function recOf(no){ return RECS.find(r => r.no === no); }
 
@@ -977,6 +1083,8 @@ loadSample = function(){
 (async function init(){
   const hq = $('hq');
   if(hq) hq.oninput = e => { HQ = e.target.value; renderHist(); };
+  const hym = $('hym');
+  if(hym) hym.onchange = e => { HYM = e.target.value; renderHist(); };
   paintNet(); paintMe(); renderHist(); setMode('new');
   if(!getv('DATE')) setv('DATE', todayDot());
   if(!TOKEN && !PW){ openGate('login'); return; }
