@@ -595,7 +595,7 @@ async function _pull(silent, force){
   setNet('load');
   try{
     /* 手上已經有一份完整快取時，把版本號送上去；雲端沒變就不必整份重傳 */
-    const have = (!force && REV && S && S.items && S.items.length) ? REV : null;
+    const have = (!force && REV && S && S.items && S.items.length && Array.isArray(S.prPrices)) ? REV : null;
     const d=await apiPost('load',null,{haveRev:have});
     if(d.error){
       setNet('err');
@@ -619,6 +619,7 @@ async function _pull(silent, force){
       DIRTY=false; setNet('ok'); return true;
     }
     S={items:d.items||[],boms:d.boms||[],history:d.history||[],moves:d.moves||[],staff:d.staff||[],
+       prPrices:d.prPrices||[],
        settings:d.settings||{purchaseStop:true},
        meta:{updatedAt:d.updatedAt||'',updatedBy:d.updatedBy||''}};
     REV=d.rev||0; LASTSYNC=d.updatedAt||''; DIRTY=false;
@@ -1287,6 +1288,32 @@ function renderItems(){
   bindSort($('#itbl'),itemSt);
   if(typeof applyReadonlyUI==='function') applyReadonlyUI();
 }
+/* ---------- 請購價格紀錄（由請購單送出時自動累積，單位成本 = 台幣紀錄單價平均） ---------- */
+function prPricesOf(code){
+  return (S.prPrices||[]).filter(x=>x.code===code)
+    .slice().sort((a,b)=>String(b.date).localeCompare(String(a.date))||String(b.at).localeCompare(String(a.at)));
+}
+function prAvgNote(code){
+  const l=prPricesOf(code).filter(x=>x.twd);
+  return l.length?`<span class="mut" style="margin-left:8px;font-size:12px">（${l.length} 筆請購單價平均）</span>`:'';
+}
+function prPriceTable(code, i){
+  const l=prPricesOf(code);
+  const tw=l.filter(x=>x.twd), avg=tw.length?tw.reduce((s,x)=>s+x.price,0)/tw.length:null;
+  const qty=tw.reduce((s,x)=>s+(x.qty||0),0);
+  return `<h3 style="font-size:13px;margin:16px 0 8px">請購紀錄　<span class="mut" style="font-weight:400">${l.length
+      ?`共 ${l.length} 筆${tw.length?`，平均單價 <b>${money(avg)}</b>（${tw.length} 筆平均），累計請購 ${nf(qty)} ${esc(i.unit||'')}`:''}`
+      :'尚無請購紀錄；請購單送出後會自動記錄並更新單位成本'}</span></h3>
+    ${l.length?`<div class="tblwrap" style="max-height:220px"><table class="grid"><thead><tr>
+      <th class="nos">請購日期</th><th class="nos">請購單號</th><th class="nos num">數量</th><th class="nos">單位</th>
+      <th class="nos num">單價</th><th class="nos num">金額</th><th class="nos">供應廠商</th><th class="nos">填表人</th>
+      </tr></thead><tbody>${l.map(x=>`<tr${x.twd?'':' title="外幣，不計入平均成本" style="color:var(--mut)"'}>
+      <td class="nos">${esc(x.date)}</td><td class="mono">${esc(x.no)}</td>
+      <td class="num">${nf(x.qty)}</td><td>${esc(x.unit||i.unit||'')}</td>
+      <td class="num">${x.twd?money(x.price):esc(x.cur)+' '+nf(x.price)}</td>
+      <td class="num">${x.twd?money(x.price*(x.qty||0)):esc(x.cur)+' '+nf(x.price*(x.qty||0))}</td>
+      <td>${esc(x.vendor)||'—'}</td><td>${esc(x.by)||'—'}</td></tr>`).join('')}</tbody></table></div>`:''}`;
+}
 function showItem(code){
   const i=itemOf(code), used=whereUsed(code);
   dialog(`${code}　${i.name||''}`,`
@@ -1294,7 +1321,7 @@ function showItem(code){
       <dt>品名</dt><dd>${esc(i.name)}</dd>
       <dt>規格</dt><dd>${esc(i.spec)||'—'}</dd>
       <dt>庫存數量</dt><dd><b>${nf(i.stock)}</b> ${esc(i.unit)}</dd>
-      <dt>單位成本</dt><dd>${i.cost==null?'未設定':money(i.cost)}</dd>
+      <dt>單位成本</dt><dd>${i.cost==null?'未設定':money(i.cost)}${prAvgNote(code)}</dd>
       <dt>庫存金額</dt><dd>${money((i.cost||0)*(i.stock||0))}</dd>
       <dt>安全庫存</dt><dd>${i.safety==null?'—':nf(i.safety)}</dd>
       <dt>供應商</dt><dd>${esc(i.supplier)||'—'}</dd>
@@ -1302,6 +1329,7 @@ function showItem(code){
       <dt>儲位</dt><dd>${esc(i.loc)||'—'}</dd>
       <dt>備註</dt><dd>${esc(i.note)||'—'}</dd>
     </dl>
+    ${prPriceTable(code, i)}
     <h3 style="font-size:13px;margin:16px 0 8px">用途反查　<span class="mut" style="font-weight:400">被 ${used.length} 張 BOM 使用（單台用量）</span></h3>
     ${used.length?`<div class="tblwrap" style="max-height:240px"><table class="grid"><thead><tr>
       <th class="nos">BOM 品號</th><th class="nos">產品</th><th class="nos">角色</th><th class="nos num">單台用量</th>

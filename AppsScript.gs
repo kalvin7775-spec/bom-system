@@ -252,6 +252,7 @@ function readState(){
   return {
     staff: readStaff(),
     moves: readMoves(),
+    prPrices: prPriceLog(),
     rev: Number(sysGet('rev',0)) || 0,
     updatedAt: fmtTS(sysGet('updatedAt','')),
     updatedBy: String(sysGet('updatedBy','')),
@@ -851,6 +852,99 @@ function readPr(){
   });
 }
 
+
+/* ============================================================
+   請購價格紀錄 → 料號單位成本
+   每張請購單的每個品項（有品號、有單價）都算一筆請購紀錄；
+   料號的「單位成本」= 該品號所有請購紀錄單價的平均（每筆權重相同）。
+   第一次請購時記下原本的單位成本，請購單全部被刪光後會還原回去。
+   只有台幣（請購幣別空白／台幣／TWD／NTD）的紀錄納入平均，外幣只列紀錄不算進成本。
+   ============================================================ */
+function prIsTwd(cur){
+  const c = String(cur||'').trim().toUpperCase();
+  return !c || c === '台幣' || c === '新台幣' || c === 'TWD' || c === 'NTD' || c === 'NT$' || c === 'NTD$';
+}
+function prNum(v){
+  const t = String(v==null?'':v).replace(/[，,\s　]/g,'')
+    .replace(/[０-９]/g, function(ch){ return String('０１２３４５６７８９'.indexOf(ch)); })
+    .replace(/．/g,'.');
+  const n = parseFloat(t);
+  return isNaN(n) ? 0 : n;
+}
+/* 從「請購單」工作表整理出逐筆請購紀錄 */
+function prPriceLog(){
+  const out = [];
+  rows('pr').forEach(function(r){
+    let d = {};
+    try{ d = JSON.parse(String(r['資料JSON']||'{}')); }catch(e){ d = {}; }
+    const no = String(r['請購單號']||'').trim(), date = fmtDate(r['請購日期']);
+    const cur = String(d.cur || r['請購幣別'] || '');
+    (d.items||[]).forEach(function(it, i){
+      const code = String(it.code||'').trim(), price = prNum(it.price);
+      if(!code || !(price > 0)) return;
+      out.push({code:code, no:no, date:date, seq:i+1, qty:prNum(it.qty), unit:String(it.unit||''),
+                price:price, vendor:String(it.vendor||''), cur:cur, twd:prIsTwd(cur),
+                by:String(r['填表人']||''), at:fmtTS(r['建立時間'])});
+    });
+  });
+  return out;
+}
+/* 重新計算指定品號的單位成本並寫回料號主檔（呼叫端需已持有 lock） */
+function prApplyCost(codes){
+  const want = {};
+  (codes||[]).forEach(function(c){ c = String(c||'').trim(); if(c) want[c] = 1; });
+  if(!Object.keys(want).length) return {changed:[], missing:[]};
+  const log = prPriceLog(), sums = {};
+  log.forEach(function(x){
+    if(!want[x.code] || !x.twd) return;
+    (sums[x.code] = sums[x.code] || {s:0, n:0});
+    sums[x.code].s += x.price; sums[x.code].n++;
+  });
+  let base = {};
+  try{ base = JSON.parse(String(sysGet('prBaseCost','')||'{}')) || {}; }catch(e){ base = {}; }
+  const ish = sheet('items'), last = ish.getLastRow();
+  if(last < 2) return {changed:[], missing:Object.keys(want)};
+  const head = ish.getRange(1,1,1,ish.getLastColumn()).getValues()[0].map(String);
+  const cCode = head.indexOf('品號'), cCost = head.indexOf('單位成本');
+  if(cCode < 0 || cCost < 0) return {changed:[], missing:[], error:'料號主檔缺少「品號」或「單位成本」欄'};
+  const codesCol = ish.getRange(2, cCode+1, last-1, 1).getValues();
+  const costCol  = ish.getRange(2, cCost+1, last-1, 1).getValues();
+  const idx = {};
+  for(let i=0;i<codesCol.length;i++){ const c = String(codesCol[i][0]).trim(); if(c && !(c in idx)) idx[c] = i; }
+  const changed = [], missing = [];
+  let baseDirty = false;
+  Object.keys(want).forEach(function(code){
+    if(!(code in idx)){ missing.push(code); return; }
+    const r = idx[code], old = costCol[r][0];
+    let nv;
+    if(sums[code] && sums[code].n){
+      if(!(code in base)){ base[code] = (old === '' || old === null) ? '' : old; baseDirty = true; }
+      nv = Math.round(sums[code].s / sums[code].n * 10000) / 10000;
+    }else if(code in base){
+      nv = base[code]; delete base[code]; baseDirty = true;   // 請購紀錄沒了 → 還原原本成本
+    }else return;
+    if(String(old) !== String(nv)){
+      ish.getRange(r+2, cCost+1).setValue(nv);
+      changed.push({code:code, before:old, after:nv, n:sums[code] ? sums[code].n : 0});
+    }
+  });
+  if(baseDirty) sysSet('prBaseCost', JSON.stringify(base));
+  return {changed:changed, missing:missing};
+}
+/* 請購紀錄有變動：BOM 版本號 +1（料號頁才會重讀成本與請購紀錄），並寫一筆異動紀錄 */
+function prBumpBom(no, what, res, who){
+  const now = nowTS();
+  if(res.changed.length)
+    sheet('hist').appendRow([now, what + ' ' + no + '：更新單位成本 ' +
+      res.changed.map(function(c){ return c.code + ' ' + (c.before===''?'未設定':c.before) + '→' + (c.after===''?'未設定':c.after); }).join('、'),
+      0, 0, 0, res.changed.length, 0, who||'']);
+  const rev = (Number(sysGet('rev',0))||0) + 1;
+  sysSet('rev', rev);
+  sysSet('updatedAt', now);
+  sysSet('updatedBy', (who||'') + '（' + what + ' ' + no + '）');
+  return rev;
+}
+
 /* 送出一張請購單：單號由填表人自己填，這裡負責擋重號並寫入 */
 function postPr(auth, p){
   if(!canWrite(auth.role))
@@ -892,9 +986,18 @@ function postPr(auth, p){
     sysSet('prRev', rev);
     sysSet('prAt', now);
     sysSet('prBy', (auth.name||'') + '（送出 ' + no + '）');
+    /* 有品號的品項 → 重算單位成本 */
+    const codes = items.map(function(it){ return String(it.code||'').trim(); }).filter(Boolean);
+    let cost = {changed:[], missing:[]};
+    if(codes.length){
+      SpreadsheetApp.flush();
+      cost = prApplyCost(codes);
+      prBumpBom(no, '請購單', cost, auth.name);
+    }
     sysFlush();
     SpreadsheetApp.flush();
-    return {ok:true, no:no, rev:rev, date:dateStr, at:now, by:auth.name||''};
+    return {ok:true, no:no, rev:rev, date:dateStr, at:now, by:auth.name||'',
+            costChanged:cost.changed, costMissing:cost.missing};
   } finally { lock.releaseLock(); }
 }
 
@@ -921,6 +1024,12 @@ function voidPr(auth, p){
       if(String(body[i][cNo]).trim() === no) hit.push(i);
     if(!hit.length)
       return {error:'找不到單號 '+no+'，可能已經被別人刪掉了，請按 ↻ 重新讀取'};
+    /* 先記下這張單有哪些品號，刪掉後要重算它們的單位成本 */
+    const cJ = head.indexOf('資料JSON'), codes = [];
+    hit.forEach(function(i){
+      try{ (JSON.parse(String(body[i][cJ]||'{}')).items||[]).forEach(function(it){
+        const c = String(it.code||'').trim(); if(c) codes.push(c); }); }catch(e){}
+    });
     for(let k=hit.length-1;k>=0;k--) sh.deleteRow(hit[k]+2);
 
     const now = nowTS();
@@ -931,9 +1040,15 @@ function voidPr(auth, p){
     sysSet('prRev', rev);
     sysSet('prAt', now);
     sysSet('prBy', (auth.name||'') + '（刪除 ' + no + '）');
+    let cost = {changed:[], missing:[]};
+    if(codes.length){
+      SpreadsheetApp.flush();
+      cost = prApplyCost(codes);
+      prBumpBom(no, '刪除請購單', cost, auth.name);
+    }
     sysFlush();
     SpreadsheetApp.flush();
-    return {ok:true, no:no, rev:rev, removed:hit.length};
+    return {ok:true, no:no, rev:rev, removed:hit.length, costChanged:cost.changed};
   } finally { lock.releaseLock(); }
 }
 

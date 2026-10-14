@@ -265,7 +265,8 @@ https://github.com/nodeca/pako/blob/main/LICENSE
 
 <div class="histwrap" id="histWrap">
   <h2>已送出的請購單 <span id="histCount" class="sub" style="font-weight:400"></span></h2>
-  <div class="sub">送出後內容就鎖住不能改；打錯的話請管理員刪掉再重開一張。</div>
+  <div class="sub">送出後內容就鎖住不能改；打錯的話請管理員刪掉再重開一張。<br>
+    有填品號與單價的品項，送出後會記入該品號的「請購紀錄」，料號單位成本自動改成歷次請購單價的平均；刪除請購單會一併重算。</div>
   <div class="htools">
     <div class="grow"><input type="search" class="hsearch" id="hq" placeholder="搜尋單號 / 部門 / 請購人員 / 品號 / 廠商…"></div>
     <select id="hym"><option value="">全部月份</option></select>
@@ -888,7 +889,16 @@ async function submitPr(){
     setNet('ok');
     await pull(true);
     setMode('view', d.no);
-    toast('已送出並存檔：' + d.no);
+    /* 後端已依請購單價重算料號單位成本：同步到本機的料號清單，並告訴填表人改了哪些 */
+    const chg = d.costChanged || [];
+    chg.forEach(c => { const it = IDX[String(c.code).toUpperCase()]; if(it) it.cost = c.after === '' ? null : c.after; });
+    toast('已送出並存檔：' + d.no + (chg.length ? '，已更新 ' + chg.length + ' 個品號的單位成本' : ''));
+    if(chg.length || (d.costMissing || []).length)
+      alert('已送出 ' + d.no + '\n\n' +
+        (chg.length ? '料號單位成本已更新（請購單價平均）：\n' + chg.map(c => '・' + c.code + '　' +
+          (c.before === '' || c.before === null ? '未設定' : c.before) + ' → ' + c.after +
+          '（' + c.n + ' 筆平均）').join('\n') : '') +
+        ((d.costMissing || []).length ? '\n\n下列品號不在料號主檔，沒有記入成本：\n' + d.costMissing.join('、') : ''));
     if(confirm('已送出 ' + d.no + '，要現在下載 Word 嗎？')) exportWord();
   }catch(e){
     setNet('err');
