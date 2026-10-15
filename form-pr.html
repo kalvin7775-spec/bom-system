@@ -585,6 +585,7 @@ function todayDot(){
 }
 function clearAll(){
   document.querySelectorAll('#sheet .in').forEach(el => el.textContent = '');
+  setv('KIND', '一般採購'); setv('CUR', '台幣');      /* 公司預設，可改 */
   recalc();
   if(typeof fillNo === 'function'){ if(!getv('DATE')) setv('DATE', todayDot()); fillNo(); }
 }
@@ -785,6 +786,8 @@ function buildRec(){
    ['dept','DEPT'],['tax','TAX'],['memo','MEMO'],
    ['gm','GM'],['buyer','BUYER'],['mgr','MGR'],['req','REQ']]
     .forEach(p => rec[p[0]] = getv(p[1]));
+  if(!rec.kind) rec.kind = '一般採購';
+  if(!rec.cur)  rec.cur  = '台幣';
   rec.items = [];
   for(let n = 1; n <= ROWS; n++){
     const it = {code:getv('I'+n+'CODE'), name:getv('I'+n+'NAME'), qty:getv('I'+n+'QTY'),
@@ -1250,6 +1253,8 @@ loadSample = function(){
   if(hym) hym.onchange = e => { HYM = e.target.value; renderHist(); };
   paintNet(); paintMe(); renderHist(); setMode('new');
   if(!getv('DATE')) setv('DATE', todayDot());
+  if(!getv('KIND')) setv('KIND', '一般採購');
+  if(!getv('CUR'))  setv('CUR', '台幣');
   if(!TOKEN && !PW){ openGate('login'); return; }
   if(await whoAmI()) await pull();
 })();

@@ -1023,6 +1023,46 @@ function prOtherLog(){
   return out;
 }
 
+/* 請購單別／幣別預設值 */
+const PR_DEF_KIND = '一般採購', PR_DEF_CUR = '台幣';
+/* 一次性修正：已送出但「請購單別」「請購幣別」空白的請購單，補上預設值（表欄位與資料JSON一起改）
+   在 Apps Script 編輯器選這個函式按「執行」即可；可重複執行，已有值的不會動 */
+function prFillDefaults(){
+  const lock = LockService.getScriptLock();
+  lock.waitLock(25000);
+  try{
+    const sh = sheet('pr'), last = sh.getLastRow();
+    if(last < 2) return '沒有請購單';
+    const lastC = sh.getLastColumn();
+    const head = sh.getRange(1,1,1,lastC).getValues()[0].map(String);
+    const cNo = head.indexOf('請購單號'), cK = head.indexOf('請購單別'),
+          cC = head.indexOf('請購幣別'), cJ = head.indexOf('資料JSON');
+    const body = sh.getRange(2,1,last-1,lastC).getValues();
+    const fixed = [];
+    body.forEach(function(r, i){
+      let d = {}; try{ d = JSON.parse(String(r[cJ]||'{}')); }catch(e){ return; }
+      let ch = false;
+      if(!String(r[cK]||'').trim() || !String(d.kind||'').trim()){ d.kind = String(r[cK]||'').trim() || String(d.kind||'').trim() || PR_DEF_KIND; ch = true; }
+      if(!String(r[cC]||'').trim() || !String(d.cur||'').trim()){ d.cur = String(r[cC]||'').trim() || String(d.cur||'').trim() || PR_DEF_CUR; ch = true; }
+      if(!ch) return;
+      sh.getRange(i+2, cK+1).setValue(d.kind);
+      sh.getRange(i+2, cC+1).setValue(d.cur);
+      sh.getRange(i+2, cJ+1).setValue(JSON.stringify(d));
+      fixed.push(String(r[cNo]));
+    });
+    if(fixed.length){
+      const now = nowTS();
+      sheet('hist').appendRow([now, '補正請購單別／幣別：' + fixed.join('、'), 0, 0, 0, 0, fixed.length, 'prFillDefaults']);
+      const rev = (Number(sysGet('prRev',0))||0) + 1;
+      sysSet('prRev', rev); sysSet('prAt', now); sysSet('prBy', '補正請購單別／幣別');
+      sysFlush(); SpreadsheetApp.flush();
+    }
+    const msg = fixed.length ? '已補正 ' + fixed.length + ' 張：' + fixed.join('、') : '沒有需要補正的請購單';
+    Logger.log(msg);
+    return msg;
+  } finally { lock.releaseLock(); }
+}
+
 /* 送出一張請購單：單號由系統自動編（noAuto），舊版前端手填單號則照舊擋重號 */
 function postPr(auth, p){
   if(!canWrite(auth.role))
@@ -1036,6 +1076,9 @@ function postPr(auth, p){
   if(no.length > 30) return {error:'「請購單號」太長'};
   const items = rec.items || [];
   if(!items.length) return {error:'請至少填一項請購品項'};
+  /* 請購單別、請購幣別沒填就用公司預設 */
+  if(!String(rec.kind||'').trim()) rec.kind = PR_DEF_KIND;
+  if(!String(rec.cur||'').trim())  rec.cur  = PR_DEF_CUR;
 
   const lock = LockService.getScriptLock();
   lock.waitLock(25000);
