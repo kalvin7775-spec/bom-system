@@ -595,7 +595,7 @@ async function _pull(silent, force){
   setNet('load');
   try{
     /* 手上已經有一份完整快取時，把版本號送上去；雲端沒變就不必整份重傳 */
-    const have = (!force && REV && S && S.items && S.items.length && Array.isArray(S.prPrices)) ? REV : null;
+    const have = (!force && REV && S && S.items && S.items.length && Array.isArray(S.prPrices) && Array.isArray(S.prOther)) ? REV : null;
     const d=await apiPost('load',null,{haveRev:have});
     if(d.error){
       setNet('err');
@@ -619,7 +619,7 @@ async function _pull(silent, force){
       DIRTY=false; setNet('ok'); return true;
     }
     S={items:d.items||[],boms:d.boms||[],history:d.history||[],moves:d.moves||[],staff:d.staff||[],
-       prPrices:d.prPrices||[],
+       prPrices:d.prPrices||[], prOther:d.prOther||[],
        settings:d.settings||{purchaseStop:true},
        meta:{updatedAt:d.updatedAt||'',updatedBy:d.updatedBy||''}};
     REV=d.rev||0; LASTSYNC=d.updatedAt||''; DIRTY=false;
@@ -1207,7 +1207,8 @@ function vItems(){
     </div>
     <div class="hint">點任一列可看明細、用途反查，並可編輯或刪除該料號。</div>
   </div>
-  <div id="itemTbl"></div>`;
+  <div id="itemTbl"></div>
+  <div id="prOtherBox"></div>`;
   /* 工具列事件只綁一次，之後都只重繪表格 */
   $('#iq').oninput=e=>{itemSt.q=e.target.value;renderItems();};
   $('#sortK').onchange=e=>{itemSt.key=e.target.value;renderItems();};
@@ -1221,6 +1222,50 @@ function vItems(){
     document.querySelectorAll('#v-items .chip').forEach(x=>x.classList.toggle('on',x===c));
     renderItems();});
   renderItems();
+  renderPrOther();
+}
+/* ---------- 其他採購紀錄（請購單上沒填品號的品項：運費、文具、雜支…） ---------- */
+const poSt={q:''};
+function prOtherList(){
+  const q=poSt.q.trim().toLowerCase();
+  return (S.prOther||[]).slice()
+    .sort((a,b)=>String(b.date).localeCompare(String(a.date))||String(b.no).localeCompare(String(a.no))||a.seq-b.seq)
+    .filter(x=>!q||[x.no,x.name,x.vendor,x.proj,x.user,x.by].join(' ').toLowerCase().includes(q));
+}
+function renderPrOther(){
+  const el=$('#prOtherBox'); if(!el) return;
+  const all=S.prOther||[], list=prOtherList();
+  const tw=list.filter(x=>prTwd(x.cur)), sum=tw.reduce((s,x)=>s+(+x.amt||0),0);
+  el.innerHTML=`<div class="card" style="margin-top:14px">
+    <h2>其他採購紀錄（無品號） <span class="sub">請購單上沒有填品號的品項都歸在這裡，共 ${all.length} 筆${
+      list.length?`，台幣金額合計 ${money(sum)}`:''}</span></h2>
+    <div class="row" style="margin-bottom:10px">
+      <div class="grow"><input type="search" id="poq" placeholder="搜尋品名 / 請購單號 / 廠商 / 專案代號 / 請購人…" value="${esc(poSt.q)}"></div>
+      <button class="btn" onclick="exportPrOther()">匯出 Excel</button>
+    </div>
+    ${list.length?`<div class="tblwrap" style="max-height:50vh"><table class="grid"><thead><tr>
+      <th class="nos">請購日期</th><th class="nos">請購單號</th><th class="nos">品名規格</th><th class="nos num">數量</th>
+      <th class="nos">單位</th><th class="nos num">單價</th><th class="nos num">金額</th><th class="nos">供應廠商</th>
+      <th class="nos">專案代號</th><th class="nos">請購人員</th></tr></thead><tbody>
+      ${list.map(x=>`<tr><td class="nos">${esc(x.date)}</td><td class="mono">${esc(x.no)}</td><td>${esc(x.name)||'—'}</td>
+        <td class="num">${nf(x.qty)}</td><td>${esc(x.unit)}</td>
+        <td class="num">${prTwd(x.cur)?money(x.price):esc(x.cur)+' '+nf(x.price)}</td>
+        <td class="num">${prTwd(x.cur)?money(x.amt):esc(x.cur)+' '+nf(x.amt)}</td>
+        <td>${esc(x.vendor)||'—'}</td><td>${esc(x.proj)||'—'}</td><td>${esc(x.user||x.by)||'—'}</td></tr>`).join('')}
+      </tbody></table></div>`
+      :`<div class="empty">${all.length?'查無符合的紀錄':'目前沒有無品號的採購紀錄；請購單上品號留白的品項送出後會出現在這裡。'}</div>`}
+  </div>`;
+  const q=$('#poq'); if(q) q.oninput=e=>{ poSt.q=e.target.value; const pos=e.target.selectionStart;
+    renderPrOther(); const n=$('#poq'); n.focus(); try{ n.setSelectionRange(pos,pos); }catch(e2){} };
+}
+function prTwd(cur){ const c=String(cur||'').trim().toUpperCase();
+  return !c||['台幣','新台幣','TWD','NTD','NT$','NTD$'].includes(c); }
+function exportPrOther(){
+  const list=prOtherList(); if(!list.length) return toast('沒有可匯出的紀錄');
+  xlsxOut([['其他採購紀錄(無品號)',list.map(x=>({請購日期:x.date,請購單號:x.no,項次:x.seq,品名規格:x.name,
+    數量:x.qty,單位:x.unit,單價:x.price,金額:x.amt,幣別:x.cur,供應廠商:x.vendor,專案代號:x.proj,
+    請購人員:x.user,填表人:x.by,建立時間:x.at}))]],
+    `其他採購紀錄_${new Date().toISOString().slice(0,10).replace(/-/g,'')}.xlsx`);
 }
 
 /* 第二級「分類」下拉，內容隨系列變動，並附上該分類目前筆數 */

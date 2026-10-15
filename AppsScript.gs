@@ -26,7 +26,7 @@ const LEGACY_PW_ENABLED = true;                 // 全部同事都註冊完後�
 
 const SH = {items:'料號主檔', boms:'BOM主檔', lines:'BOM明細', hist:'異動紀錄', sys:'系統',
             users:'使用者', moves:'庫存異動', serial:'產品批序號', ecr:'文件變更審查',
-            pr:'請購單'};
+            pr:'請購單', prReg:'請購單編號'};
 
 const HEAD = {
   items:['品號','品名','規格','單位','庫存數量','單位成本','安全庫存','供應商','交期','儲位','MSB','備註'],
@@ -46,7 +46,9 @@ const HEAD = {
   /* 請購單 MR-2-06-02-A：一張單一列，最後一欄存完整品項供還原 Word */
   pr:['請購單號','請購日期','請購單別','請購部門','請購人員','請購幣別','營業稅率','備註',
       '項數','數量合計','單位','金額合計(未稅)','品項摘要','總經理','採購承辦人','主管','請購人',
-      '填表人','建立時間','資料JSON']
+      '填表人','建立時間','資料JSON'],
+  /* 請購單編號總表：沿用原本 Excel「請購單編號」的欄位，存系統上線前已用掉的單號 */
+  prReg:['請購單號','廠商','請購人','專案代碼','轉採購單號','備註']
 };
 
 /* 角色權限：admin 全部；editor 可讀可寫；viewer 只能讀 */
@@ -62,7 +64,7 @@ function ss(){
 
 /* 首次使用：在編輯器選這個函式按「執行」，建立所有工作表並完成授權 */
 function setup(){
-  ['items','boms','lines','hist','sys','users','moves','serial','ecr','pr'].forEach(sheet);
+  ['items','boms','lines','hist','sys','users','moves','serial','ecr','pr','prReg'].forEach(sheet);
   if(String(sysGet('rev',''))==='') { sysSet('rev', 0); sysFlush(); }
   const s = ss();
   const d = s.getSheetByName('工作表1');
@@ -253,6 +255,7 @@ function readState(){
     staff: readStaff(),
     moves: readMoves(),
     prPrices: prPriceLog(),
+    prOther: prOtherLog(),
     rev: Number(sysGet('rev',0)) || 0,
     updatedAt: fmtTS(sysGet('updatedAt','')),
     updatedBy: String(sysGet('updatedBy','')),
@@ -945,15 +948,91 @@ function prBumpBom(no, what, res, who){
   return rev;
 }
 
-/* 送出一張請購單：單號由填表人自己填，這裡負責擋重號並寫入 */
+/* ============================================================
+   請購單號自動編碼：PR-年(2碼)月(2碼)流水號(3碼)，例 PR-2610004；每月從 001 重新編
+   取號範圍 = 舊編號總表（Excel 匯入）＋ 系統已送出的請購單 ＋ 已作廢的單號（作廢號不再使用）
+   ============================================================ */
+function readPrReg(){
+  return rows('prReg').map(function(r){
+    return {no:String(r['請購單號']||'').trim(), vendor:String(r['廠商']||'').trim(),
+            user:String(r['請購人']||'').trim(), proj:String(r['專案代碼']||'').trim(),
+            po:String(r['轉採購單號']||'').trim(), memo:String(r['備註']||'').trim()};
+  }).filter(function(x){ return x.no; });
+}
+function prVoidNos(){
+  return String(sysGet('prVoidNos','')||'').split(',').map(function(x){ return x.trim(); }).filter(Boolean);
+}
+function prYmOf(dateStr){
+  const m = String(dateStr||'').match(/(\d{4})\D*(\d{1,2})/);
+  if(m) return m[1].slice(2) + ('0' + m[2]).slice(-2);
+  return Utilities.formatDate(new Date(),'Asia/Taipei','yyMM');
+}
+function prNextNo(ym){
+  let max = 0;
+  const re = new RegExp('^PR-' + ym + '(\\d{3})$');
+  const take = function(no){ const m = String(no||'').trim().toUpperCase().match(re); if(m) max = Math.max(max, parseInt(m[1],10)); };
+  readPrReg().forEach(function(x){ take(x.no); });
+  rows('pr').forEach(function(r){ take(r['請購單號']); });
+  prVoidNos().forEach(take);
+  return 'PR-' + ym + String(max + 1).padStart(3,'0');
+}
+/* 匯入舊的請購單編號（管理員）：整張取代，以 Excel 為準 */
+function importPrReg(auth, p){
+  if(!isAdmin(auth.role)) return {error:'只有管理員可以匯入請購單編號。', denied:true};
+  const list = ((p && p.rows) || []).map(function(x){
+    return [String(x.no||'').trim(), String(x.vendor||'').trim(), String(x.user||'').trim(),
+            String(x.proj||'').trim(), String(x.po||'').trim(), String(x.memo||'').trim()];
+  }).filter(function(r){ return /^PR-\d{7}$/i.test(r[0]); });
+  if(!list.length) return {error:'沒有可匯入的請購單號（格式需為 PR-YYMMNNN）'};
+  const lock = LockService.getScriptLock();
+  lock.waitLock(25000);
+  try{
+    const sh = sheet('prReg');
+    const last = sh.getLastRow();
+    if(last > 1) sh.getRange(2,1,last-1,sh.getLastColumn()).clearContent();
+    markTextCol(sh, 2, 1, list.length);
+    markTextCol(sh, 2, 4, list.length);
+    markTextCol(sh, 2, 5, list.length);
+    sh.getRange(2,1,list.length,HEAD.prReg.length).setValues(list);
+    const now = nowTS();
+    sheet('hist').appendRow([now, '匯入請購單編號 ' + list.length + ' 筆', list.length, 0, 0, 0, 0, auth.name||'']);
+    const rev = (Number(sysGet('prRev',0))||0) + 1;
+    sysSet('prRev', rev); sysSet('prAt', now); sysSet('prBy', (auth.name||'') + '（匯入請購單編號）');
+    sysFlush(); SpreadsheetApp.flush();
+    return {ok:true, count:list.length, rev:rev};
+  } finally { lock.releaseLock(); }
+}
+/* 無品號的請購品項：歸到「其他採購紀錄」 */
+function prOtherLog(){
+  const out = [];
+  rows('pr').forEach(function(r){
+    let d = {};
+    try{ d = JSON.parse(String(r['資料JSON']||'{}')); }catch(e){ d = {}; }
+    const no = String(r['請購單號']||'').trim(), date = fmtDate(r['請購日期']);
+    const cur = String(d.cur || r['請購幣別'] || '');
+    (d.items||[]).forEach(function(it, i){
+      if(String(it.code||'').trim()) return;
+      if(!String(it.name||'').trim() && !prNum(it.price) && !prNum(it.qty)) return;
+      const qty = prNum(it.qty), price = prNum(it.price);
+      out.push({no:no, date:date, seq:i+1, name:String(it.name||''), qty:qty, unit:String(it.unit||''),
+                price:price, amt:Math.round(qty*price*100)/100, vendor:String(it.vendor||''),
+                proj:String(it.proj||''), cur:cur, user:String(d.user||r['請購人員']||''),
+                by:String(r['填表人']||''), at:fmtTS(r['建立時間'])});
+    });
+  });
+  return out;
+}
+
+/* 送出一張請購單：單號由系統自動編（noAuto），舊版前端手填單號則照舊擋重號 */
 function postPr(auth, p){
   if(!canWrite(auth.role))
     return {error: auth.legacy ? '共用密碼為唯讀模式，無法送出請購單。'
                               : '你的權限為「唯讀」，無法送出請購單。', denied:true};
   const rec = (p && p.rec) || {};
   const sum = (p && p.summary) || {};
-  const no  = String(rec.no||'').trim();
-  if(!no) return {error:'「請購單號」必填'};
+  let no  = String(rec.no||'').trim();
+  const auto = !!(p && p.noAuto);
+  if(!no && !auto) return {error:'「請購單號」必填'};
   if(no.length > 30) return {error:'「請購單號」太長'};
   const items = rec.items || [];
   if(!items.length) return {error:'請至少填一項請購品項'};
@@ -961,9 +1040,14 @@ function postPr(auth, p){
   const lock = LockService.getScriptLock();
   lock.waitLock(25000);
   try{
-    /* 手動單號一定要擋重複，否則兩個人可能撞號 */
-    const dup = rows('pr').some(function(r){ return String(r['請購單號']||'').trim() === no; });
-    if(dup) return {error:'請購單號 '+no+' 已經存在，請換一個單號'};
+    /* 自動編號：在鎖裡重新取號，兩個人同時送出也不會撞號 */
+    const asked = no;
+    if(auto){ no = prNextNo(prYmOf(rec.date)); rec.no = no; }
+    /* 手動單號一定要擋重複（含舊編號總表與已作廢的號碼） */
+    const dup = rows('pr').some(function(r){ return String(r['請購單號']||'').trim() === no; })
+      || readPrReg().some(function(x){ return x.no === no; })
+      || prVoidNos().indexOf(no) >= 0;
+    if(dup) return {error:'請購單號 '+no+' 已經用過，請換一個單號'};
 
     const now = nowTS();
     const dateStr = String(rec.date||'').trim() ||
@@ -996,7 +1080,7 @@ function postPr(auth, p){
     }
     sysFlush();
     SpreadsheetApp.flush();
-    return {ok:true, no:no, rev:rev, date:dateStr, at:now, by:auth.name||'',
+    return {ok:true, no:no, asked:asked, rev:rev, date:dateStr, at:now, by:auth.name||'',
             costChanged:cost.changed, costMissing:cost.missing};
   } finally { lock.releaseLock(); }
 }
@@ -1040,6 +1124,8 @@ function voidPr(auth, p){
     sysSet('prRev', rev);
     sysSet('prAt', now);
     sysSet('prBy', (auth.name||'') + '（刪除 ' + no + '）');
+    /* 作廢的單號記下來，自動編號不再發出同一個號碼 */
+    const vn = prVoidNos(); if(vn.indexOf(no) < 0){ vn.push(no); sysSet('prVoidNos', vn.join(',')); }
     let cost = {changed:[], missing:[]};
     if(codes.length){
       SpreadsheetApp.flush();
@@ -1311,10 +1397,12 @@ function doPost(e){
       }).filter(function(x){ return x.code; })});
 
   if(action === 'loadPr')
-    return out({ok:true, records:readPr(), rev:Number(sysGet('prRev',0))||0,
+    return out({ok:true, records:readPr(), reg:readPrReg(), voidNos:prVoidNos(),
+                rev:Number(sysGet('prRev',0))||0,
                 updatedAt:fmtTS(sysGet('prAt','')), updatedBy:String(sysGet('prBy',''))});
   if(action === 'postPr')     return out(postPr(auth, body));
   if(action === 'voidPr')     return out(voidPr(auth, body));
+  if(action === 'importPrReg') return out(importPrReg(auth, body));
 
   if(action === 'loadSerial') return out(readSerial());
 

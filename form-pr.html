@@ -53,6 +53,8 @@ td{border:1px solid var(--line);padding:2px 4px;vertical-align:middle;word-break
 .in.nw{white-space:nowrap}
 .in.ro{background:transparent;pointer-events:none}
 .in.ro:empty::before{content:""}
+.in.ro.auto{background:#eef6ee;color:#1b5e20;font-weight:600}
+.in.ro.auto:empty::before{content:attr(data-ph);color:#9aa4b2;font-weight:400}
 
 /* 單頭三列 */
 .info td{padding:3px 6px}
@@ -131,6 +133,7 @@ col.n4{width:9.5%} col.n5{width:11%} col.n6{width:12.5%} col.n7{width:11%}
 .histwrap .num{text-align:right;white-space:nowrap}
 .histwrap .empty{color:var(--mut);text-align:center;padding:22px 0}
 .histwrap .ops{white-space:nowrap}
+.histwrap td.nw{white-space:nowrap}
 .histwrap .btn{padding:4px 9px;font-size:12px;margin-right:4px}
 .histwrap .btn.danger{color:#b3261e;border-color:#f0c3bd}
 .hsearch{width:100%;font:inherit;font-size:13px;padding:7px 10px;border:1px solid #cfd6de;
@@ -225,7 +228,7 @@ https://github.com/nodeca/pako/blob/main/LICENSE
       <td><div class="lb">請購幣別：<span class="in" data-k="CUR" data-ph="台幣"></span></div></td>
     </tr>
     <tr>
-      <td><div class="lb">請購單號：<span class="in" data-k="NO" data-ph="PR-2610001"></span></div></td>
+      <td><div class="lb">請購單號：<span class="in ro auto nw" data-k="NO" data-ph="自動編號" title="系統依請購日期自動編號，送出時才正式取號"></span></div></td>
       <td><div class="lb">請購部門：<span class="in" data-k="DEPT"></span></div></td>
       <td><div class="lb">營業稅率：<span class="in" data-k="TAX"></span></div></td>
     </tr>
@@ -274,6 +277,19 @@ https://github.com/nodeca/pako/blob/main/LICENSE
     <button class="btn" onclick="exportPrAll()">匯出全部</button>
   </div>
   <div id="histBody"></div>
+</div>
+
+<div class="histwrap" id="regWrap">
+  <h2>請購單編號總表 <span id="regCount" class="sub" style="font-weight:400"></span></h2>
+  <div class="sub">單號規則：PR-年(2碼)月(2碼)流水號(3碼)，例 PR-2610004，每月從 001 重新編。
+    清單包含系統上線前 Excel 已用掉的編號，以及網頁送出、作廢的請購單；新單號一律接在這裡最後一號之後。</div>
+  <div class="htools">
+    <div class="grow"><input type="search" class="hsearch" id="rq" placeholder="搜尋單號 / 廠商 / 請購人 / 專案代碼 / 採購單號…"></div>
+    <button class="btn pri" onclick="exportRegWord()">匯出 Word</button>
+    <button class="btn" onclick="exportRegXlsx()">匯出 Excel</button>
+    <button class="btn" id="regImp" onclick="importRegXlsx()" title="以 Excel「請購單編號」整張取代舊編號（僅管理員）">匯入舊編號 Excel</button>
+  </div>
+  <div id="regBody"></div>
 </div>
 
 <div class="toast" id="toast"></div>
@@ -553,15 +569,15 @@ const SAMPLE_ITEMS = [
 function loadSample(){
   clearAll();
   setv('KIND','一般採購'); setv('USER','陳睿豪'); setv('CUR','台幣');
-  setv('NO','PR-2610001'); setv('DEPT','製造部'); setv('TAX',''); setv('MEMO','');
+  setv('DEPT','製造部'); setv('TAX',''); setv('MEMO','');
   setv('DATE', todayDot());
   setv('GM','陳廷軒'); setv('BUYER','蘇榆涵'); setv('MGR','謝嘉元'); setv('REQ','陳睿豪');
   SAMPLE_ITEMS.forEach((it, i) => {
     const n = i + 1;
     ['CODE','NAME','QTY','UNIT','PRICE','VENDOR','PROJ'].forEach((f, k) => setv('I'+n+f, it[k]));
   });
-  recalc();
-  toast('已載入範例（附件 PR-2610001 的內容）');
+  recalc(); fillNo();
+  toast('已載入範例（附件 PR-2610001 的內容，單號改用自動編號）');
 }
 function todayDot(){
   const d = new Date(), p = n => (n < 10 ? '0' : '') + n;
@@ -570,6 +586,7 @@ function todayDot(){
 function clearAll(){
   document.querySelectorAll('#sheet .in').forEach(el => el.textContent = '');
   recalc();
+  if(typeof fillNo === 'function'){ if(!getv('DATE')) setv('DATE', todayDot()); fillNo(); }
 }
 
 $('logo').src = 'data:image/png;base64,' + LOGO_B64;
@@ -589,7 +606,7 @@ const LS = {
 };
 let TOKEN = LS.get(TKKEY), PW = LS.get(PWKEY), WHO = LS.get(WHOKEY);
 let ME = null, REV = 0, NET = 'idle', LASTSYNC = '';
-let RECS = [], MODE = 'new', VIEWNO = '', HQ = '', HYM = '';
+let RECS = [], MODE = 'new', VIEWNO = '', HQ = '', HYM = '', REG = [], VOIDS = [], RQ = '';
 
 const ROLE_NAME = {admin:'管理員', editor:'編輯', viewer:'唯讀'};
 const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g,
@@ -668,8 +685,9 @@ async function pull(silent){
       return false;
     }
     RECS = d.records || [];
+    REG = d.reg || []; VOIDS = d.voidNos || [];
     REV = d.rev || 0; LASTSYNC = d.updatedAt || '';
-    setNet('ok'); renderHist();
+    setNet('ok'); renderHist(); fillNo();
     pullItems();          /* 料號主檔另外抓，抓不到也不影響填單 */
     return true;
   }catch(e){
@@ -862,17 +880,17 @@ async function submitPr(){
   if(!ME) return openGate('login', '請先登入才能送出');
   if(!canWrite()) return denyWrite();
   if(MODE === 'view') return toast('這是已送出的表單，請先按「回到新表單」');
+  fillNo();
   const rec = buildRec();
-  if(!rec.no)   return toast('請填「請購單號」');
   if(!rec.date) return toast('請填「請購日期」');
+  if(!/^\d{4}\D*\d{1,2}/.test(rec.date)) return toast('請購日期格式要像 2026.10.15，系統要用年月編單號');
+  if(!rec.no)   return toast('還沒讀到雲端的單號資料，請按 ↻ 重新讀取');
   if(!rec.items.length) return toast('請至少填一項請購品項');
   const bad = rec.items.find(it => !it.code && !it.name);
   if(bad) return toast('每一列至少要填品號或品名規格');
-  if(RECS.some(r => r.no === rec.no))
-    return toast('單號 ' + rec.no + ' 已經存在，請換一個');
   const s = buildSummary(rec);
   const msg = '確定送出？送出後內容就鎖住不能改。\n\n'
-    + '請購單號：' + rec.no + '\n'
+    + '請購單號：' + rec.no + '（自動編號，送出時正式取號）\n'
     + '請購日期：' + rec.date + '\n'
     + '請購部門：' + (rec.dept || '（未填）') + '\n'
     + '品項數：' + s.count + ' 項　數量合計：' + (s.tqty || '0') + (s.tunit || '') + '\n'
@@ -880,7 +898,7 @@ async function submitPr(){
   if(!confirm(msg)) return;
   setNet('save');
   try{
-    const d = await apiPost('postPr', null, {rec:rec, summary:s});
+    const d = await apiPost('postPr', null, {rec:rec, summary:s, noAuto:true});
     if(d.error){
       setNet('err');
       if(d.needLogin) return openGate('login', d.error);
@@ -888,7 +906,10 @@ async function submitPr(){
     }
     setNet('ok');
     await pull(true);
+    setv('NO', d.no);
     setMode('view', d.no);
+    if(d.asked && d.asked !== d.no)
+      alert('剛好有人先送出了 ' + d.asked + '，這張請購單的單號改為 ' + d.no + '。');
     /* 後端已依請購單價重算料號單位成本：同步到本機的料號清單，並告訴填表人改了哪些 */
     const chg = d.costChanged || [];
     chg.forEach(c => { const it = IDX[String(c.code).toUpperCase()]; if(it) it.cost = c.after === '' ? null : c.after; });
@@ -931,6 +952,133 @@ function paintMonths(){
   sel.innerHTML = '<option value="">全部月份</option>' +
     ms.map(m => '<option value="' + m + '"' + (m === HYM ? ' selected' : '') + '>' + ymTxt(m) + '</option>').join('');
   const b = $('hxMonth'); if(b) b.textContent = (HYM ? '匯出 ' + ymTxt(HYM) : '匯出本月') + ' Excel';
+}
+
+/* ---------- 請購單號自動編號（規則同後端 prNextNo） ---------- */
+function prYm(date){
+  const m = String(date||'').match(/(\d{4})\D*(\d{1,2})/);
+  if(m) return m[1].slice(2) + ('0' + m[2]).slice(-2);
+  const d = new Date(); return String(d.getFullYear()).slice(2) + ('0' + (d.getMonth()+1)).slice(-2);
+}
+function nextNo(ym){
+  let max = 0; const re = new RegExp('^PR-' + ym + '(\\d{3})$');
+  const take = no => { const m = String(no||'').trim().toUpperCase().match(re); if(m) max = Math.max(max, +m[1]); };
+  REG.forEach(x => take(x.no)); RECS.forEach(r => take(r.no)); VOIDS.forEach(take);
+  return 'PR-' + ym + String(max + 1).padStart(3, '0');
+}
+function fillNo(){
+  if(MODE !== 'new') return;
+  if(!ME){ setv('NO', ''); return; }
+  setv('NO', nextNo(prYm(getv('DATE'))));
+}
+
+/* ---------- 請購單編號總表（舊 Excel 編號 ＋ 系統請購單 ＋ 作廢號） ---------- */
+function uniqJoin(arr){ const o = []; arr.forEach(x => { x = String(x||'').trim(); if(x && o.indexOf(x) < 0) o.push(x); }); return o.join('、'); }
+function regRows(){
+  const map = {};
+  REG.forEach(x => map[x.no] = {no:x.no, date:'', vendor:x.vendor, user:x.user, proj:x.proj, po:x.po, memo:x.memo, src:'Excel'});
+  RECS.forEach(r => { const it = prItems(r);
+    map[r.no] = {no:r.no, date:r.date, vendor:uniqJoin(it.map(i => i.vendor)), user:r.user || r.req || '',
+      proj:uniqJoin(it.map(i => i.proj)), po:'', memo:r.memo || '', src:'系統'}; });
+  VOIDS.forEach(no => { if(!map[no]) map[no] = {no:no, date:'', vendor:'', user:'', proj:'', po:'-', memo:'已作廢', src:'系統'}; });
+  return Object.values(map).sort((a, b) => b.no.localeCompare(a.no));
+}
+function regFiltered(){
+  const q = RQ.trim().toLowerCase(), all = regRows();
+  return q ? all.filter(x => [x.no, x.vendor, x.user, x.proj, x.po, x.memo].join(' ').toLowerCase().includes(q)) : all;
+}
+function renderReg(){
+  const box = $('regBody'), cnt = $('regCount'), imp = $('regImp');
+  if(!box) return;
+  if(imp) imp.style.display = isAdmin() ? '' : 'none';
+  if(!ME){ cnt.textContent = ''; box.innerHTML = '<div class="empty">登入後才看得到請購單編號。</div>'; return; }
+  const all = regRows(), list = regFiltered();
+  const nx = nextNo(prYm(getv('DATE') || todayDot()));
+  cnt.textContent = '共 ' + all.length + ' 筆' + (RQ.trim() ? '，符合 ' + list.length + ' 筆' : '') + '　下一號 ' + nx;
+  if(!list.length){ box.innerHTML = '<div class="empty">' + (all.length ? '查無符合的單號' : '還沒有任何單號，管理員可先匯入舊編號 Excel') + '</div>'; return; }
+  box.innerHTML = '<div class="tblwrap"><table><thead><tr><th>請購單號</th><th>廠商</th><th>請購人</th>' +
+    '<th>專案代碼</th><th>轉採購單號</th><th>備註</th><th>來源</th></tr></thead><tbody>' +
+    list.map(x => '<tr' + (x.memo === '已作廢' ? ' style="color:#9aa4b2"' : '') + '>' +
+      '<td class="mono"><b>' + esc(x.no) + '</b></td><td>' + esc(x.vendor) + '</td><td class="nw">' + esc(x.user) + '</td>' +
+      '<td>' + esc(x.proj) + '</td><td class="mono">' + esc(x.po) + '</td><td>' + esc(x.memo) + '</td>' +
+      '<td class="nw">' + (x.src === '系統' ? (RECS.some(r => r.no === x.no) ? '<button class="btn" onclick="viewRec(\'' + esc(x.no) + '\')">網頁單</button>' : '系統') : 'Excel') + '</td></tr>').join('') +
+    '</tbody></table></div>';
+}
+function regStamp(){ const d = new Date(), p = n => (n < 10 ? '0' : '') + n; return d.getFullYear() + p(d.getMonth()+1) + p(d.getDate()); }
+function exportRegXlsx(){
+  if(!ME) return toast('請先登入');
+  const list = regFiltered(); if(!list.length) return toast('沒有可匯出的單號');
+  writeXlsx([['請購單編號', list.map(x => ({'請購單號':x.no, '廠商':x.vendor, '請購人':x.user, '專案代碼':x.proj,
+    '轉採購單號':x.po, '備註':x.memo, '請購日期':x.date, '來源':x.src}))]], '請購單編號_' + regStamp() + '.xlsx');
+}
+/* Word：自己組一份最小的 docx（A4 橫向、一張表），表頭每頁重複 */
+async function exportRegWord(){
+  if(!ME) return toast('請先登入');
+  if(typeof JSZip === 'undefined') return toast('Word 元件沒載入，請重新整理頁面');
+  const list = regFiltered(); if(!list.length) return toast('沒有可匯出的單號');
+  const cols = [['請購單號',1900],['廠商',3300],['請購人',1300],['專案代碼',2200],['轉採購單號',1900],['備註',3100],['來源',800]];
+  const run = (t, b) => '<w:r><w:rPr><w:rFonts w:ascii="Times New Roman" w:hAnsi="Times New Roman" w:eastAsia="標楷體"/>' +
+    (b ? '<w:b/>' : '') + '<w:sz w:val="20"/></w:rPr><w:t xml:space="preserve">' + xmlEsc(t) + '</w:t></w:r>';
+  const cell = (t, w, b, shade) => '<w:tc><w:tcPr><w:tcW w:w="' + w + '" w:type="dxa"/>' +
+    (shade ? '<w:shd w:val="clear" w:color="auto" w:fill="E7ECF3"/>' : '') + '<w:vAlign w:val="center"/></w:tcPr>' +
+    '<w:p><w:pPr><w:spacing w:before="20" w:after="20"/>' + (b ? '<w:jc w:val="center"/>' : '') + '</w:pPr>' + run(t, b) + '</w:p></w:tc>';
+  const hdr = '<w:tr><w:trPr><w:tblHeader/></w:trPr>' + cols.map(c => cell(c[0], c[1], true, true)).join('') + '</w:tr>';
+  const body = list.map(x => '<w:tr><w:trPr><w:cantSplit/></w:trPr>' +
+    [x.no, x.vendor, x.user, x.proj, x.po, x.memo, x.src].map((v, i) => cell(v, cols[i][1])).join('') + '</w:tr>').join('');
+  const bd = 'w:val="single" w:sz="4" w:space="0" w:color="000000"';
+  const title = '<w:p><w:pPr><w:jc w:val="center"/><w:spacing w:after="60"/></w:pPr>' +
+    '<w:r><w:rPr><w:rFonts w:ascii="Times New Roman" w:hAnsi="Times New Roman" w:eastAsia="標楷體"/><w:b/><w:sz w:val="32"/></w:rPr><w:t>安德斯醫學科技　請購單編號總表</w:t></w:r></w:p>' +
+    '<w:p><w:pPr><w:jc w:val="right"/><w:spacing w:after="120"/></w:pPr>' + run('匯出日期：' + todayDot() + '　共 ' + list.length + ' 筆' + (RQ.trim() ? '（篩選：' + RQ.trim() + '）' : '') + '　單號規則：PR-年月(4碼)流水號(3碼)') + '</w:p>';
+  const doc = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' +
+    '<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body>' + title +
+    '<w:tbl><w:tblPr><w:tblW w:w="14400" w:type="dxa"/><w:tblLayout w:type="fixed"/><w:tblBorders>' +
+    ['top','left','bottom','right','insideH','insideV'].map(k => '<w:' + k + ' ' + bd + '/>').join('') +
+    '</w:tblBorders><w:tblCellMar><w:left w:w="80" w:type="dxa"/><w:right w:w="80" w:type="dxa"/></w:tblCellMar></w:tblPr>' +
+    '<w:tblGrid>' + cols.map(c => '<w:gridCol w:w="' + c[1] + '"/>').join('') + '</w:tblGrid>' + hdr + body + '</w:tbl>' +
+    '<w:p/><w:sectPr><w:pgSz w:w="16838" w:h="11906" w:orient="landscape"/>' +
+    '<w:pgMar w:top="1000" w:right="1000" w:bottom="1000" w:left="1000" w:header="500" w:footer="500" w:gutter="0"/></w:sectPr>' +
+    '</w:body></w:document>';
+  const zip = new JSZip();
+  zip.file('[Content_Types].xml', '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/></Types>');
+  zip.file('_rels/.rels', '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>');
+  zip.file('word/document.xml', doc);
+  const blob = await zip.generateAsync({type:'blob', mimeType:'application/vnd.openxmlformats-officedocument.wordprocessingml.document'});
+  const fn = '請購單編號總表_' + regStamp() + '.docx';
+  const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = fn; a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+  toast('已產出 ' + fn);
+}
+/* 管理員：匯入舊的「請購單編號」Excel（整張取代） */
+function importRegXlsx(){
+  if(!isAdmin()) return toast('只有管理員可以匯入');
+  if(typeof XLSX === 'undefined') return toast('Excel 元件還沒載入完成，請稍候再試');
+  const inp = document.createElement('input'); inp.type = 'file'; inp.accept = '.xlsx,.xls';
+  inp.onchange = async () => {
+    const f = inp.files[0]; if(!f) return;
+    try{
+      const wb = XLSX.read(await f.arrayBuffer(), {type:'array'});
+      const aoa = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], {header:1, raw:false, defval:''});
+      const hi = aoa.findIndex(r => r.some(c => String(c).trim() === '請購單號'));
+      if(hi < 0) return alert('找不到「請購單號」欄');
+      const h = aoa[hi].map(c => String(c).replace(/\s+/g,''));
+      const ci = k => h.findIndex(c => c.startsWith(k));
+      const cNo = ci('請購單號'), cV = ci('廠商'), cU = ci('請購人'), cP = ci('專案代碼'), cPo = ci('轉採購單號');
+      const cM = cPo >= 0 ? cPo + 1 : -1;
+      const rows = aoa.slice(hi + 1).map(r => ({no:String(r[cNo]||'').trim().toUpperCase(),
+        vendor:String(r[cV]||'').trim(), user:String(r[cU]||'').trim(), proj:String(r[cP]||'').replace(/\s+/g,' ').trim(),
+        po:cPo >= 0 ? String(r[cPo]||'').trim() : '', memo:cM >= 0 ? String(r[cM]||'').trim() : ''}))
+        .filter(x => /^PR-\d{7}$/.test(x.no));
+      if(!rows.length) return alert('沒有符合 PR-YYMMNNN 格式的單號');
+      const last = rows.map(x => x.no).sort().pop();
+      if(!confirm('匯入 ' + rows.length + ' 筆舊請購單號（最後一號 ' + last + '）？\n會整張取代目前的舊編號清單；網頁送出的請購單不受影響。')) return;
+      setNet('save');
+      const d = await apiPost('importPrReg', null, {rows:rows});
+      if(d.error){ setNet('err'); return alert('匯入失敗：' + d.error); }
+      setNet('ok'); await pull(true);
+      toast('已匯入 ' + d.count + ' 筆，下一號 ' + nextNo(prYm(getv('DATE') || todayDot())));
+    }catch(e){ setNet('err'); alert('匯入失敗：' + (e.message || e)); }
+  };
+  inp.click();
 }
 
 /* ---------- 匯出 Excel ---------- */
@@ -1004,6 +1152,7 @@ function exportPrAll(){
   toast('已匯出全部，共 ' + RECS.length + ' 張');
 }
 function renderHist(){
+  renderReg();
   const box = $('histBody'), cnt = $('histCount');
   if(!box) return;
   if(!ME){
@@ -1062,7 +1211,7 @@ async function delRec(no){
   const r = recOf(no);
   if(!r) return toast('找不到這張請購單');
   if(!confirm('確定刪除請購單 ' + no + '？\n\n' + (r.brief || '') +
-              '\n\n這個動作不能復原，單號會被釋放出來，之後可以再被使用。')) return;
+              '\n\n這個動作不能復原。單號會標成「已作廢」，之後不會再被使用。')) return;
   const why = prompt('刪除原因（會寫進「更新比對」的異動紀錄）：', '') || '';
   setNet('save');
   try{
@@ -1093,6 +1242,10 @@ loadSample = function(){
 (async function init(){
   const hq = $('hq');
   if(hq) hq.oninput = e => { HQ = e.target.value; renderHist(); };
+  const de = document.querySelector('#sheet .in[data-k="DATE"]');
+  if(de) de.addEventListener('input', () => fillNo());
+  const rq = $('rq');
+  if(rq) rq.oninput = e => { RQ = e.target.value; renderReg(); };
   const hym = $('hym');
   if(hym) hym.onchange = e => { HYM = e.target.value; renderHist(); };
   paintNet(); paintMe(); renderHist(); setMode('new');
