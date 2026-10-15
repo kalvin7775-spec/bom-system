@@ -586,6 +586,7 @@ function todayDot(){
 function clearAll(){
   document.querySelectorAll('#sheet .in').forEach(el => el.textContent = '');
   setv('KIND', '一般採購'); setv('CUR', '台幣');      /* 公司預設，可改 */
+  setv('GM', '陳廷軒'); setv('BUYER', '蘇榆涵'); setv('MGR', '謝嘉元');   /* 簽核預設，可改 */
   recalc();
   if(typeof fillNo === 'function'){ if(!getv('DATE')) setv('DATE', todayDot()); fillNo(); }
 }
@@ -972,6 +973,8 @@ function nextNo(ym){
 function fillNo(){
   if(MODE !== 'new') return;
   if(!ME){ setv('NO', ''); return; }
+  /* 請購人：自動帶入登入者名字（已填就不蓋掉） */
+  if(!getv('REQ') && ME.name) setv('REQ', ME.name);
   setv('NO', nextNo(prYm(getv('DATE'))));
 }
 
@@ -1255,6 +1258,9 @@ loadSample = function(){
   if(!getv('DATE')) setv('DATE', todayDot());
   if(!getv('KIND')) setv('KIND', '一般採購');
   if(!getv('CUR'))  setv('CUR', '台幣');
+  if(!getv('GM'))    setv('GM', '陳廷軒');
+  if(!getv('BUYER')) setv('BUYER', '蘇榆涵');
+  if(!getv('MGR'))   setv('MGR', '謝嘉元');
   if(!TOKEN && !PW){ openGate('login'); return; }
   if(await whoAmI()) await pull();
 })();
