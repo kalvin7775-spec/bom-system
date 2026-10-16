@@ -3,7 +3,7 @@
  *  綁定於 Google 試算表（工具 → Apps Script）
  *
  *  資料表（沒有會自動建立）：
- *    料號主檔 / BOM主檔 / BOM明細 / 異動紀錄 / 系統 / 使用者 / 庫存異動 / 產品批序號
+ *    料號主檔 / BOM主檔 / BOM明細 / 異動紀錄 / 系統 / 使用者 / 庫存異動 / 產品批序號 / 訂單追蹤
  *
  *  部署：部署 → 新增部署作業 → 類型「網頁應用程式」
  *        執行身分：我　　存取權：擁有 Google 帳戶的任何人 或 所有人
@@ -1505,6 +1505,11 @@ function doPost(e){
       return out({error:'寫入失敗：'+err.message});
     }
   }
+  /* 跨部門訂單系統（orders.html） */
+  if(String(action).indexOf('ot') === 0){
+    try{ const r = otRoute(action, auth, body); if(r) return out(r); }
+    catch(err){ return out({error:'訂單系統錯誤：'+err.message}); }
+  }
   return out({error:'未知的指令：'+action});
 }
 
@@ -1540,4 +1545,557 @@ function installBackupTrigger(){
     .inTimezone('Asia/Taipei').create();
   const url = dailyBackup();          /* 立刻先備份一次，確認權限與資料夾都正常 */
   Logger.log('每日備份已啟用，備份資料夾：' + url);
+}
+
+/* ============================================================
+   跨部門訂單系統（OrderTracking 移植版）2026/10/16
+   原系統：OrderTracking v1.19.3（Google 試算表選單＋對話框）
+   移植後：orders.html ＋ 本段 API，帳號沿用全站共用帳號
+
+   角色：依「人員部門對照表」的部門自動對應（OT_DEPT_ROLE）
+         網站管理員＝訂單管理員；取貨者由建單時從人員清單指定
+   狀態：新訂單 → 製造排程中 → 製造中 → 待收貨 → 已結案
+   寄信：MailApp（第一次部署前要在編輯器執行 otAuthorize 一次）
+   逾期：installOtTrigger 執行一次 → 每天 08:00 檢查，每 4 個工作天寄一次提醒
+   ============================================================ */
+SH.ot = '訂單追蹤';
+HEAD.ot = ['訂單編號','種類','狀態','用途','需求日期','建立日期','建立者','取貨者','製造者',
+           '預計完工日','狀態變更時間','品項摘要','備註','建立時間','最後修改','最後修改者',
+           '品項JSON','紀錄JSON','溝通JSON'];
+
+const OT_PAGE_URL   = 'https://kalvin7775-spec.github.io/bom-system/orders.html';
+const OT_MAIL_ON    = true;          /* 暫時不想寄信就改成 false */
+const OT_STALL_DAYS = 4;             /* 排程停滯／待收貨擱置超過幾個日曆天就提醒 */
+const OT_CHECK_EVERY= 4;             /* 每幾個工作天寄一次逾期提醒 */
+/* 部門 → 訂單角色。沒列到的部門：可看、可留言、被指定為取貨者時可結案 */
+const OT_DEPT_ROLE  = {'業務部':'creator', '研發部':'creator', '管理部':'creator', '製造部':'maker'};
+const OT_ST = ['新訂單','製造排程中','製造中','待收貨','已結案'];
+const OT_TYPES = {
+  SAMPLE:{name:'安德斯樣品', re:/^\d{2}-\d{3}-[A-Za-z0-9]+$/, ex:'26-016-A'},
+  ORDER: {name:'安德斯訂單', re:/^O\d{9}$/,                ex:'O202610001'},
+  RD:    {name:'其他樣品',   re:/^RD-\d{8}-\d{2}$/,         ex:'RD-20261016-01'}
+};
+
+/* ---------- 路由：doPost 收到 ot 開頭的指令都轉來這裡 ---------- */
+function otRoute(action, auth, body){
+  const p = body.payload || {};
+  if(action === 'otLoad')     return otLoad(auth);
+  if(action === 'otCreate')   return otCreate(auth, p);
+  if(action === 'otEdit')     return otEdit(auth, p);
+  if(action === 'otAdvance')  return otAdvance(auth, p);
+  if(action === 'otSetMake')  return otSetMake(auth, p);
+  if(action === 'otDelete')   return otDelete(auth, p);
+  if(action === 'otComment')  return otComment(auth, p);
+  if(action === 'otImport')   return otImport(auth, p);
+  if(action === 'otOverdue'){
+    if(!isAdmin(auth.role)) return {error:'只有管理員可以手動執行逾期檢查'};
+    return otCheckOverdue(true, !!p.dryRun);
+  }
+  return null;
+}
+
+/* ---------- 人員與角色 ---------- */
+function otStaffMatch(staff, name){
+  name = String(name||'').trim(); if(!name) return null;
+  let hit = staff.find(function(s){ return s.name === name || s.alias === name; });
+  if(hit) return hit;
+  /* 帳號「陳睿豪」對到對照表的「睿豪」：姓名以對照表名字結尾、且至少兩個字 */
+  return staff.find(function(s){ return s.name.length >= 2 && name.length > s.name.length &&
+                                         name.slice(-s.name.length) === s.name; }) || null;
+}
+function otPeople(){
+  const staff = readStaff();
+  const users = userRows().filter(function(u){ return String(u['狀態']) === 'active'; });
+  const list = [], seen = {};
+  users.forEach(function(u){
+    const name = String(u['姓名']||'').trim(); if(!name || seen[name]) return;
+    const s = otStaffMatch(staff, name);
+    const dept = s ? s.dept : '';
+    seen[name] = 1; if(s) seen['#'+s.name] = 1;
+    list.push({name:name, dept:dept, alias:s?s.alias:'', role:OT_DEPT_ROLE[dept]||'',
+               admin:String(u['角色'])==='admin', account:true, email:String(u['Email']||'').trim()});
+  });
+  staff.forEach(function(s){
+    if(seen['#'+s.name] || seen[s.name]) return;
+    list.push({name:s.name, dept:s.dept, alias:s.alias, role:OT_DEPT_ROLE[s.dept]||'',
+               admin:false, account:false, email:''});
+  });
+  return list;
+}
+function otMe(auth, people){
+  const me = (people||otPeople()).find(function(x){ return x.name === auth.name; }) || {};
+  const admin = isAdmin(auth.role);
+  const w = canWrite(auth.role);
+  return {name:auth.name, dept:me.dept||'', admin:admin, write:w,
+          creator: w && (admin || me.role === 'creator'),
+          maker:   w && (admin || me.role === 'maker')};
+}
+
+/* ---------- 讀寫 ---------- */
+function otJSON(s, d){ try{ const v = JSON.parse(String(s||'')); return v===null||v===undefined?d:v; }catch(e){ return d; } }
+function otFromRow(r){
+  return {no:String(r['訂單編號']||'').trim(), type:String(r['種類']||''), status:String(r['狀態']||''),
+    purpose:String(r['用途']||''), req:fmtDate(r['需求日期']), created:fmtDate(r['建立日期']),
+    creator:String(r['建立者']||''), picker:String(r['取貨者']||''), maker:String(r['製造者']||''),
+    est:fmtDate(r['預計完工日']), statusAt:fmtTS(r['狀態變更時間']), brief:String(r['品項摘要']||''),
+    memo:String(r['備註']||''), createdAt:fmtTS(r['建立時間']), updatedAt:fmtTS(r['最後修改']),
+    updatedBy:String(r['最後修改者']||''),
+    items:otJSON(r['品項JSON'],[]), log:otJSON(r['紀錄JSON'],[]), comments:otJSON(r['溝通JSON'],[])};
+}
+function otToRow(o){
+  return [o.no, o.type, o.status, o.purpose||'', o.req||'', o.created||'', o.creator||'', o.picker||'',
+    o.maker||'', o.est||'', o.statusAt||'', otBrief(o.items), o.memo||'', o.createdAt||'',
+    o.updatedAt||'', o.updatedBy||'', JSON.stringify(o.items||[]), JSON.stringify(o.log||[]),
+    JSON.stringify(o.comments||[])];
+}
+function otBrief(items){
+  return (items||[]).map(function(it){ return (it.name||it.code||'') + ' x' + (it.qty||0); }).join('；');
+}
+function otAll(){ return rows('ot').map(otFromRow); }
+function otRowOf(no){
+  const sh = sheet('ot'); const last = sh.getLastRow();
+  if(last < 2) return -1;
+  const ids = sh.getRange(2,1,last-1,1).getDisplayValues();
+  for(let i=0;i<ids.length;i++) if(String(ids[i][0]).trim() === no) return i+2;
+  return -1;
+}
+function otGet(no){
+  const r = otRowOf(no); if(r < 0) return null;
+  const sh = sheet('ot');
+  const head = sh.getRange(1,1,1,sh.getLastColumn()).getValues()[0].map(String);
+  const v = sh.getRange(r,1,1,head.length).getValues()[0];
+  const o = {}; head.forEach(function(h,i){ o[h]=v[i]; });
+  return {row:r, o:otFromRow(o)};
+}
+function otPut(o, row){
+  const sh = sheet('ot');
+  const at = row > 0 ? row : sh.getLastRow()+1;
+  const rng = sh.getRange(at, 1, 1, HEAD.ot.length);
+  rng.setNumberFormat('@');                 /* 日期、單號一律存純文字，避免時區位移 */
+  rng.setValues([otToRow(o)]);
+  return at;
+}
+function otBump(auth, what){
+  const now = nowTS();
+  sysSet('otRev', (Number(sysGet('otRev',0))||0) + 1);
+  sysSet('otAt', now);
+  sysSet('otBy', (auth.name||'') + (what?'（'+what+'）':''));
+  sysFlush(); SpreadsheetApp.flush();
+}
+function otVoidNos(){ return otJSON(sysGet('otVoidNos',''), []); }
+
+function otLoad(auth){
+  const people = otPeople();
+  return {ok:true, orders:otAll(), people:people.map(function(x){
+            return {name:x.name, dept:x.dept, alias:x.alias, role:x.role, admin:x.admin, account:x.account}; }),
+          me:otMe(auth, people), voidNos:otVoidNos(), deptRole:OT_DEPT_ROLE,
+          rev:Number(sysGet('otRev',0))||0, updatedAt:fmtTS(sysGet('otAt','')),
+          updatedBy:String(sysGet('otBy',''))};
+}
+
+/* ---------- 單號 ---------- */
+function otTypeOf(no){
+  for(const k in OT_TYPES) if(OT_TYPES[k].re.test(no)) return k;
+  return '';
+}
+function otGroupSerial(type, no){
+  if(type === 'SAMPLE') return {g:no.slice(0,2),  n:parseInt(no.split('-')[1],10)};
+  if(type === 'ORDER')  return {g:no.slice(0,7),  n:parseInt(no.slice(7),10)};
+  if(type === 'RD')     return {g:no.slice(0,11), n:parseInt(no.split('-')[2],10)};
+  return null;
+}
+function otUsedNos(){ return otAll().map(function(o){ return o.no; }).concat(otVoidNos()); }
+function otMaxSerial(type, group, used){
+  let mx = 0;
+  used.forEach(function(id){
+    id = String(id||'').trim();
+    if(otTypeOf(id) !== type) return;
+    const gs = otGroupSerial(type, id);
+    if(gs && gs.g === group && gs.n > mx) mx = gs.n;
+  });
+  return mx;
+}
+function otNextNo(type, used){
+  const t = new Date();
+  const yy = Utilities.formatDate(t,'Asia/Taipei','yy');
+  const ym = Utilities.formatDate(t,'Asia/Taipei','yyyyMM');
+  const ymd= Utilities.formatDate(t,'Asia/Taipei','yyyyMMdd');
+  if(type === 'SAMPLE') return yy + '-' + ('00'+(otMaxSerial(type, yy, used)+1)).slice(-3) + '-A';
+  if(type === 'ORDER'){ const g='O'+ym; return g + ('00'+(otMaxSerial(type, g, used)+1)).slice(-3); }
+  if(type === 'RD'){ const g='RD-'+ymd; return g + '-' + ('0'+(otMaxSerial(type, g, used)+1)).slice(-2); }
+  return '';
+}
+/* 手動輸入單號：格式、重複、跳號檢查（跳號回 warnSkip，前端確認後帶 allowSkip 再送一次） */
+function otCheckNo(no, used, allowSkip){
+  const type = otTypeOf(no);
+  if(!type) return {error:'訂單編號格式不符。允許：樣品 26-016-A／訂單 O202610001／其他樣品 RD-20261016-01'};
+  if(used.some(function(x){ return String(x).trim().toUpperCase() === no.toUpperCase(); }))
+    return {error:'訂單編號 '+no+' 已經用過（含已刪除的單號），請換一個'};
+  const gs = otGroupSerial(type, no);
+  const mx = otMaxSerial(type, gs.g, used);
+  if(gs.n > mx+1 && !allowSkip)
+    return {warnSkip:true, message:'同一組（'+gs.g+'）目前最大流水號是 '+mx+'，下一號應為 '+(mx+1)+
+            '，你輸入的是 '+gs.n+'。確定要跳號嗎？'};
+  return {ok:true, type:type};
+}
+
+/* ---------- 建單 / 修改 ---------- */
+function otCleanItems(items){
+  const out = [];
+  (items||[]).forEach(function(it){
+    const name = String(it.name||'').trim(), code = String(it.code||'').trim();
+    if(!name && !code) return;
+    out.push({code:code, name:name, spec:String(it.spec||'').trim(), unit:String(it.unit||'pcs').trim()||'pcs',
+              qty:Number(it.qty), remarks:String(it.remarks||'').trim()});
+  });
+  return out;
+}
+function otValidate(o){
+  if(!o.purpose) return '請選擇或填寫「訂單用途」';
+  if(!/^\d{4}\/\d{2}\/\d{2}$/.test(o.req||'')) return '請填寫「需求日期」';
+  if(!o.picker) return '請選擇「取貨者」';
+  if(!o.items.length) return '請至少填一項品項';
+  for(let i=0;i<o.items.length;i++){
+    const q = o.items[i].qty;
+    if(!(q > 0) || Math.floor(q) !== q) return '第 '+(i+1)+' 項的數量必須是正整數';
+  }
+  return '';
+}
+function otCreate(auth, p){
+  const me = otMe(auth);
+  if(!me.creator) return {error:'只有建立者（業務部／研發部／管理部）或管理員可以建立訂單', denied:true};
+  const type = String(p.type||'');
+  if(!OT_TYPES[type]) return {error:'請選擇訂單種類'};
+  const o = {type:type, status:'新訂單', purpose:String(p.purpose||'').trim(), req:fmtDate(p.req),
+             picker:String(p.picker||'').trim(), items:otCleanItems(p.items), memo:String(p.memo||'').trim(),
+             maker:'', est:'', log:[], comments:[]};
+  const bad = otValidate(o); if(bad) return {error:bad};
+
+  const lock = LockService.getScriptLock();
+  lock.waitLock(25000);
+  try{
+    const used = otUsedNos();
+    let no = String(p.no||'').trim();
+    if(p.auto || !no){
+      no = otNextNo(type, used);
+    }else{
+      const c = otCheckNo(no, used, !!p.allowSkip);
+      if(!c.ok) return c;
+      if(c.type !== type) return {error:'單號格式與訂單種類不一致（'+OT_TYPES[c.type].name+'）'};
+    }
+    const now = nowTS();
+    o.no = no; o.creator = auth.name; o.created = now.slice(0,10);
+    o.createdAt = now; o.updatedAt = now; o.updatedBy = auth.name; o.statusAt = now;
+    o.log.push({at:now, by:auth.name, from:'', to:'新訂單', note:'建立訂單'});
+    otPut(o, -1);
+    let res = {ok:true, no:no, asked:String(p.no||''), order:o};
+    otBump(auth, '建立 '+no);
+    if(p.submit){
+      const a = otAdvanceOne(auth, me, no, {});
+      res.advance = a;
+      if(a.ok){ res.order = a.order; otBump(auth, '送出 '+no); }
+    }
+    return res;
+  } finally { lock.releaseLock(); }
+}
+function otEdit(auth, p){
+  const no = String(p.no||'').trim();
+  const lock = LockService.getScriptLock();
+  lock.waitLock(25000);
+  try{
+    const g = otGet(no); if(!g) return {error:'找不到訂單 '+no};
+    const o = g.o;
+    if(!(isAdmin(auth.role) || (canWrite(auth.role) && o.creator === auth.name)))
+      return {error:'只有這張單的建立者（'+o.creator+'）或管理員可以修改', denied:true};
+    if(o.status === '已結案') return {error:'已結案的訂單不能修改'};
+    if(p.baseAt && o.updatedAt && p.baseAt !== o.updatedAt)
+      return {error:'這張單剛剛被 '+o.updatedBy+' 修改過（'+o.updatedAt+'），請重新整理後再改', conflict:true};
+    const n = {purpose:String(p.purpose||'').trim(), req:fmtDate(p.req), picker:String(p.picker||'').trim(),
+               items:otCleanItems(p.items), memo:String(p.memo||'').trim()};
+    const bad = otValidate(n); if(bad) return {error:bad};
+    const ch = [];
+    if(n.purpose !== o.purpose) ch.push('用途');
+    if(n.req !== o.req) ch.push('需求日期 '+o.req+'→'+n.req);
+    if(n.picker !== o.picker) ch.push('取貨者 '+o.picker+'→'+n.picker);
+    if(JSON.stringify(n.items) !== JSON.stringify(o.items)) ch.push('品項');
+    if(n.memo !== o.memo) ch.push('備註');
+    if(!ch.length) return {ok:true, order:o, unchanged:true};
+    Object.assign(o, n);
+    const now = nowTS();
+    o.updatedAt = now; o.updatedBy = auth.name;
+    o.log.push({at:now, by:auth.name, from:o.status, to:o.status, note:'修改：'+ch.join('、')});
+    otPut(o, g.row);
+    otBump(auth, '修改 '+no);
+    return {ok:true, order:o};
+  } finally { lock.releaseLock(); }
+}
+
+/* ---------- 狀態推進 ---------- */
+function otAdvanceOne(auth, me, no, claim){
+  const g = otGet(no); if(!g) return {no:no, error:'找不到訂單'};
+  const o = g.o, from = o.status || '新訂單';
+  let to = '', mail = null;
+  if(from === '新訂單'){
+    if(!me.admin && o.creator !== auth.name) return {no:no, error:'只有建立者（'+o.creator+'）可以送出排程'};
+    if(!o.purpose || !o.req || !o.picker || !o.items.length) return {no:no, error:'用途／需求日期／取貨者／品項不完整'};
+    to = '製造排程中'; mail = 'planning';
+  }else if(from === '製造排程中'){
+    if(!me.maker) return {no:no, error:'只有製造部（或管理員）可以認領開工'};
+    const maker = String((claim&&claim.maker)||o.maker||auth.name).trim();
+    const est = fmtDate((claim&&claim.est)||o.est);
+    if(!maker || !/^\d{4}\/\d{2}\/\d{2}$/.test(est)) return {no:no, error:'必須填「製造者」與「預計完工日」'};
+    if(!me.admin && maker === o.creator) return {no:no, error:'製造者不能與建立者為同一人'};
+    o.maker = maker; o.est = est;
+    to = '製造中'; mail = 'start';
+  }else if(from === '製造中'){
+    if(!me.maker) return {no:no, error:'只有製造部（或管理員）可以回報完工'};
+    if(!o.maker || !o.est) return {no:no, error:'缺少製造者或預計完工日'};
+    to = '待收貨'; mail = 'ready';
+  }else if(from === '待收貨'){
+    if(!me.admin && auth.name !== o.creator && auth.name !== o.picker)
+      return {no:no, error:'只有建立者（'+o.creator+'）或取貨者（'+o.picker+'）可以結案'};
+    if(!me.write) return {no:no, error:'唯讀帳號不能結案'};
+    to = '已結案';
+  }else{
+    return {no:no, error:'訂單已結案，無法推進'};
+  }
+  const now = nowTS();
+  o.status = to; o.statusAt = now; o.updatedAt = now; o.updatedBy = auth.name;
+  o.log.push({at:now, by:auth.name, from:from, to:to,
+              note: to==='製造中' ? '製造者 '+o.maker+'，預計完工 '+o.est : ''});
+  otPut(o, g.row);
+  const r = {no:no, ok:true, from:from, to:to, order:o};
+  if(mail){ const m = otNotify(mail, o); if(m) r.mail = m; }
+  return r;
+}
+function otAdvance(auth, p){
+  const nos = (p.nos||[]).map(function(x){ return String(x).trim(); }).filter(Boolean);
+  if(!nos.length) return {error:'沒有選擇訂單'};
+  if(!canWrite(auth.role)) return {error:'唯讀帳號不能推進狀態', denied:true};
+  const me = otMe(auth);
+  const lock = LockService.getScriptLock();
+  lock.waitLock(25000);
+  try{
+    const res = nos.map(function(no){
+      try{ return otAdvanceOne(auth, me, no, p.claim||{}); }
+      catch(e){ return {no:no, error:e.message}; }
+    });
+    const okN = res.filter(function(r){ return r.ok; }).length;
+    if(okN) otBump(auth, '推進 '+okN+' 張');
+    return {ok:true, results:res};
+  } finally { lock.releaseLock(); }
+}
+/* 製造部先填製造者／預計完工日（不推進），或製造中途改預計完工日 */
+function otSetMake(auth, p){
+  const me = otMe(auth);
+  if(!me.maker) return {error:'只有製造部（或管理員）可以填寫製造者與預計完工日', denied:true};
+  const no = String(p.no||'').trim();
+  const lock = LockService.getScriptLock();
+  lock.waitLock(25000);
+  try{
+    const g = otGet(no); if(!g) return {error:'找不到訂單 '+no};
+    const o = g.o;
+    if(['製造排程中','製造中'].indexOf(o.status) < 0) return {error:'只有「製造排程中」或「製造中」可以修改製造資訊'};
+    const maker = String(p.maker||'').trim(), est = fmtDate(p.est);
+    if(!maker || !/^\d{4}\/\d{2}\/\d{2}$/.test(est)) return {error:'請填「製造者」與「預計完工日」'};
+    if(!me.admin && maker === o.creator) return {error:'製造者不能與建立者為同一人'};
+    const note = [];
+    if(maker !== o.maker) note.push('製造者 '+(o.maker||'—')+'→'+maker);
+    if(est !== o.est) note.push('預計完工 '+(o.est||'—')+'→'+est);
+    if(!note.length) return {ok:true, order:o, unchanged:true};
+    const now = nowTS();
+    o.maker = maker; o.est = est; o.updatedAt = now; o.updatedBy = auth.name;
+    o.log.push({at:now, by:auth.name, from:o.status, to:o.status, note:note.join('、')});
+    otPut(o, g.row);
+    otBump(auth, '製造資訊 '+no);
+    return {ok:true, order:o};
+  } finally { lock.releaseLock(); }
+}
+
+/* ---------- 刪除 / 留言 ---------- */
+function otDelete(auth, p){
+  const no = String(p.no||'').trim(), why = String(p.why||'').trim();
+  const lock = LockService.getScriptLock();
+  lock.waitLock(25000);
+  try{
+    const g = otGet(no); if(!g) return {error:'找不到訂單 '+no};
+    const o = g.o;
+    if(!(isAdmin(auth.role) || (canWrite(auth.role) && o.creator === auth.name)))
+      return {error:'只有這張單的建立者（'+o.creator+'）或管理員可以刪除', denied:true};
+    if(o.status === '已結案') return {error:'已結案的訂單不能刪除'};
+    const shO = sheet('ot');
+    if(shO.getMaxRows() - shO.getFrozenRows() <= 1) shO.getRange(g.row,1,1,shO.getLastColumn()).clearContent();
+    else shO.deleteRow(g.row);
+    const v = otVoidNos(); if(v.indexOf(no) < 0) v.push(no);
+    sysSet('otVoidNos', JSON.stringify(v));
+    const now = nowTS();
+    sheet('hist').appendRow([now, '刪除訂單 '+no+(why?'（'+why+'）':''), 0, 1, 0, 0, 0, auth.name||'',
+                             JSON.stringify(o)]);
+    otBump(auth, '刪除 '+no);
+    return {ok:true};
+  } finally { lock.releaseLock(); }
+}
+function otComment(auth, p){
+  if(!canWrite(auth.role)) return {error:'唯讀帳號不能留言', denied:true};
+  const no = String(p.no||'').trim(), text = String(p.text||'').trim();
+  if(!text) return {error:'請輸入內容'};
+  if(text.length > 2000) return {error:'內容太長（上限 2000 字）'};
+  const lock = LockService.getScriptLock();
+  lock.waitLock(25000);
+  try{
+    const g = otGet(no); if(!g) return {error:'找不到訂單 '+no};
+    const o = g.o, now = nowTS();
+    o.comments.push({at:now, by:auth.name, text:text, topic:String(p.topic||'').trim()});
+    o.updatedAt = now; o.updatedBy = auth.name;
+    otPut(o, g.row);
+    otBump(auth, '留言 '+no);
+    return {ok:true, order:o};
+  } finally { lock.releaseLock(); }
+}
+
+/* ---------- 匯入舊 OrderTracking 資料（管理員；前端先把舊表解析、人員對應好再送來） ---------- */
+function otImport(auth, p){
+  if(!isAdmin(auth.role)) return {error:'只有管理員可以匯入舊訂單', denied:true};
+  const list = p.orders || [];
+  if(!Array.isArray(list) || !list.length) return {error:'沒有可匯入的訂單'};
+  const lock = LockService.getScriptLock();
+  lock.waitLock(28000);
+  try{
+    const have = {}; otAll().forEach(function(o){ have[o.no] = 1; });
+    const now = nowTS(), add = [], skip = [];
+    list.forEach(function(x){
+      const no = String(x.no||'').trim(); if(!no) return;
+      if(have[no]){ skip.push(no); return; }
+      have[no] = 1;
+      const st = OT_ST.indexOf(x.status) >= 0 ? x.status : '新訂單';
+      const o = {no:no, type:otTypeOf(no)||String(x.type||''), status:st, purpose:String(x.purpose||''),
+        req:fmtDate(x.req), created:fmtDate(x.created), creator:String(x.creator||''),
+        picker:String(x.picker||''), maker:String(x.maker||''), est:fmtDate(x.est),
+        statusAt:String(x.statusAt||now), items:otCleanItems(x.items), memo:String(x.memo||''),
+        createdAt:String(x.createdAt||x.created||now), updatedAt:now, updatedBy:auth.name,
+        log:[{at:now, by:auth.name, from:'', to:st, note:'由舊 OrderTracking 試算表匯入'}],
+        comments:(x.comments||[]).map(function(c){ return {at:String(c.at||''), by:String(c.by||''),
+                  text:String(c.text||''), topic:String(c.topic||'')}; })};
+      add.push(otToRow(o));
+    });
+    if(add.length){
+      const sh = sheet('ot'), at = sh.getLastRow()+1;
+      const rng = sh.getRange(at, 1, add.length, HEAD.ot.length);
+      rng.setNumberFormat('@'); rng.setValues(add);
+    }
+    sheet('hist').appendRow([now, '匯入舊訂單 '+add.length+' 筆（略過已存在 '+skip.length+' 筆）',
+                             add.length, 0, 0, 0, 0, auth.name||'']);
+    otBump(auth, '匯入舊訂單 '+add.length+' 筆');
+    return {ok:true, added:add.length, skipped:skip};
+  } finally { lock.releaseLock(); }
+}
+
+/* ---------- 寄信 ---------- */
+function otEmails(names){
+  const want = {}; names.forEach(function(n){ if(n) want[String(n).trim()] = 1; });
+  const out = [];
+  otPeople().forEach(function(x){ if(want[x.name] && x.email && out.indexOf(x.email) < 0) out.push(x.email); });
+  return out;
+}
+function otMakerEmails(){
+  return otPeople().filter(function(x){ return x.role === 'maker' && x.email; })
+                   .map(function(x){ return x.email; });
+}
+function otItemsText(o){
+  return (o.items||[]).map(function(it,i){
+    return '  '+(i+1)+'. '+(it.name||'')+(it.code?'（'+it.code+'）':'')+' x'+it.qty+' '+(it.unit||'pcs')+
+           (it.remarks?'　備註：'+it.remarks:'');
+  }).join('\n');
+}
+function otSend(to, subject, body){
+  if(!OT_MAIL_ON) return '寄信功能已關閉';
+  if(!to.length) return '找不到收件人的 Email（對方可能還沒有網站帳號）';
+  try{
+    MailApp.sendEmail({to:to.join(','), subject:subject, body:body, name:'安德斯訂單系統'});
+    return '';
+  }catch(e){ return '寄信失敗：'+e.message; }
+}
+/* 回傳空字串＝成功；其他字串＝狀態已推進但寄信有問題 */
+function otNotify(kind, o){
+  const link = OT_PAGE_URL + '#' + encodeURIComponent(o.no);
+  const base = '【訂單編號】'+o.no+'\n【用途】'+o.purpose+'\n【需求日期】'+o.req+
+               '\n【建立者】'+o.creator+'　【取貨者】'+o.picker+'\n【品項】\n'+otItemsText(o)+'\n\n查看訂單：'+link;
+  if(kind === 'planning')
+    return otSend(otMakerEmails(), '[新任務] 訂單 '+o.no+' 等待排程',
+      '製造部您好，\n\n有一張新訂單等待排程，請到訂單系統填寫製造者與預計完工日並「認領開工」。\n\n'+base);
+  if(kind === 'start')
+    return otSend(otEmails([o.maker]), '[製造啟動] 訂單 '+o.no+' 已開始製造',
+      o.maker+' 您好，\n\n這張訂單已由你認領開工，預計完工日 '+o.est+'。完成後請到系統按「回報完工」。\n\n'+base);
+  if(kind === 'ready')
+    return otSend(otEmails([o.creator, o.picker]), '[完工通知] 訂單 '+o.no+' 已準備待收貨',
+      '您好，\n\n訂單已製造完成，請安排取貨；取貨後請到系統按「確認收貨結案」。\n\n'+base);
+  return '';
+}
+
+/* ---------- 逾期提醒（時間觸發） ---------- */
+function otWorkdaysSince(ymd){
+  if(!ymd) return 999;
+  const p = String(ymd).split('/'); const d = new Date(+p[0], +p[1]-1, +p[2]);
+  const t = new Date(); t.setHours(0,0,0,0);
+  let n = 0;
+  for(const x = new Date(d); x < t; x.setDate(x.getDate()+1)){
+    const w = x.getDay(); if(w !== 0 && w !== 6) n++;
+  }
+  return n;
+}
+function otDaysBetween(a, b){ return Math.floor((b - a) / 86400000); }
+function otParse(s){ const m = String(s||'').match(/^(\d{4})\/(\d{2})\/(\d{2})/); return m ? new Date(+m[1], +m[2]-1, +m[3]) : null; }
+function otCheckOverdue(force, dryRun){
+  const today = new Date(); today.setHours(0,0,0,0);
+  const w = today.getDay();
+  if(!force && (w === 0 || w === 6)) return {ok:true, skipped:'週末'};
+  const last = String(sysGet('otOverdueLast','') || '');
+  if(!force && otWorkdaysSince(last) < OT_CHECK_EVERY) return {ok:true, skipped:'距上次檢查未滿 '+OT_CHECK_EVERY+' 個工作天'};
+  const hits = [];
+  otAll().forEach(function(o){
+    if(o.status === '已結案') return;
+    const req = otParse(o.req), sAt = otParse(o.statusAt), est = otParse(o.est);
+    const stay = sAt ? otDaysBetween(sAt, today) : 0;
+    if(req && today > req){
+      const who = o.status==='新訂單' ? [o.creator] : o.status==='製造排程中' ? null
+                : o.status==='製造中' ? [o.maker] : [o.picker];
+      hits.push({o:o, why:'已超過需求日期 '+o.req+'（目前：'+o.status+'）', to:who, red:true});
+    }else if(o.status === '製造排程中' && stay > OT_STALL_DAYS){
+      hits.push({o:o, why:'停留在「製造排程中」已 '+stay+' 天，尚未有人認領', to:null});
+    }else if(o.status === '製造中' && est && today > est){
+      hits.push({o:o, why:'已超過預計完工日 '+o.est, to:[o.maker]});
+    }else if(o.status === '待收貨' && stay > OT_STALL_DAYS){
+      hits.push({o:o, why:'完工待收貨已 '+stay+' 天未結案', to:[o.picker]});
+    }
+  });
+  const report = [];
+  hits.forEach(function(h){
+    const to = h.to ? otEmails(h.to) : otMakerEmails();
+    const msg = dryRun ? '（試跑，未寄出）' : otSend(to,
+      (h.red?'[緊急逾期] ':'[進度提醒] ')+'訂單 '+h.o.no,
+      '您好，\n\n訂單 '+h.o.no+' '+h.why+'，請盡快處理。\n\n【用途】'+h.o.purpose+'\n【品項】\n'+otItemsText(h.o)+
+      '\n\n查看訂單：'+OT_PAGE_URL+'#'+encodeURIComponent(h.o.no));
+    report.push({no:h.o.no, why:h.why, to:to, result:msg||'已寄出'});
+  });
+  if(!dryRun){
+    sysSet('otOverdueLast', Utilities.formatDate(today,'Asia/Taipei','yyyy/MM/dd'));
+    sysFlush();
+  }
+  return {ok:true, count:hits.length, report:report};
+}
+function otOverdueJob(){ const r = otCheckOverdue(false, false); Logger.log(JSON.stringify(r)); }
+
+/* 在編輯器各執行一次 */
+function otAuthorize(){
+  sheet('ot');                                   /* 建立「訂單追蹤」工作表 */
+  Logger.log('今日剩餘寄信額度：' + MailApp.getRemainingDailyQuota());
+  return '完成';
+}
+function installOtTrigger(){
+  ScriptApp.getProjectTriggers().forEach(function(t){
+    if(t.getHandlerFunction() === 'otOverdueJob') ScriptApp.deleteTrigger(t);
+  });
+  ScriptApp.newTrigger('otOverdueJob').timeBased().everyDays(1).atHour(8)
+    .inTimezone('Asia/Taipei').create();
+  Logger.log('訂單逾期檢查已排程：每天 08:00（每 '+OT_CHECK_EVERY+' 個工作天寄一次）');
 }

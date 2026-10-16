@@ -1,0 +1,866 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>訂單系統 — 安德斯醫學科技</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<link rel="icon" href="data:image/png;base64,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">
+<style>
+:root{
+  --bg:#f6f7f9; --panel:#fff; --line:#e3e6ea; --line2:#eef0f3;
+  --txt:#1c2128; --mut:#6b7480; --acc:#1f6feb; --acc-bg:#e8f0fe;
+  --ok:#1a7f4b; --ok-bg:#e6f5ec; --warn:#a8630a; --warn-bg:#fdf3e3;
+  --bad:#c0392b; --bad-bg:#fdecea; --radius:8px;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--txt);
+  font:14px/1.5 -apple-system,"Segoe UI","Noto Sans TC","PingFang TC","Microsoft JhengHei",sans-serif}
+header{background:var(--panel);border-bottom:1px solid var(--line);padding:10px 18px;
+  display:flex;align-items:center;gap:14px;position:sticky;top:0;z-index:50;flex-wrap:wrap}
+h1{font-size:16px;margin:0;font-weight:650;letter-spacing:.3px}
+h1 small{font-weight:400;color:var(--mut);font-size:12px;margin-left:8px}
+.homelink{display:flex;align-items:center;gap:7px;text-decoration:none;color:var(--mut);
+  font-size:12.5px;padding:4px 10px 4px 5px;border:1px solid var(--line);border-radius:99px;
+  white-space:nowrap;transition:.15s}
+.homelink:hover{background:var(--line2);color:var(--txt);border-color:#cfd5db}
+.homelink img{height:20px;width:auto;display:block}
+nav{display:flex;gap:2px;flex:1;flex-wrap:wrap}
+nav button{background:none;border:0;padding:7px 13px;border-radius:6px;cursor:pointer;
+  font-size:13.5px;color:var(--mut);font-family:inherit}
+nav button:hover{background:var(--line2);color:var(--txt)}
+nav button.on{background:var(--acc-bg);color:var(--acc);font-weight:600}
+#meBox{display:flex;align-items:center;gap:7px;font-size:12.5px;color:var(--mut);
+  white-space:nowrap;margin-left:auto}
+#meBox b{color:var(--txt)}
+main{padding:18px;max-width:1180px;margin:0 auto}
+.view{display:none} .view.on{display:block}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);padding:16px;margin-bottom:14px}
+.card>h2{font-size:14px;margin:0 0 12px;font-weight:650}
+.card>h2 .sub{font-weight:400;color:var(--mut);font-size:12px;margin-left:8px}
+.row{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
+.grow{flex:1;min-width:180px}
+input,select,textarea,button{font-family:inherit;font-size:13.5px}
+input[type=text],input[type=password],input[type=email],select{
+  padding:7px 10px;border:1px solid var(--line);border-radius:6px;background:#fff;color:var(--txt);width:100%}
+input:focus,select:focus{outline:2px solid var(--acc-bg);border-color:var(--acc)}
+.btn{padding:7px 14px;border:1px solid var(--line);background:#fff;border-radius:6px;cursor:pointer;white-space:nowrap}
+.btn:hover{background:var(--line2)}
+.btn.pri{background:var(--acc);border-color:var(--acc);color:#fff}
+.btn.pri:hover{filter:brightness(1.08)}
+.btn.danger{color:var(--bad);border-color:#f0c3bd}
+.btn.sm{padding:4px 9px;font-size:12.5px}
+.stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin-bottom:14px}
+.stat{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);padding:12px 14px}
+.stat .k{font-size:11.5px;color:var(--mut);letter-spacing:.5px}
+.stat .v{font-size:21px;font-weight:650;margin-top:3px;font-variant-numeric:tabular-nums}
+.tblwrap{overflow:auto;border:1px solid var(--line);border-radius:var(--radius);background:#fff}
+table{border-collapse:separate;border-spacing:0;width:100%;font-size:13px}
+th{background:#fafbfc;text-align:left;padding:8px 10px;border-bottom:1px solid var(--line);
+  font-weight:600;white-space:nowrap}
+td{padding:8px 10px;border-bottom:1px solid var(--line2);vertical-align:middle}
+tbody tr:hover{background:#fafbfc}
+.mini{font-size:12px;color:var(--mut)}
+.mut{color:var(--mut)}
+.tag{display:inline-block;padding:1px 7px;border-radius:99px;font-size:11.5px;white-space:nowrap}
+.tag.ok{background:var(--ok-bg);color:var(--ok)}
+.tag.warn{background:var(--warn-bg);color:var(--warn)}
+.tag.bad{background:var(--bad-bg);color:var(--bad)}
+.tag.info{background:var(--acc-bg);color:var(--acc)}
+.tag.gray{background:var(--line2);color:var(--mut)}
+.hint{font-size:12px;color:var(--mut);margin-top:6px;line-height:1.8}
+.hint code{background:var(--line2);padding:1px 5px;border-radius:4px;font-size:11.5px}
+.fld{margin-bottom:11px}
+.fld label{display:block;font-size:12.5px;color:var(--mut);margin-bottom:4px}
+.empty{padding:40px;text-align:center;color:var(--mut)}
+.ro-banner{background:#fff8e6;border:1px solid #f0dca8;color:#8a6414;
+  padding:11px 14px;border-radius:8px;font-size:13px;margin-bottom:14px;line-height:1.7}
+dialog{border:1px solid var(--line);border-radius:10px;padding:0;max-width:min(620px,94vw);width:100%;
+  box-shadow:0 12px 40px rgba(0,0,0,.18)}
+dialog::backdrop{background:rgba(20,24,30,.42)}
+.dlg-h{padding:13px 18px;border-bottom:1px solid var(--line);display:flex;align-items:center;gap:12px}
+.dlg-h b{font-size:14.5px;flex:1}
+.dlg-b{padding:16px 18px;max-height:70vh;overflow:auto}
+.dlg-f{padding:12px 18px;border-top:1px solid var(--line);display:flex;gap:8px;justify-content:flex-end;background:#fafbfc}
+#toast{position:fixed;bottom:22px;left:50%;transform:translateX(-50%);background:#1c2128;color:#fff;
+  padding:10px 18px;border-radius:7px;font-size:13.5px;opacity:0;pointer-events:none;transition:.25s;z-index:200}
+#toast.on{opacity:1}
+.sysrow{display:flex;gap:10px;align-items:center;padding:9px 0;border-bottom:1px solid var(--line2)}
+.sysrow:last-child{border-bottom:0}
+.sysrow a{color:var(--acc);text-decoration:none;font-weight:600}
+.sysrow a:hover{text-decoration:underline}
+/* 登入畫面 */
+#gate{position:fixed;inset:0;background:var(--bg);z-index:500;display:none;overflow:auto;padding:40px 16px}
+#gate.on{display:block}
+.gate-box{max-width:430px;margin:0 auto;background:#fff;border:1px solid var(--line);
+  border-radius:12px;padding:26px 26px 22px;box-shadow:0 8px 30px rgba(0,0,0,.08)}
+.gate-box h2{margin:0 0 4px;font-size:19px}
+.gate-box .sub{color:var(--mut);font-size:13px;margin-bottom:18px}
+.gate-tabs{display:flex;gap:2px;background:var(--line2);padding:3px;border-radius:8px;margin-bottom:18px}
+.gate-tabs button{flex:1;background:none;border:0;padding:8px;border-radius:6px;cursor:pointer;
+  font-size:13.5px;color:var(--mut);font-family:inherit}
+.gate-tabs button.on{background:#fff;color:var(--acc);font-weight:600;box-shadow:0 1px 3px rgba(0,0,0,.08)}
+.gate-msg{font-size:13px;padding:9px 11px;border-radius:7px;margin-bottom:14px;line-height:1.6}
+.gate-msg.bad{background:#fdecec;color:#a62222;border:1px solid #f3c6c6}
+.gate-msg.ok{background:#e9f7ee;color:#1a6b38;border:1px solid #bfe3cd}
+.gate-foot{margin-top:16px;padding-top:14px;border-top:1px solid var(--line);
+  font-size:12.5px;color:var(--mut);line-height:1.7}
+.gate-foot a{color:var(--acc);cursor:pointer;text-decoration:underline}
+
+/* ===== 訂單系統 ===== */
+main{max-width:1320px}
+.mono{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:12.5px;white-space:nowrap}
+nav button{white-space:nowrap}
+.nowrap{white-space:nowrap}
+.tag.done{background:#eceff3;color:#55606c}
+.stats .stat{cursor:pointer}
+.stat.st-info{border-top:3px solid var(--acc)} .stat.st-warn{border-top:3px solid #e39b2d}
+.stat.st-ok{border-top:3px solid var(--ok)} .stat.st-gray{border-top:3px solid #aab2bc}
+.stat.st-done{border-top:3px solid #d5dae0} .stat.st-bad{border-top:3px solid var(--bad)}
+.chip{border:1px solid var(--line);background:#fff;border-radius:99px;padding:5px 12px;cursor:pointer;font-size:12.5px;color:var(--mut)}
+.chip.on{background:var(--acc-bg);border-color:#b9d0fb;color:var(--acc);font-weight:600}
+.chip b{font-weight:650}
+table.ot td{vertical-align:top}
+table.ot tbody tr{cursor:pointer}
+table.ot tr.turn{background:#fffbea}
+table.ot tr.turn:hover{background:#fff5d1}
+td.brief{min-width:220px;max-width:420px}
+.btn[disabled]{opacity:.45;cursor:not-allowed}
+dialog.wide{max-width:min(900px,96vw)}
+.dlg-b h3{font-size:13px;margin:16px 0 8px;color:var(--mut);font-weight:650;letter-spacing:.3px}
+.flow{display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-bottom:12px;font-size:12.5px}
+.flow span{padding:3px 10px;border-radius:99px;background:var(--line2);color:var(--mut)}
+.flow span.done{background:var(--ok-bg);color:var(--ok)}
+.flow span.cur{background:var(--acc);color:#fff;font-weight:600}
+.flow i{color:#b6bdc6;font-style:normal}
+.kv{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:6px 18px;font-size:13.5px}
+.kv span{display:inline-block;width:78px;color:var(--mut);font-size:12.5px}
+.actbox{border:1px solid #cfe0fb;background:#f5f9ff;border-radius:8px;padding:12px;margin-bottom:10px}
+.actbox select,.actbox input{width:auto}
+.log{font-size:12.5px;line-height:1.9;max-height:180px;overflow:auto}
+.cmts{display:flex;flex-direction:column;gap:8px}
+.cmt{background:#fafbfc;border:1px solid var(--line2);border-radius:7px;padding:8px 10px;font-size:13px}
+textarea{padding:7px 10px;border:1px solid var(--line);border-radius:6px;width:100%;font-family:inherit;font-size:13.5px;resize:vertical}
+input[type=date],input[type=number]{padding:6px 9px;border:1px solid var(--line);border-radius:6px;font-family:inherit;font-size:13.5px;width:100%}
+input.ro{background:#eef8f0;color:#1a6b38}
+label.inl{display:inline-flex !important;gap:4px;align-items:center;margin-left:8px;color:var(--txt);font-size:12.5px}
+.items td{padding:5px 6px}
+.warnc{color:var(--warn)}
+.dlg-f .grow{flex:1}
+/* 甘特圖 */
+.gwrap{--gl:190px;position:relative;overflow:auto;border:1px solid var(--line);border-radius:8px;background:#fff}
+.gr{display:flex;border-bottom:1px solid var(--line2);cursor:pointer;min-height:40px}
+.gr:hover{background:#fafbfc}
+.gl{flex:0 0 var(--gl);padding:6px 10px;border-right:1px solid var(--line);position:sticky;left:0;background:inherit;background:#fff;z-index:2;font-size:12.5px}
+.gt{position:relative;flex:0 0 auto;background-image:linear-gradient(to right,var(--line2) 1px,transparent 1px);background-size:26px 100%}
+.ghead{cursor:default;min-height:26px;position:sticky;top:0;z-index:3;background:#fafbfc}
+.ghead .gl{background:#fafbfc}
+.gc{position:absolute;top:5px;font-size:10.5px;color:var(--mut);transform:translateX(2px)}
+.gb{position:absolute;top:9px;height:22px;border-radius:5px;font-size:11px;line-height:22px;padding:0 6px;color:#fff;white-space:nowrap;overflow:hidden}
+.g-gray{background:#8d97a3} .g-info{background:var(--acc)} .g-warn{background:#e39b2d} .g-ok{background:var(--ok)}
+.gb.late{box-shadow:0 0 0 2px var(--bad)}
+.greq{position:absolute;top:4px;bottom:4px;width:2px;background:var(--bad);opacity:.75}
+.gtoday{position:absolute;top:0;bottom:0;width:2px;background:var(--acc);opacity:.5;pointer-events:none;z-index:1}
+.gdot{display:inline-block;width:10px;height:10px;border-radius:3px;margin-right:5px;vertical-align:-1px}
+.gdot.late{background:#fff;box-shadow:0 0 0 2px var(--bad)}
+@media (max-width:640px){ main{padding:12px} .gwrap{--gl:120px} td.brief{min-width:160px} }
+</style>
+</head>
+<body>
+<header>
+  <a class="homelink" href="index.html" title="回系統入口"><img src="data:image/png;base64,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" alt="安德斯醫學科技">首頁</a>
+  <h1>跨部門訂單系統<small id="hdrSub"></small></h1>
+  <nav>
+    <button data-v="list" class="on">訂單清單</button>
+    <button data-v="gantt">甘特圖</button>
+    <button data-v="about">流程與權限</button>
+  </nav>
+  <span id="meBox"></span>
+</header>
+<main>
+  <div class="view on" id="v-list"></div>
+  <div class="view" id="v-gantt"></div>
+  <div class="view" id="v-about"></div>
+</main>
+<div id="gate"><div class="gate-box" id="gateBox"></div></div>
+<div id="toast"></div>
+<dialog id="dlg"><form method="dialog" id="dlgForm">
+  <div class="dlg-h"><b id="dlgTitle"></b><button class="btn sm" value="x">關閉</button></div>
+  <div class="dlg-b" id="dlgBody"></div>
+  <div class="dlg-f" id="dlgFoot"></div>
+</form></dialog>
+
+<script>
+const API_URL = 'https://script.google.com/macros/s/AKfycbzjpoGstBAAPfVpHwQ2dfCMtDw3yfVgtYQuLKbUWFO8sGNRu7Pkk8wOaqZguGkQx7PQxg/exec';
+const CLOUD = API_URL.indexOf('http') === 0;
+</script>
+
+<script>
+/* ============================================================
+   帳號與權限 — 全系統共用（料號系統、產品批序號…都吃這一份）
+   ============================================================ */
+const $ = s => document.querySelector(s);
+function esc(s){ return String(s===null||s===undefined?'':s)
+  .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+let TOASTT;
+function toast(m){ const t=$('#toast'); t.textContent=m; t.classList.add('on');
+  clearTimeout(TOASTT); TOASTT=setTimeout(()=>t.classList.remove('on'),2600); }
+function dialog(title,bodyHTML,footHTML){
+  $('#dlgTitle').textContent=title; $('#dlgBody').innerHTML=bodyHTML;
+  $('#dlgFoot').innerHTML=footHTML||'<button class="btn" value="x">關閉</button>';
+  const d=$('#dlg'); if(!d.open) d.showModal();
+}
+function closeDlg(){ const d=$('#dlg'); if(d.open) d.close(); }
+
+const TKKEY='bom_token_v1', PWKEY='bom_pw_v2', WHOKEY='bom_who_v1';
+const LS={get:k=>{try{return localStorage.getItem(k)||'';}catch(e){return '';}},
+          set:(k,v)=>{try{localStorage.setItem(k,v);}catch(e){}},
+          del:k=>{try{localStorage.removeItem(k);}catch(e){}}};
+let TOKEN=LS.get(TKKEY), PW=LS.get(PWKEY), WHO=LS.get(WHOKEY);
+let ME=null;
+const ROLE_NAME={admin:'管理員', editor:'編輯', viewer:'唯讀'};
+const ST_NAME={pending:'待審核', active:'啟用中', disabled:'已停用'};
+const ST_TAG ={pending:'warn',   active:'ok',    disabled:'gray'};
+function myRole(){ return (ME&&ME.role)||'viewer'; }
+function isAdmin(){ return myRole()==='admin'; }
+/* 後端的 me 指令不一定會回傳 id，改用 id 或 email 任一相符就算是自己 */
+function isMe(u){
+  if(!ME||!u) return false;
+  if(ME.id && u.id && String(ME.id)===String(u.id)) return true;
+  const a=String(ME.email||'').trim().toLowerCase(), b=String(u.email||'').trim().toLowerCase();
+  return !!a && a===b;
+}
+
+async function apiPost(action,payload,extra){
+  const body=Object.assign({action:action,payload:payload,token:TOKEN,pw:PW,who:WHO},extra||{});
+  const res=await fetch(API_URL,{method:'POST',
+    headers:{'Content-Type':'text/plain;charset=utf-8'},body:JSON.stringify(body)});
+  if(!res.ok) throw new Error('HTTP '+res.status);
+  return await res.json();
+}
+function paintMe(){
+  const el=$('#meBox'); if(!el) return;
+  if(!ME){ el.innerHTML='<span class="tag bad">未登入</span>'+
+      '<button class="btn sm" onclick="openGate(\'login\')">登入</button>'; return; }
+  const t = ME.legacy ? '<span class="tag warn">共用密碼·唯讀</span>'
+    : '<span class="tag '+(myRole()==='viewer'?'gray':'ok')+'">'+esc(ME.roleName||ROLE_NAME[myRole()])+'</span>';
+  el.innerHTML='<b>'+esc(ME.name||'')+'</b>'+t+'<button class="btn sm" onclick="logout()">登出</button>';
+}
+function logout(){ TOKEN=''; PW=''; ME=null; LS.del(TKKEY); LS.del(PWKEY);
+  USERS=[]; renderAll(); openGate('login','已登出'); }
+async function whoAmI(){
+  try{
+    const d=await apiPost('me',null);
+    if(d.error){ if(d.needLogin) openGate('login', d.error); return false; }
+    ME={id:d.id,name:d.name,email:d.email,role:d.role,legacy:!!d.legacy,
+        roleName:d.roleName||ROLE_NAME[d.role]||'唯讀'};
+    WHO=ME.name||WHO; closeGate(); return true;
+  }catch(e){ toast('連不上伺服器'); return false; }
+}
+
+/* ---------- 登入畫面 ---------- */
+let GATE_TAB='login', GATE_MSG='', GATE_MSG_OK=false, GATE_BUSY=false;
+function openGate(tab,msg,ok){ GATE_TAB=tab||'login'; GATE_MSG=msg||''; GATE_MSG_OK=!!ok;
+  $('#gate').classList.add('on'); paintGate(); }
+function closeGate(){ $('#gate').classList.remove('on'); GATE_MSG=''; GATE_BUSY=false; }
+function gateTab(t){ GATE_TAB=t; GATE_MSG=''; paintGate(); }
+function paintGate(){
+  const msg = GATE_MSG ? '<div class="gate-msg '+(GATE_MSG_OK?'ok':'bad')+'">'+esc(GATE_MSG)+'</div>' : '';
+  const tabs = '<div class="gate-tabs">'+
+    '<button type="button" class="'+(GATE_TAB==='login'?'on':'')+'" onclick="gateTab(\'login\')">登入</button>'+
+    '<button type="button" class="'+(GATE_TAB==='reg'?'on':'')+'" onclick="gateTab(\'reg\')">申請帳號</button>'+
+    '</div>';
+  let body;
+  if(GATE_TAB==='login'){
+    body = tabs+msg+
+      '<div class="fld"><label>Email</label><input id="g_email" type="email" value="'+
+        esc(LS.get('bom_last_email'))+'" placeholder="you@company.com"></div>'+
+      '<div class="fld"><label>密碼</label><input id="g_pw" type="password" placeholder="請輸入密碼"></div>'+
+      '<button class="btn pri" type="button" style="width:100%;margin-top:6px" onclick="doLogin()"'+
+        (GATE_BUSY?' disabled':'')+'>'+(GATE_BUSY?'登入中…':'登入')+'</button>';
+  }else{
+    body = tabs+msg+
+      '<div class="fld"><label>姓名</label><input id="r_name" placeholder="例：謝嘉元"></div>'+
+      '<div class="fld"><label>Email（登入帳號）</label><input id="r_email" type="email" placeholder="you@company.com"></div>'+
+      '<div class="fld"><label>密碼（至少 6 個字元）</label><input id="r_pw" type="password"></div>'+
+      '<div class="fld"><label>確認密碼</label><input id="r_pw2" type="password"></div>'+
+      '<button class="btn pri" type="button" style="width:100%;margin-top:6px" onclick="doRegister()"'+
+        (GATE_BUSY?' disabled':'')+'>'+(GATE_BUSY?'建立中…':'建立帳號並登入')+'</button>'+
+      '<div class="gate-foot">建立後立即可以使用，預設權限為<b>編輯</b>。管理員可隨時在這一頁調整。</div>';
+  }
+  $('#gateBox').innerHTML =
+    '<h2>跨部門訂單系統</h2><div class="sub">安德斯醫學科技　全系統共用帳號</div>'+body+
+    '<div class="gate-foot" style="margin-top:12px"><a href="index.html">← 回系統入口</a></div>';
+  const box=$('#gateBox');
+  setTimeout(()=>{ const t=box.querySelector('#g_pw,#r_name'); if(t) t.focus(); },60);
+  box.querySelectorAll('input').forEach(i=>i.onkeydown=e=>{
+    if(e.key==='Enter'){ e.preventDefault(); GATE_TAB==='login'?doLogin():doRegister(); }});
+}
+async function doLogin(){
+  if(GATE_BUSY) return;
+  const email=$('#g_email').value.trim(), pw=$('#g_pw').value;
+  if(!email||!pw){ GATE_MSG='請輸入 Email 與密碼'; GATE_MSG_OK=false; return paintGate(); }
+  GATE_BUSY=true; paintGate();
+  try{
+    const d=await apiPost('login',null,{email:email,password:pw,token:'',pw:''});
+    GATE_BUSY=false;
+    if(d.error){ GATE_MSG=d.error; GATE_MSG_OK=false; return paintGate(); }
+    TOKEN=d.token; ME=d.profile; ME.roleName=ME.roleName||ROLE_NAME[ME.role]||'唯讀';
+    WHO=ME.name; PW='';
+    LS.set(TKKEY,TOKEN); LS.set(WHOKEY,WHO); LS.set('bom_last_email',email); LS.del(PWKEY);
+    closeGate(); await loadUsers();
+    toast('已登入：'+ME.name+'（'+ME.roleName+'）');
+  }catch(e){ GATE_BUSY=false; GATE_MSG='連不上伺服器：'+(e.message||'網路逾時'); GATE_MSG_OK=false; paintGate(); }
+}
+async function doRegister(){
+  if(GATE_BUSY) return;
+  const name=$('#r_name').value.trim(), email=$('#r_email').value.trim();
+  const pw=$('#r_pw').value, pw2=$('#r_pw2').value;
+  if(!name||!email||!pw){ GATE_MSG='姓名、Email 與密碼皆為必填'; GATE_MSG_OK=false; return paintGate(); }
+  if(pw.length<6){ GATE_MSG='密碼至少 6 個字元'; GATE_MSG_OK=false; return paintGate(); }
+  if(pw!==pw2){ GATE_MSG='兩次輸入的密碼不一致'; GATE_MSG_OK=false; return paintGate(); }
+  GATE_BUSY=true; paintGate();
+  try{
+    const d=await apiPost('register',null,{name:name,email:email,password:pw,token:'',pw:''});
+    GATE_BUSY=false;
+    if(d.error){ GATE_MSG=d.error; GATE_MSG_OK=false; return paintGate(); }
+    if(d.token){
+      TOKEN=d.token; ME=d.profile; ME.roleName=ME.roleName||ROLE_NAME[ME.role]||'唯讀';
+      WHO=ME.name; PW='';
+      LS.set(TKKEY,TOKEN); LS.set(WHOKEY,WHO); LS.set('bom_last_email',email); LS.del(PWKEY);
+      closeGate(); await loadUsers();
+      return toast('帳號已建立：'+ME.name+'（'+ME.roleName+'）');
+    }
+    LS.set('bom_last_email',email);
+    GATE_TAB='login'; GATE_MSG=d.message||'帳號已建立，請登入'; GATE_MSG_OK=true; paintGate();
+  }catch(e){ GATE_BUSY=false; GATE_MSG='連不上伺服器：'+(e.message||'網路逾時'); GATE_MSG_OK=false; paintGate(); }
+}
+</script>
+
+<script>
+
+/* 本頁的對話框可加寬；登入成功後改為讀取訂單 */
+let USERS=[];
+function dialog(title,bodyHTML,footHTML,wide){
+  $('#dlgTitle').textContent=title; $('#dlgBody').innerHTML=bodyHTML;
+  $('#dlgFoot').innerHTML=footHTML||'<button class="btn" value="x">關閉</button>';
+  const d=$('#dlg'); d.classList.toggle('wide',!!wide); if(!d.open) d.showModal(); $('#dlgBody').scrollTop=0;
+}
+async function loadUsers(){ await loadAll(); }
+$('#dlg').addEventListener('close',()=>{ try{ if(location.hash) history.replaceState(null,'',location.pathname); }catch(e){} });
+/* ============================================================
+   跨部門訂單系統（OrderTracking 移植版）
+   建立者：業務部／研發部／管理部　製造者：製造部　管理員：網站管理員
+   新訂單 → 製造排程中 → 製造中 → 待收貨 → 已結案
+   ============================================================ */
+const ST = ['新訂單','製造排程中','製造中','待收貨','已結案'];
+const ST_CLS = {'新訂單':'gray','製造排程中':'info','製造中':'warn','待收貨':'ok','已結案':'done'};
+const TYPES = {SAMPLE:{name:'安德斯樣品', re:/^\d{2}-\d{3}-[A-Za-z0-9]+$/, ex:'26-016-A'},
+               ORDER:{name:'安德斯訂單', re:/^O\d{9}$/, ex:'O202610001'},
+               RD:{name:'其他樣品', re:/^RD-\d{8}-\d{2}$/, ex:'RD-20261016-01'}};
+const PURPOSES = ['客戶工程測試用樣品 (含客戶申請相關法規、認證的需求樣品)',
+                  '爭取可能訂單 (客戶review 樣品)',
+                  '客戶承認用樣品 (含客戶所需制做 ODM artwork 的需求樣品)'];
+const NEXT_LABEL = {'新訂單':'送出排程','製造排程中':'認領開工','製造中':'回報完工','待收貨':'確認收貨結案'};
+
+let OT = {orders:[], people:[], me:null, rev:0, voidNos:[]}, ITEMS = [], ITEM_MAP = {};
+let FILTER = {st:'open', q:'', mine:false}, CHECKED = new Set(), BUSY = false;
+
+function typeOf(no){ for(const k in TYPES) if(TYPES[k].re.test(no)) return k; return ''; }
+function today(){ const d=new Date(); return d.getFullYear()+'/'+String(d.getMonth()+1).padStart(2,'0')+'/'+String(d.getDate()).padStart(2,'0'); }
+function toInputDate(s){ return String(s||'').replace(/\//g,'-'); }
+function fromInputDate(s){ return String(s||'').replace(/-/g,'/'); }
+function pd(s){ const m=String(s||'').match(/^(\d{4})\/(\d{2})\/(\d{2})/); return m?new Date(+m[1],+m[2]-1,+m[3]):null; }
+function daysFrom(s){ const d=pd(s); if(!d) return null; const t=pd(today()); return Math.round((t-d)/86400000); }
+function personOpts(sel, filterFn, blank){
+  const ps = OT.people.filter(filterFn||(()=>true));
+  let h = blank ? '<option value="">'+blank+'</option>' : '';
+  const names = ps.map(p=>p.name);
+  if(sel && names.indexOf(sel)<0) h += '<option selected>'+esc(sel)+'</option>';
+  return h + ps.map(p=>'<option value="'+esc(p.name)+'"'+(p.name===sel?' selected':'')+'>'+esc(p.name)+
+    (p.dept?'（'+esc(p.dept)+'）':'')+(p.account?'':'・無帳號')+'</option>').join('');
+}
+function stTag(s){ return '<span class="tag '+(ST_CLS[s]||'gray')+'">'+esc(s||'—')+'</span>'; }
+function overdueOf(o){
+  if(o.status==='已結案') return '';
+  const t = pd(today()), req = pd(o.req), est = pd(o.est), stay = daysFrom(o.statusAt);
+  if(req && t>req) return '超過需求日';
+  if(o.status==='製造中' && est && t>est) return '超過預計完工';
+  if(o.status==='製造排程中' && stay>4) return '排程停滯 '+stay+' 天';
+  if(o.status==='待收貨' && stay>4) return '待收貨 '+stay+' 天';
+  return '';
+}
+function myTurn(o){
+  const me = OT.me||{}; if(!me.write) return false;
+  if(o.status==='新訂單') return me.admin || o.creator===me.name;
+  if(o.status==='製造排程中'||o.status==='製造中') return me.maker && (o.status==='製造排程中' || o.maker===me.name || me.admin);
+  if(o.status==='待收貨') return me.admin || o.creator===me.name || o.picker===me.name;
+  return false;
+}
+function canEdit(o){ const me=OT.me||{}; return me.write && o.status!=='已結案' && (me.admin || o.creator===me.name); }
+
+/* ---------- 讀取 ---------- */
+async function loadAll(quiet){
+  try{
+    const [d, it] = await Promise.all([apiPost('otLoad',null),
+                                       ITEMS.length?Promise.resolve(null):apiPost('loadItems',null)]);
+    if(d.error){ if(d.needLogin) openGate('login', d.error); else toast(d.error); return; }
+    OT = d;
+    if(it && it.items){ ITEMS = it.items; ITEM_MAP = {}; ITEMS.forEach(x=>ITEM_MAP[x.code]=x); }
+    renderAll();
+    if(!quiet) openFromHash();
+  }catch(e){ toast('讀取失敗：'+(e.message||'連不上伺服器')); }
+}
+function upsert(o){ const i = OT.orders.findIndex(x=>x.no===o.no); if(i>=0) OT.orders[i]=o; else OT.orders.push(o); }
+
+/* ---------- 畫面 ---------- */
+function view(v){
+  document.querySelectorAll('nav button').forEach(b=>b.classList.toggle('on',b.dataset.v===v));
+  document.querySelectorAll('.view').forEach(d=>d.classList.toggle('on',d.id==='v-'+v));
+  if(v==='gantt') vGantt();
+}
+function renderAll(){ paintMe(); vList(); vGantt(); vAbout();
+  $('#hdrSub').textContent = OT.me ? '　'+OT.orders.length+' 張訂單' : ''; }
+
+function filtered(){
+  const q = FILTER.q.trim().toLowerCase(), me = OT.me||{};
+  return OT.orders.filter(o=>{
+    if(FILTER.st==='open' && o.status==='已結案') return false;
+    if(FILTER.st==='todo' && !myTurn(o)) return false;
+    if(FILTER.st==='late' && !overdueOf(o)) return false;
+    if(ST.indexOf(FILTER.st)>=0 && o.status!==FILTER.st) return false;
+    if(FILTER.mine && [o.creator,o.picker,o.maker].indexOf(me.name)<0) return false;
+    if(q){ const s=[o.no,o.purpose,o.brief,o.creator,o.picker,o.maker,o.memo,
+              (o.items||[]).map(i=>i.code+' '+i.name).join(' ')].join(' ').toLowerCase();
+           if(s.indexOf(q)<0) return false; }
+    return true;
+  }).sort((a,b)=>{
+    const sa=ST.indexOf(a.status), sb=ST.indexOf(b.status);
+    if((sa===4)!==(sb===4)) return sa===4?1:-1;
+    return String(a.req).localeCompare(String(b.req)) || String(b.createdAt).localeCompare(String(a.createdAt));
+  });
+}
+function vList(){
+  const el = $('#v-list');
+  if(!OT.me){ el.innerHTML='<div class="card"><div class="empty">讀取中…</div></div>'; return; }
+  const me = OT.me, cnt = s=>OT.orders.filter(o=>o.status===s).length;
+  const late = OT.orders.filter(o=>overdueOf(o)).length, todo = OT.orders.filter(myTurn).length;
+  const chip = (k,label,n)=>'<button class="chip'+(FILTER.st===k?' on':'')+'" onclick="setF(\'st\',\''+k+'\')">'+label+
+      (n!==undefined?' <b>'+n+'</b>':'')+'</button>';
+  const list = filtered();
+  const roleTxt = me.admin?'管理員（全部權限）':[me.creator?'建立者':'', me.maker?'製造者':''].filter(Boolean).join('・')||
+      (me.write?'一般（可留言；被指定為取貨者時可結案）':'唯讀');
+  const rows = list.map(o=>{
+    const late = overdueOf(o), turn = myTurn(o), stay = daysFrom(o.statusAt);
+    return '<tr class="'+(turn?'turn':'')+'" onclick="openOrder(\''+esc(o.no)+'\')">'+
+      '<td onclick="event.stopPropagation()"><input type="checkbox" '+(CHECKED.has(o.no)?'checked':'')+
+        ' onchange="tick(\''+esc(o.no)+'\',this.checked)"'+(o.status==='已結案'?' disabled':'')+'></td>'+
+      '<td><b class="mono">'+esc(o.no)+'</b><div class="mini">'+esc((TYPES[o.type]||{}).name||'')+'</div></td>'+
+      '<td class="brief"><div>'+esc(o.brief||'')+'</div><div class="mini">'+esc(o.purpose||'')+'</div></td>'+
+      '<td>'+stTag(o.status)+(o.status!=='已結案'&&stay!==null?'<div class="mini">'+stay+' 天</div>':'')+'</td>'+
+      '<td class="nowrap">'+esc(o.req||'—')+(late?'<div><span class="tag bad">'+esc(late)+'</span></div>':'')+'</td>'+
+      '<td class="nowrap">'+esc(o.est||'—')+'</td>'+
+      '<td class="nowrap mini">建 '+esc(o.creator||'—')+'<br>取 '+esc(o.picker||'—')+'<br>製 '+esc(o.maker||'—')+'</td>'+
+      '<td class="nowrap">'+(turn&&o.status!=='已結案'?'<button class="btn sm pri" onclick="event.stopPropagation();quickAdvance(\''+esc(o.no)+'\')">'+
+        NEXT_LABEL[o.status]+'</button>':'')+((o.comments||[]).length?' <span class="mini">💬'+o.comments.length+'</span>':'')+'</td></tr>';
+  }).join('');
+  el.innerHTML =
+  '<div class="stats">'+ST.map(s=>'<div class="stat st-'+(ST_CLS[s])+'" onclick="setF(\'st\',\''+s+'\')"><div class="k">'+s+'</div><div class="v">'+cnt(s)+'</div></div>').join('')+
+    '<div class="stat st-bad" onclick="setF(\'st\',\'late\')"><div class="k">逾期／停滯</div><div class="v">'+late+'</div></div></div>'+
+  '<div class="card">'+
+    '<div class="row" style="margin-bottom:10px">'+
+      (me.creator?'<button class="btn pri" onclick="openCreate()">＋ 建立新訂單</button>':'')+
+      '<button class="btn" onclick="batchAdvance()" '+(CHECKED.size?'':'disabled')+'>推進勾選的訂單（'+CHECKED.size+'）</button>'+
+      '<button class="btn" onclick="loadAll(true)">↻ 重新整理</button>'+
+      '<div class="grow"></div>'+
+      (me.admin?'<button class="btn" onclick="openImport()">匯入舊訂單 Excel</button>':'')+
+      '<button class="btn" onclick="exportXlsx()">匯出 Excel</button>'+
+    '</div>'+
+    '<div class="row" style="margin-bottom:10px">'+
+      chip('open','未結案',OT.orders.filter(o=>o.status!=='已結案').length)+chip('todo','輪到我',todo)+
+      chip('late','逾期',late)+chip('all','全部',OT.orders.length)+
+      '<label class="mini" style="display:flex;gap:5px;align-items:center;margin-left:6px"><input type="checkbox" '+
+        (FILTER.mine?'checked':'')+' onchange="setF(\'mine\',this.checked)">只看與我有關</label>'+
+      '<div class="grow"></div><input type="text" id="q" placeholder="搜尋單號、品名、料號、人員…" value="'+esc(FILTER.q)+
+        '" oninput="FILTER.q=this.value;vListBody()" style="max-width:280px">'+
+    '</div>'+
+    '<div class="mini" style="margin-bottom:8px">你的身分：<b>'+esc(me.name)+'</b>'+(me.dept?'（'+esc(me.dept)+'）':'')+'・'+esc(roleTxt)+
+      '　淡黃色列＝輪到你處理</div>'+
+    '<div class="tblwrap" id="listBody">'+listTable(rows)+'</div>'+
+  '</div>';
+}
+function listTable(rows){
+  return '<table class="ot"><thead><tr><th style="width:30px"></th><th>訂單編號</th><th>品項／用途</th><th>狀態</th>'+
+    '<th>需求日</th><th>預計完工</th><th>人員</th><th></th></tr></thead><tbody>'+
+    (rows||'<tr><td colspan="8" class="empty">沒有符合的訂單</td></tr>')+'</tbody></table>';
+}
+function vListBody(){ const x=document.activeElement&&document.activeElement.id; vList();
+  if(x==='q'){ const q=$('#q'); q.focus(); q.setSelectionRange(q.value.length,q.value.length); } }
+function setF(k,v){ FILTER[k]=v; vList(); }
+function tick(no,on){ if(on) CHECKED.add(no); else CHECKED.delete(no); vList(); }
+
+/* ---------- 訂單明細 ---------- */
+function openOrder(no){
+  const o = OT.orders.find(x=>x.no===no); if(!o) return toast('找不到訂單 '+no);
+  try{ history.replaceState(null,'','#'+encodeURIComponent(no)); }catch(e){}
+  const me = OT.me||{}, step = ST.indexOf(o.status);
+  const flow = '<div class="flow">'+ST.map((s,i)=>'<span class="'+(i<step?'done':i===step?'cur':'')+'">'+s+'</span>').join('<i>›</i>')+'</div>';
+  const items = '<div class="tblwrap"><table><thead><tr><th>#</th><th>料號</th><th>品名／規格</th><th style="text-align:right">數量</th><th>備註</th></tr></thead><tbody>'+
+    (o.items||[]).map((it,i)=>'<tr><td>'+(i+1)+'</td><td class="mono">'+esc(it.code||'—')+
+      (it.code&&!ITEM_MAP[it.code]?' <span class="tag warn">主檔無此料號</span>':'')+'</td><td>'+esc(it.name)+
+      (it.spec?'<div class="mini">'+esc(it.spec)+'</div>':'')+'</td><td style="text-align:right">'+it.qty+' '+esc(it.unit||'pcs')+
+      '</td><td class="mini">'+esc(it.remarks||'')+'</td></tr>').join('')+'</tbody></table></div>';
+  const kv = (k,v)=>'<div><span>'+k+'</span>'+v+'</div>';
+  const info = '<div class="kv">'+kv('種類',esc((TYPES[o.type]||{}).name||o.type||''))+kv('狀態',stTag(o.status)+
+      (overdueOf(o)?' <span class="tag bad">'+esc(overdueOf(o))+'</span>':''))+
+    kv('用途',esc(o.purpose))+kv('需求日期',esc(o.req||'—'))+kv('建立',esc(o.creator)+'　'+esc(o.created||''))+
+    kv('取貨者',esc(o.picker||'—'))+kv('製造者',esc(o.maker||'—'))+kv('預計完工日',esc(o.est||'—'))+
+    (o.memo?kv('備註',esc(o.memo)):'')+'</div>';
+  /* 動作區 */
+  let act = '';
+  if(myTurn(o)){
+    if(o.status==='製造排程中' || (o.status==='製造中' && me.maker)){
+      act += '<div class="actbox"><b>'+(o.status==='製造排程中'?'認領開工':'製造資訊')+'</b><div class="row" style="margin-top:8px">'+
+        '<div style="min-width:170px"><label class="mini">製造者</label><select id="mk_maker">'+
+          personOpts(o.maker||(me.maker&&!me.admin?me.name:''), p=>p.role==='maker'||p.admin, '-- 請選擇 --')+'</select></div>'+
+        '<div><label class="mini">預計完工日</label><input type="date" id="mk_est" value="'+toInputDate(o.est)+'"></div>'+
+        '<div style="align-self:flex-end">'+(o.status==='製造排程中'
+          ? '<button class="btn pri" type="button" onclick="claim(\''+esc(o.no)+'\')">認領並開工</button> <button class="btn" type="button" onclick="setMake(\''+esc(o.no)+'\')">只儲存不開工</button>'
+          : '<button class="btn" type="button" onclick="setMake(\''+esc(o.no)+'\')">更新製造資訊</button>')+'</div></div></div>';
+    }
+    if(o.status!=='製造排程中')
+      act += '<button class="btn pri" type="button" onclick="advanceOne(\''+esc(o.no)+'\')">'+NEXT_LABEL[o.status]+' → '+ST[step+1]+'</button> ';
+  }
+  const log = '<div class="log">'+(o.log||[]).slice().reverse().map(l=>'<div><span class="mini">'+esc(l.at)+'</span> <b>'+esc(l.by)+'</b> '+
+    (l.from!==l.to?esc(l.from||'')+(l.from?' → ':'')+esc(l.to):'')+(l.note?' <span class="mini">'+esc(l.note)+'</span>':'')+'</div>').join('')+'</div>';
+  const cm = '<div class="cmts">'+((o.comments||[]).map(c=>'<div class="cmt"><div class="mini"><b>'+esc(c.by)+'</b>　'+esc(c.at)+
+      (c.topic?'　<span class="tag gray">'+esc(c.topic)+'</span>':'')+'</div><div>'+esc(c.text).replace(/\n/g,'<br>')+'</div></div>').join('')||'<div class="mini">尚無討論</div>')+'</div>'+
+    (me.write?'<div class="row" style="margin-top:8px"><textarea id="cm_text" rows="2" class="grow" placeholder="給這張單的溝通訊息（取代原本的議題欄）"></textarea>'+
+      '<button class="btn" type="button" onclick="addComment(\''+esc(o.no)+'\')">送出留言</button></div>':'');
+  dialog('訂單 '+o.no,
+    flow+info+'<h3>品項</h3>'+items+(act?'<h3>處理</h3>'+act:'')+'<h3>溝通討論</h3>'+cm+'<h3>處理紀錄</h3>'+log,
+    (canEdit(o)?'<button class="btn danger" type="button" onclick="delOrder(\''+esc(o.no)+'\')">刪除</button>'+
+      '<button class="btn" type="button" onclick="openEdit(\''+esc(o.no)+'\')">修改</button>':'')+
+    '<span class="grow"></span><button class="btn" value="x">關閉</button>', true);
+}
+function openFromHash(){ const h=decodeURIComponent(location.hash.slice(1)); if(h && OT.orders.some(o=>o.no===h)) openOrder(h); }
+
+/* ---------- 狀態推進 ---------- */
+function showResults(res){
+  const ok = res.filter(r=>r.ok), bad = res.filter(r=>!r.ok), mailBad = ok.filter(r=>r.mail);
+  ok.forEach(r=>upsert(r.order));
+  let msg = '';
+  if(ok.length) msg += '<p>✅ 成功 '+ok.length+' 張：'+ok.map(r=>esc(r.no)+'（'+esc(r.from)+' → '+esc(r.to)+'）').join('、')+'</p>';
+  if(mailBad.length) msg += '<p>✉️ 狀態已更新，但通知信有問題：</p><ul>'+mailBad.map(r=>'<li>'+esc(r.no)+'：'+esc(r.mail)+'</li>').join('')+'</ul>';
+  if(bad.length) msg += '<p>❌ 失敗 '+bad.length+' 張：</p><ul>'+bad.map(r=>'<li>'+esc(r.no)+'：'+esc(r.error)+'</li>').join('')+'</ul>';
+  renderAll();
+  if(!bad.length && !mailBad.length && ok.length===1){ closeDlg(); toast(ok[0].no+' → '+ok[0].to); }
+  else dialog('推進結果', msg||'沒有任何變更');
+}
+async function doAdvance(nos, claimP){
+  if(BUSY) return; BUSY=true; toast('處理中…');
+  try{
+    const d = await apiPost('otAdvance',{nos:nos, claim:claimP||{}});
+    if(d.error) return toast(d.error);
+    nos.forEach(n=>CHECKED.delete(n));
+    showResults(d.results||[]);
+  }catch(e){ toast('連不上伺服器'); } finally { BUSY=false; }
+}
+function quickAdvance(no){
+  const o = OT.orders.find(x=>x.no===no);
+  if(o && o.status==='製造排程中') return openOrder(no);   /* 要先填製造者與完工日 */
+  confirmDlg('確定要將 '+no+' '+NEXT_LABEL[o.status]+'（→ '+ST[ST.indexOf(o.status)+1]+'）？', ()=>doAdvance([no]));
+}
+function advanceOne(no){ doAdvance([no]); }
+function claim(no){
+  const maker=$('#mk_maker').value, est=fromInputDate($('#mk_est').value);
+  if(!maker||!est) return toast('請填製造者與預計完工日');
+  doAdvance([no], {maker:maker, est:est});
+}
+async function setMake(no){
+  const maker=$('#mk_maker').value, est=fromInputDate($('#mk_est').value);
+  if(!maker||!est) return toast('請填製造者與預計完工日');
+  try{ const d=await apiPost('otSetMake',{no:no,maker:maker,est:est});
+    if(d.error) return toast(d.error); upsert(d.order); renderAll(); openOrder(no); toast('已更新製造資訊');
+  }catch(e){ toast('連不上伺服器'); }
+}
+function batchAdvance(){
+  const nos=[...CHECKED]; if(!nos.length) return;
+  const sched = nos.filter(n=>{ const o=OT.orders.find(x=>x.no===n); return o&&o.status==='製造排程中'&&(!o.maker||!o.est); });
+  confirmDlg('推進勾選的 '+nos.length+' 張訂單到下一個狀態？'+(sched.length?'<div class="hint">'+sched.length+
+    ' 張「製造排程中」尚未填製造者與預計完工日，會被退回；請先打開該單「認領開工」。</div>':''), ()=>doAdvance(nos));
+}
+function confirmDlg(html, fn){
+  window._cfm = fn;
+  dialog('請確認','<p>'+html+'</p>','<button class="btn pri" type="button" onclick="closeDlg();_cfm()">確定</button><button class="btn" value="x">取消</button>');
+}
+
+/* ---------- 留言 / 刪除 ---------- */
+async function addComment(no){
+  const t=$('#cm_text').value.trim(); if(!t) return;
+  try{ const d=await apiPost('otComment',{no:no,text:t});
+    if(d.error) return toast(d.error); upsert(d.order); renderAll(); openOrder(no);
+  }catch(e){ toast('連不上伺服器'); }
+}
+function delOrder(no){
+  dialog('刪除訂單','<p>確定刪除 <b>'+esc(no)+'</b>？刪除後單號不會再發出，原內容會留在異動紀錄。</p>'+
+    '<div class="fld"><label>原因（選填）</label><input type="text" id="del_why"></div>',
+    '<button class="btn danger" type="button" onclick="doDel(\''+esc(no)+'\')">確定刪除</button><button class="btn" value="x">取消</button>');
+}
+async function doDel(no){
+  try{ const d=await apiPost('otDelete',{no:no,why:$('#del_why').value});
+    if(d.error) return toast(d.error);
+    OT.orders=OT.orders.filter(o=>o.no!==no); CHECKED.delete(no); closeDlg(); renderAll(); toast('已刪除 '+no);
+  }catch(e){ toast('連不上伺服器'); }
+}
+
+/* ---------- 建立／修改 ---------- */
+let FORM = null;
+function suggestNo(type){
+  const used = OT.orders.map(o=>o.no).concat(OT.voidNos||[]), d=new Date();
+  const yy=String(d.getFullYear()).slice(-2), ym=d.getFullYear()+String(d.getMonth()+1).padStart(2,'0'),
+        ymd=ym+String(d.getDate()).padStart(2,'0');
+  const mx=(g,f)=>used.filter(n=>typeOf(n)===type).reduce((m,n)=>{ const r=f(n); return r.g===g&&r.n>m?r.n:m; },0);
+  if(type==='SAMPLE') return yy+'-'+String(mx(yy,n=>({g:n.slice(0,2),n:+n.split('-')[1]}))+1).padStart(3,'0')+'-A';
+  if(type==='ORDER') return 'O'+ym+String(mx('O'+ym,n=>({g:n.slice(0,7),n:+n.slice(7)}))+1).padStart(3,'0');
+  if(type==='RD') return 'RD-'+ymd+'-'+String(mx('RD-'+ymd,n=>({g:n.slice(0,11),n:+n.split('-')[2]}))+1).padStart(2,'0');
+  return '';
+}
+function openCreate(){ FORM={mode:'create', type:'SAMPLE', auto:true, no:'', purpose:PURPOSES[0], other:'', req:'',
+  picker:'', memo:'', items:[{code:'',name:'',spec:'',unit:'pcs',qty:1,remarks:''}], submit:true}; paintForm(); }
+function openEdit(no){
+  const o=OT.orders.find(x=>x.no===no); if(!o) return;
+  const std = PURPOSES.indexOf(o.purpose)>=0;
+  FORM={mode:'edit', base:o.updatedAt, type:o.type, no:o.no, purpose:std?o.purpose:'__other', other:std?'':o.purpose,
+    req:o.req, picker:o.picker, memo:o.memo, items:JSON.parse(JSON.stringify(o.items||[]))};
+  if(!FORM.items.length) FORM.items.push({code:'',name:'',spec:'',unit:'pcs',qty:1,remarks:''});
+  paintForm();
+}
+function readForm(){
+  if(!FORM||!$('#f_req')) return;
+  if(FORM.mode==='create'){ FORM.type=$('#f_type').value; FORM.auto=$('#f_auto').checked;
+    FORM.no=$('#f_no').value.trim(); FORM.submit=$('#f_submit').checked; }
+  FORM.purpose=$('#f_purpose').value; FORM.other=($('#f_other')||{value:''}).value;
+  FORM.req=fromInputDate($('#f_req').value); FORM.picker=$('#f_picker').value; FORM.memo=$('#f_memo').value;
+  FORM.items.forEach((it,i)=>{ it.qty=$('#it_q'+i).value; it.remarks=$('#it_r'+i).value; });
+}
+function paintForm(){
+  const f=FORM, isNew=f.mode==='create';
+  const itemRows = f.items.map((it,i)=>'<tr><td>'+(i+1)+'</td>'+
+    '<td><input type="text" list="itemList" id="it_c'+i+'" value="'+esc(it.code?it.code+'｜'+it.name:it.name)+
+      '" placeholder="輸入料號或品名搜尋" onchange="pickItem('+i+',this.value)">'+
+      (it.code&&ITEM_MAP[it.code]?'<div class="mini">'+esc(it.code)+'・'+esc(ITEM_MAP[it.code].spec||'')+'</div>':
+       it.name&&!it.code?'<div class="mini warnc">主檔無此品項（無料號）</div>':'')+'</td>'+
+    '<td style="width:90px"><input type="number" min="1" step="1" id="it_q'+i+'" value="'+esc(it.qty)+'"></td>'+
+    '<td style="width:60px" class="mini">'+esc(it.unit||'pcs')+'</td>'+
+    '<td><input type="text" id="it_r'+i+'" value="'+esc(it.remarks||'')+'"></td>'+
+    '<td><button class="btn sm" type="button" onclick="readForm();FORM.items.splice('+i+',1);if(!FORM.items.length)FORM.items.push({qty:1,unit:\'pcs\'});paintForm()">✕</button></td></tr>').join('');
+  dialog(isNew?'建立新訂單':'修改訂單 '+f.no,
+    (isNew?'<div class="row"><div class="fld" style="flex:1"><label>1. 訂單種類</label><select id="f_type" onchange="readForm();paintForm()">'+
+      Object.keys(TYPES).map(k=>'<option value="'+k+'"'+(f.type===k?' selected':'')+'>'+TYPES[k].name+'（'+TYPES[k].ex+'）</option>').join('')+'</select></div>'+
+      '<div class="fld" style="flex:1"><label>2. 訂單編號 <label class="inl"><input type="checkbox" id="f_auto" '+(f.auto?'checked':'')+
+      ' onchange="readForm();paintForm()"> 自動取號</label></label><input type="text" id="f_no" value="'+esc(f.auto?suggestNo(f.type):f.no)+'"'+
+      (f.auto?' readonly class="ro"':'')+' placeholder="'+TYPES[f.type].ex+'"></div></div>'+
+      (f.auto?'<div class="hint" style="margin:-6px 0 10px">送出時伺服器會再取一次號，兩人同時建單也不會撞號。</div>':''):'')+
+    '<div class="fld"><label>3. 訂單用途</label><select id="f_purpose" onchange="readForm();paintForm()">'+
+      PURPOSES.map(p=>'<option'+(f.purpose===p?' selected':'')+'>'+esc(p)+'</option>').join('')+
+      '<option value="__other"'+(f.purpose==='__other'?' selected':'')+'>其他（請說明）</option></select>'+
+      (f.purpose==='__other'?'<input type="text" id="f_other" style="margin-top:6px" placeholder="請說明用途" value="'+esc(f.other)+'">':'')+'</div>'+
+    '<div class="row"><div class="fld" style="flex:1"><label>4. 需求日期</label><input type="date" id="f_req" value="'+toInputDate(f.req)+'"></div>'+
+      '<div class="fld" style="flex:1"><label>5. 取貨者</label><select id="f_picker">'+personOpts(f.picker,null,'-- 請選擇取貨者 --')+'</select></div></div>'+
+    '<div class="fld"><label>6. 品項（料號從料號主檔帶出）</label><div class="tblwrap"><table class="items"><thead><tr><th>#</th><th>料號／品名</th><th>數量</th><th>單位</th><th>備註</th><th></th></tr></thead><tbody>'+
+      itemRows+'</tbody></table></div><button class="btn sm" type="button" style="margin-top:6px" onclick="readForm();FORM.items.push({code:\'\',name:\'\',unit:\'pcs\',qty:1,remarks:\'\'});paintForm()">＋ 新增項目</button></div>'+
+    '<div class="fld"><label>備註</label><textarea id="f_memo" rows="2">'+esc(f.memo)+'</textarea></div>'+
+    (isNew?'<label class="inl"><input type="checkbox" id="f_submit" '+(f.submit?'checked':'')+'> 建立後直接「送出排程」並通知製造部</label>':''),
+    '<button class="btn pri" type="button" onclick="submitForm()">'+(isNew?'建立訂單':'儲存修改')+'</button><button class="btn" value="x">取消</button>', true);
+}
+function pickItem(i,v){
+  readForm();
+  const code = String(v).split('｜')[0].trim(), it = FORM.items[i];
+  const hit = ITEM_MAP[code] || ITEMS.find(x=>x.name===v.trim());
+  if(hit){ Object.assign(it,{code:hit.code,name:hit.name,spec:hit.spec||'',unit:hit.unit||'pcs'}); }
+  else { Object.assign(it,{code:'',name:v.trim(),spec:'',unit:it.unit||'pcs'}); }
+  paintForm();
+}
+async function submitForm(allowSkip){
+  readForm(); const f=FORM;
+  const p={purpose:f.purpose==='__other'?f.other.trim():f.purpose, req:f.req, picker:f.picker, memo:f.memo,
+           items:f.items.filter(it=>it.code||it.name).map(it=>({code:it.code||'',name:it.name||'',spec:it.spec||'',unit:it.unit||'pcs',qty:it.qty,remarks:it.remarks||''}))};
+  if(!p.purpose) return toast('請填寫用途');
+  if(!p.req) return toast('請填寫需求日期');
+  if(!p.picker) return toast('請選擇取貨者');
+  if(!p.items.length) return toast('請至少填一項品項');
+  if(p.items.some(it=>!(+it.qty>0)||Math.floor(+it.qty)!==+it.qty)) return toast('數量必須是正整數');
+  if(BUSY) return; BUSY=true;
+  try{
+    let d;
+    if(f.mode==='create'){
+      Object.assign(p,{type:f.type, auto:f.auto, no:f.auto?'':f.no, submit:f.submit, allowSkip:!!allowSkip});
+      if(!f.auto && !TYPES[f.type].re.test(f.no)) { BUSY=false; return toast('單號格式應為 '+TYPES[f.type].ex); }
+      d = await apiPost('otCreate',p);
+      if(d.warnSkip){ BUSY=false; window._cfm=()=>{ paintForm(); submitForm(true); };
+        return dialog('跳號確認','<p>'+esc(d.message)+'</p>','<button class="btn pri" type="button" onclick="_cfm()">確定使用</button><button class="btn" type="button" onclick="paintForm()">回去修改</button>'); }
+      if(d.error){ BUSY=false; return toast(d.error); }
+      upsert(d.order); renderAll();
+      let msg = '已建立 '+d.no+(d.asked&&d.asked!==d.no?'（原號已被使用，改配 '+d.no+'）':'');
+      if(d.advance){ if(d.advance.ok) msg += '，已送出排程'+(d.advance.mail?'（通知信：'+d.advance.mail+'）':'，已通知製造部');
+                     else msg += '，但送出排程失敗：'+d.advance.error; }
+      closeDlg(); dialog('建立完成','<p>'+esc(msg)+'</p>','<button class="btn pri" type="button" onclick="openOrder(\''+esc(d.no)+'\')">查看訂單</button><button class="btn" value="x">關閉</button>');
+    }else{
+      Object.assign(p,{no:f.no, baseAt:f.base});
+      d = await apiPost('otEdit',p);
+      if(d.error) return toast(d.error);
+      upsert(d.order); renderAll(); openOrder(f.no); toast(d.unchanged?'沒有變更':'已儲存修改');
+    }
+  }catch(e){ toast('連不上伺服器'); } finally { BUSY=false; }
+}
+
+/* ---------- 甘特圖 ---------- */
+function vGantt(){
+  const el=$('#v-gantt'); if(!el||!OT.me) return;
+  const os = OT.orders.filter(o=>o.status!=='已結案' && pd(o.created));
+  if(!os.length){ el.innerHTML='<div class="card"><div class="empty">目前沒有未結案的訂單</div></div>'; return; }
+  const t0 = new Date(Math.min.apply(null, os.map(o=>pd(o.created)))); const td = pd(today());
+  const endOf = o=>pd(o.est)||pd(o.req)||td;
+  const t1 = new Date(Math.max(td, Math.max.apply(null, os.map(o=>Math.max(endOf(o), pd(o.req)||0))))+86400000*2);
+  const cols = Math.max(1, Math.ceil((t1-t0)/86400000/2)), W=26;
+  const x = d=>Math.round((d-t0)/86400000/2*W);
+  const head = Array.from({length:cols},(_,i)=>{ if(i%2) return ''; const d=new Date(+t0+i*2*86400000); return '<div class="gc" style="left:'+(i*W)+'px">'+(d.getMonth()+1)+'/'+d.getDate()+'</div>'; }).join('');
+  const who = o=>o.status==='新訂單'?o.creator:o.status==='製造排程中'?'製造部':o.status==='製造中'?o.maker:o.picker;
+  const rows = os.sort((a,b)=>String(a.created).localeCompare(String(b.created))).map(o=>{
+    const s=pd(o.created), e=endOf(o), req=pd(o.req);
+    return '<div class="gr" onclick="openOrder(\''+esc(o.no)+'\')"><div class="gl"><b class="mono">'+esc(o.no)+'</b><div class="mini">'+esc(o.brief).slice(0,26)+'</div></div>'+
+      '<div class="gt" style="width:'+(cols*W)+'px"><div class="gb g-'+ST_CLS[o.status]+(overdueOf(o)?' late':'')+'" style="left:'+x(s)+'px;width:'+Math.max(W/2,x(e)-x(s)+W/2)+'px">'+esc(o.status)+'・'+esc(who(o)||'')+'</div>'+
+      (req?'<div class="greq" style="left:'+x(req)+'px" title="需求日 '+esc(o.req)+'"></div>':'')+'</div></div>';
+  }).join('');
+  el.innerHTML='<div class="card"><h2>進度甘特圖<span class="sub">未結案訂單・每格 2 天・建立日 → 預計完工日（未填則到需求日）・紅線＝需求日・藍線＝今天</span></h2>'+
+    '<div class="gwrap"><div class="gr ghead"><div class="gl"></div><div class="gt" style="width:'+(cols*W)+'px">'+head+'</div></div>'+rows+
+    '<div class="gtoday" style="left:calc(var(--gl) + '+x(td)+'px)"></div></div>'+
+    '<div class="row mini" style="margin-top:10px;gap:14px">'+ST.slice(0,4).map(s=>'<span><i class="gdot g-'+ST_CLS[s]+'"></i>'+s+'</span>').join('')+'<span><i class="gdot late"></i>逾期</span></div></div>';
+}
+
+/* ---------- 說明 ---------- */
+function vAbout(){
+  const pp = OT.people||[], roleName={creator:'建立者',maker:'製造者'};
+  $('#v-about').innerHTML =
+  '<div class="card"><h2>流程與權限</h2><div class="tblwrap"><table><thead><tr><th>狀態變化</th><th>誰可以按</th><th>條件</th><th>通知</th></tr></thead><tbody>'+
+    '<tr><td>建立 → 新訂單</td><td>建立者、管理員</td><td>用途、需求日、取貨者、至少一項品項</td><td>—</td></tr>'+
+    '<tr><td>新訂單 → 製造排程中</td><td>該單建立者、管理員</td><td>同上</td><td>寄給製造部全員</td></tr>'+
+    '<tr><td>製造排程中 → 製造中</td><td>製造者、管理員</td><td>填製造者與預計完工日；製造者不能是建立者本人</td><td>寄給該製造者</td></tr>'+
+    '<tr><td>製造中 → 待收貨</td><td>製造者、管理員</td><td>—</td><td>寄給建立者與取貨者</td></tr>'+
+    '<tr><td>待收貨 → 已結案</td><td>該單建立者或取貨者、管理員</td><td>—</td><td>—</td></tr>'+
+  '</tbody></table></div><div class="hint">修改與刪除：該單建立者或管理員，已結案不能改。刪除的單號不再發出。<br>'+
+    '逾期提醒：每 4 個工作天早上 8 點檢查一次——超過需求日、排程停滯超過 4 天、超過預計完工日、待收貨超過 4 天，會寄信給當下負責的人。</div></div>'+
+  '<div class="card"><h2>訂單編號規則</h2><div class="tblwrap"><table><tbody>'+
+    Object.keys(TYPES).map(k=>'<tr><th style="width:130px">'+TYPES[k].name+'</th><td class="mono">'+TYPES[k].ex+'</td><td class="mini">'+
+      (k==='SAMPLE'?'西元後兩碼－年度流水號 3 碼－版次':k==='ORDER'?'O＋西元年月＋當月流水號 3 碼':'RD－年月日－當日流水號 2 碼')+'</td></tr>').join('')+
+  '</tbody></table></div></div>'+
+  '<div class="card"><h2>人員角色<span class="sub">依「料號系統 → 資料管理 → 人員部門對照表」的部門自動對應</span></h2><div class="tblwrap"><table><thead><tr><th>姓名</th><th>部門</th><th>訂單角色</th><th>網站帳號</th></tr></thead><tbody>'+
+    pp.map(p=>'<tr><td>'+esc(p.name)+(p.alias&&p.alias!==p.name?' <span class="mini">'+esc(p.alias)+'</span>':'')+'</td><td>'+esc(p.dept||'—')+'</td><td>'+
+      (p.admin?'<span class="tag info">管理員</span> ':'')+(roleName[p.role]?'<span class="tag ok">'+roleName[p.role]+'</span>':'<span class="mini">一般</span>')+'</td><td>'+
+      (p.account?'<span class="tag ok">有</span>':'<span class="tag warn">尚未註冊・收不到通知</span>')+'</td></tr>').join('')+
+  '</tbody></table></div><div class="hint">部門 → 角色：業務部／研發部／管理部＝建立者、製造部＝製造者。取貨者不限部門，建單時指定。<br>'+
+    '沒有網站帳號的人可以被選為取貨者，但收不到通知信，也無法登入結案。部門不在對照表裡的帳號只能看與留言。</div></div>';
+}
+
+/* ---------- 匯出 ---------- */
+function exportXlsx(){
+  if(typeof XLSX==='undefined') return toast('Excel 元件尚未載入');
+  const list = filtered();
+  const rows = list.map(o=>({'訂單編號':o.no,'種類':(TYPES[o.type]||{}).name||'','狀態':o.status,'用途':o.purpose,
+    '需求日期':o.req,'建立日期':o.created,'建立者':o.creator,'取貨者':o.picker,'製造者':o.maker,'預計完工日':o.est,
+    '品項':(o.items||[]).map(i=>(i.code?i.code+' ':'')+i.name+' x'+i.qty).join('\n'),'備註':o.memo,
+    '逾期':overdueOf(o),'狀態變更時間':o.statusAt}));
+  const ws = XLSX.utils.json_to_sheet(rows), wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, '訂單'); XLSX.writeFile(wb, '訂單追蹤_'+today().replace(/\//g,'')+'.xlsx');
+}
+
+/* ---------- 匯入舊 OrderTracking 試算表 ---------- */
+let IMP = null;
+function openImport(){
+  dialog('匯入舊訂單（OrderTracking 試算表）',
+    '<p>在舊試算表按「檔案 → 下載 → Microsoft Excel (.xlsx)」，再選擇那個檔案。系統會讀「Orders」與「Settings」分頁。</p>'+
+    '<input type="file" id="imp_file" accept=".xlsx,.xls" onchange="readImport(this.files[0])">'+
+    '<div class="hint">已存在的單號會略過，不會覆蓋。匯入前可先預覽與調整人員對應。</div><div id="imp_prev"></div>','',true);
+}
+function xd(v){ if(v instanceof Date && !isNaN(v)) return v.getFullYear()+'/'+String(v.getMonth()+1).padStart(2,'0')+'/'+String(v.getDate()).padStart(2,'0');
+  const m=String(v||'').match(/(\d{4})[\/-](\d{1,2})[\/-](\d{1,2})/); return m?m[1]+'/'+m[2].padStart(2,'0')+'/'+m[3].padStart(2,'0'):''; }
+function xts(v){ if(v instanceof Date && !isNaN(v)) return xd(v)+' '+String(v.getHours()).padStart(2,'0')+':'+String(v.getMinutes()).padStart(2,'0')+':00'; return xd(v); }
+function parseContent(c){
+  const r={purpose:'',items:[]}; String(c||'').split('\n').forEach(l=>{ l=l.trim();
+    if(l.indexOf('【訂單用途】')===0) r.purpose=l.slice(6).trim();
+    else if(l.indexOf('【品名】')===0){ const s=l.slice(4).trim();
+      const m=s.match(/^(.*?)\s*\(料號:\s*([^)]*)\)\s*x(\d+)\s*pcs(?:\s*\[備註:\s*(.*)\])?$/);
+      r.items.push(m?{name:m[1].trim(),oldCode:m[2].trim(),qty:+m[3],remarks:(m[4]||'').trim()}:{name:s,oldCode:'',qty:1,remarks:''}); }
+    else if(l) r.extra=(r.extra?r.extra+'\n':'')+l; });
+  return r;
+}
+async function readImport(file){
+  if(!file) return;
+  try{
+    const wb = XLSX.read(await file.arrayBuffer(), {type:'array', cellDates:true});
+    const sh = wb.Sheets['Orders']; if(!sh) return toast('檔案裡找不到「Orders」分頁');
+    const rowsA = XLSX.utils.sheet_to_json(sh, {header:1, raw:true, defval:''});
+    const heads = (rowsA[0]||[]).map(String);
+    const set = wb.Sheets['Settings'] ? XLSX.utils.sheet_to_json(wb.Sheets['Settings'], {header:1, raw:true, defval:''}) : [];
+    const nickMail = {}; set.slice(1).forEach(r=>{ if(r[0]) nickMail[String(r[0]).trim()] = String(r[1]||'').trim().toLowerCase(); });
+    let users=[]; try{ const u=await apiPost('listUsers',null); users=u.users||[]; }catch(e){}
+    const orders = rowsA.slice(1).filter(r=>String(r[1]||'').trim()).map(r=>{
+      const pc = parseContent(r[2]);
+      const comments = [11,12,13,14,15].map(i=>({i:i,t:String(r[i]||'').trim()})).filter(x=>x.t)
+        .map(x=>({at:'',by:'',topic:heads[x.i]||('議題'+(x.i-10)),text:x.t}));
+      return {no:String(r[1]).trim(), status:String(r[5]||'').trim()||'新訂單', purpose:pc.purpose||'（舊單未註明用途）',
+        created:xd(r[3]), req:xd(r[4]), picker:String(r[6]||'').trim(), creator:String(r[7]||'').trim(),
+        est:xd(r[8]), maker:String(r[9]||'').trim(), statusAt:xts(r[10])||xd(r[3]),
+        items:pc.items, memo:pc.extra||'', comments:comments};
+    });
+    /* 舊暱稱 → 網站人員：先比 Email，再比姓名／暱稱 */
+    const nicks = [...new Set(orders.flatMap(o=>[o.creator,o.picker,o.maker]).filter(Boolean))];
+    const map = {};
+    nicks.forEach(n=>{
+      const mail = nickMail[n]; const u = mail && users.find(u=>String(u.email||'').toLowerCase()===mail);
+      const p = u ? OT.people.find(p=>p.name===u.name) : OT.people.find(p=>p.name===n||p.alias===n||(n.length>=2&&p.name.endsWith(n)));
+      map[n] = p ? p.name : (u?u.name:'');
+    });
+    IMP = {orders:orders, nicks:nicks, map:map, file:file.name};
+    paintImport();
+  }catch(e){ toast('讀取失敗：'+e.message); }
+}
+function paintImport(){
+  const I = IMP, exist = new Set(OT.orders.map(o=>o.no));
+  const newN = I.orders.filter(o=>!exist.has(o.no)).length;
+  const bySt = ST.map(s=>s+' '+I.orders.filter(o=>o.status===s).length).join('・');
+  $('#imp_prev').innerHTML = '<h3>預覽：'+esc(I.file)+'</h3><p>共 '+I.orders.length+' 張（'+bySt+'），新匯入 <b>'+newN+'</b> 張，已存在略過 '+(I.orders.length-newN)+' 張。</p>'+
+    '<h3>人員對應</h3><div class="hint" style="margin-top:0">舊系統用暱稱，請對應到網站人員；留空＝保留原暱稱。</div><div class="tblwrap"><table><tbody>'+
+    I.nicks.map(n=>'<tr><td style="width:140px">'+esc(n)+'</td><td><select onchange="IMP.map[\''+esc(n)+'\']=this.value">'+personOpts(I.map[n],null,'（保留原暱稱）')+'</select></td></tr>').join('')+
+    '</tbody></table></div><h3>前 5 張</h3><div class="tblwrap"><table><thead><tr><th>單號</th><th>狀態</th><th>品項</th><th>需求日</th></tr></thead><tbody>'+
+    I.orders.slice(0,5).map(o=>'<tr><td class="mono">'+esc(o.no)+'</td><td>'+esc(o.status)+'</td><td class="mini">'+esc(o.items.map(i=>i.name+' x'+i.qty).join('；'))+'</td><td>'+esc(o.req)+'</td></tr>').join('')+
+    '</tbody></table></div><div class="hint">舊料號（例 030-001-00）會保留在品項備註，料號欄留空；之後可用「修改」改成料號主檔的料號。</div>'+
+    '<div class="row" style="margin-top:10px"><button class="btn pri" type="button" onclick="doImport()" '+(newN?'':'disabled')+'>匯入 '+newN+' 張</button></div>';
+}
+async function doImport(){
+  const I=IMP, m=n=>I.map[n]||n;
+  const list = I.orders.map(o=>Object.assign({}, o, {creator:m(o.creator), picker:m(o.picker), maker:m(o.maker),
+    items:o.items.map(it=>({code:'', name:it.name, qty:it.qty, unit:'pcs',
+      remarks:[it.oldCode?'舊料號 '+it.oldCode:'', it.remarks].filter(Boolean).join('；')}))}));
+  try{
+    toast('匯入中…');
+    const d = await apiPost('otImport',{orders:list});
+    if(d.error) return toast(d.error);
+    closeDlg(); IMP=null; await loadAll(true);
+    dialog('匯入完成','<p>已匯入 '+d.added+' 張'+(d.skipped&&d.skipped.length?'，略過已存在 '+d.skipped.length+' 張':'')+'。</p>');
+  }catch(e){ toast('連不上伺服器'); }
+}
+
+/* ---------- 啟動 ---------- */
+document.querySelectorAll('nav button').forEach(b=>b.onclick=()=>view(b.dataset.v));
+window.addEventListener('hashchange', openFromHash);
+setInterval(()=>{ if(OT.me && !document.hidden && !$('#dlg').open) loadAll(true); }, 90000);
+(async function init(){
+  if(!TOKEN && !PW){ renderAll(); openGate('login'); return; }
+  if(await whoAmI()) await loadAll();
+  else renderAll();
+})();
+</script>
+</body>
+</html>
