@@ -36,6 +36,19 @@ input,select,textarea,button{font-family:inherit;font-size:13.5px}
 input[type=text],input[type=number],input[type=search],select,textarea{
   padding:7px 10px;border:1px solid var(--line);border-radius:6px;background:#fff;color:var(--txt);width:100%}
 input:focus,select:focus,textarea:focus{outline:2px solid var(--acc-bg);border-color:var(--acc)}
+/* BOM 選單（可搜尋） */
+.bompick{position:relative;min-width:340px}
+.bompick input{width:100%;padding:7px 28px 7px 10px;border:1px solid var(--line);border-radius:6px;background:#fff;font-family:inherit;font-size:13.5px}
+.bompick-arrow{position:absolute;right:10px;top:50%;transform:translateY(-50%);color:var(--mut);pointer-events:none;font-size:11px}
+.bompick-list{display:none;position:absolute;left:0;top:calc(100% + 4px);min-width:100%;width:max-content;max-width:min(680px,92vw);
+  max-height:min(460px,70vh);overflow:auto;background:#fff;border:1px solid var(--line);border-radius:8px;
+  box-shadow:0 10px 30px rgba(0,0,0,.14);z-index:80;padding:4px 0}
+.bompick-list.on{display:block}
+.bompick-grp{position:sticky;top:0;background:#f6f7f9;color:var(--mut);font-size:11.5px;font-weight:650;letter-spacing:.5px;padding:4px 12px;border-top:1px solid var(--line2)}
+.bompick-it{padding:6px 12px;cursor:pointer;font-size:13.5px;white-space:nowrap}
+.bompick-it.hi{background:var(--acc-bg)}
+.bompick-it.cur{font-weight:650;color:var(--acc)}
+.bompick-cnt,.bompick-empty{padding:6px 12px;font-size:12px;color:var(--mut)}
 .btn{padding:7px 14px;border:1px solid var(--line);background:#fff;border-radius:6px;cursor:pointer;white-space:nowrap}
 .btn:hover{background:var(--line2)}
 .btn.pri{background:var(--acc);border-color:var(--acc);color:#fff}
@@ -1593,12 +1606,15 @@ function exportItems(){
 let curBom=null, bomFlat=false, collapsed={};
 function vBoms(){
   if(curBom&&!BIDX[curBom]) curBom=null;
-  if(!curBom&&S.boms.length) curBom=S.boms[0].code;
+  if(!curBom&&S.boms.length) curBom=bomSorted()[0].code;
   $('#v-boms').innerHTML=`
   <div class="card"><div class="row">
-    <div style="min-width:280px"><select id="bomSel">
-      ${S.boms.map(b=>`<option value="${esc(b.code)}" ${b.code===curBom?'selected':''}>${esc(b.code)}　${esc(b.name)}</option>`).join('')}
-    </select></div>
+    <div class="bompick" id="bomPick">
+      <input id="bomSel" type="text" autocomplete="off" spellcheck="false"
+        placeholder="輸入品號或名稱搜尋 BOM…" value="${curBom&&BIDX[curBom]?esc(curBom+'　'+BIDX[curBom].name):''}">
+      <span class="bompick-arrow">▾</span>
+      <div class="bompick-list" id="bomList"></div>
+    </div>
     <button class="btn pri" onclick="editBom(null)">＋ 新增 BOM</button>
     <button class="btn" onclick="editBom(curBom)" ${curBom?'':'disabled'}>編輯</button>
     <button class="btn" onclick="dupBom()" ${curBom?'':'disabled'}>複製</button>
@@ -1615,10 +1631,64 @@ function vBoms(){
     <button class="btn danger" onclick="delBom()" ${curBom?'':'disabled'}>刪除</button>
   </div></div>
   <div id="bomBody"></div>`;
-  $('#bomSel').onchange=e=>{curBom=e.target.value;collapsed={};renderBom();};
+  bomPickInit();
   renderBom();
 }
 function openBom(code){curBom=code;go('boms');}
+/* ---------- BOM 選單：依品號分組排序＋可打字搜尋 ---------- */
+function bomGroup(code){ const c=String(code||''); const i=c.indexOf('-'); return (i>0?c.slice(0,i):c.slice(0,3)).toUpperCase(); }
+function bomSorted(){
+  return S.boms.slice().sort((a,b)=>{
+    const ga=bomGroup(a.code), gb=bomGroup(b.code);
+    return ga.localeCompare(gb,'en',{numeric:true}) ||
+           String(a.code).localeCompare(String(b.code),'en',{numeric:true,sensitivity:'base'});
+  });
+}
+let BPK={hi:0, list:[]};
+function bomPickInit(){
+  const inp=$('#bomSel'), box=$('#bomList'); if(!inp) return;
+  const label=()=>curBom&&BIDX[curBom]?curBom+'　'+BIDX[curBom].name:'';
+  const open=q=>{ bomPickRender(q); box.classList.add('on'); };
+  const close=()=>{ box.classList.remove('on'); inp.value=label(); };
+  inp.onfocus=()=>{ inp.select(); open(''); };
+  inp.oninput=()=>open(inp.value);
+  inp.onkeydown=e=>{
+    if(e.key==='ArrowDown'||e.key==='ArrowUp'){ e.preventDefault();
+      if(!box.classList.contains('on')) open('');
+      const n=BPK.list.length; if(!n) return;
+      BPK.hi=(BPK.hi+(e.key==='ArrowDown'?1:-1)+n)%n; bomPickHi(); }
+    else if(e.key==='Enter'){ e.preventDefault(); const b=BPK.list[BPK.hi]; if(b) bomPickChoose(b.code); }
+    else if(e.key==='Escape'){ close(); inp.blur(); }
+  };
+  inp.onblur=()=>setTimeout(()=>{ if(document.activeElement!==inp) close(); },150);
+  box.onmousedown=e=>{ const el=e.target.closest('[data-code]'); if(el){ e.preventDefault(); bomPickChoose(el.dataset.code); } };
+}
+function bomPickRender(q){
+  const box=$('#bomList'); if(!box) return;
+  const words=String(q||'').toLowerCase().split(/\s+/).filter(Boolean);
+  BPK.list=bomSorted().filter(b=>{ const t=(b.code+' '+(b.name||'')+' '+(b.spec||'')).toLowerCase();
+    return words.every(w=>t.indexOf(w)>=0); });
+  BPK.hi=Math.max(0,BPK.list.findIndex(b=>b.code===curBom));
+  if(!BPK.list.length){ box.innerHTML='<div class="bompick-empty">找不到符合「'+esc(q)+'」的 BOM</div>'; return; }
+  let g='', h='<div class="bompick-cnt">'+BPK.list.length+' / '+S.boms.length+' 個 BOM</div>';
+  BPK.list.forEach((b,i)=>{
+    const gg=bomGroup(b.code); if(gg!==g){ g=gg; h+='<div class="bompick-grp">'+esc(g)+'</div>'; }
+    h+='<div class="bompick-it'+(b.code===curBom?' cur':'')+'" data-i="'+i+'" data-code="'+esc(b.code)+'">'+
+       '<span class="mono">'+esc(b.code)+'</span>　'+esc(b.name||'')+'</div>';
+  });
+  box.innerHTML=h; bomPickHi();
+}
+function bomPickHi(){
+  const box=$('#bomList'); if(!box) return;
+  box.querySelectorAll('.bompick-it').forEach(el=>el.classList.toggle('hi',+el.dataset.i===BPK.hi));
+  const el=box.querySelector('.bompick-it.hi'); if(el) el.scrollIntoView({block:'nearest'});
+}
+function bomPickChoose(code){
+  const box=$('#bomList'), inp=$('#bomSel');
+  box.classList.remove('on');
+  if(code!==curBom){ curBom=code; collapsed={}; renderBom(); }
+  inp.value=curBom+'　'+(BIDX[curBom]?BIDX[curBom].name:''); inp.blur();
+}
 function renderBom(){
   const box=$('#bomBody');
   if(!curBom){box.innerHTML='<div class="card"><div class="empty">尚無 BOM，請新增或匯入。</div></div>';
