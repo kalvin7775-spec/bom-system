@@ -347,6 +347,8 @@ function dialog(title,bodyHTML,footHTML,wide){
   const d=$('#dlg'); d.classList.toggle('wide',!!wide); if(!d.open) d.showModal(); $('#dlgBody').scrollTop=0;
 }
 async function loadUsers(){ await loadAll(); }
+const _logout = logout;
+logout = function(){ try{ localStorage.removeItem(OTC_KEY); }catch(e){} OT={orders:[],people:[],me:null,rev:0,voidNos:[]}; _logout(); };
 $('#dlg').addEventListener('close',()=>{ try{ if(location.hash) history.replaceState(null,'',location.pathname); }catch(e){} });
 /* ============================================================
    跨部門訂單系統（OrderTracking 移植版）
@@ -400,16 +402,41 @@ function myTurn(o){
 function canEdit(o){ const me=OT.me||{}; return me.write && o.status!=='已結案' && (me.admin || o.creator===me.name); }
 
 /* ---------- 讀取 ---------- */
+/* 載入策略：①不另打 me（otLoad 本身就驗身分）②先畫上次的快取，背景再更新 ③料號清單畫面出來後才載 */
+const OTC_KEY='ot_cache_v1', ITC_KEY='ot_items_v1';
+function cacheGet(k){ try{ return JSON.parse(localStorage.getItem(k)||'null'); }catch(e){ return null; } }
+function cacheSet(k,v){ try{ localStorage.setItem(k, JSON.stringify(v)); }catch(e){} }
+function setMeFrom(m){
+  if(!m) return;
+  const role = m.admin?'admin':(m.write?'editor':'viewer');
+  ME = Object.assign(ME||{}, {name:m.name, role:role, roleName:ROLE_NAME[role]||'唯讀'});
+  WHO = m.name || WHO;
+}
+function setItems(list){
+  ITEMS = list||[]; ITEM_MAP = {}; ITEMS.forEach(x=>ITEM_MAP[x.code]=x);
+  let dl = document.getElementById('itemList');
+  if(!dl){ dl = document.createElement('datalist'); dl.id='itemList'; document.body.appendChild(dl); }
+  dl.innerHTML = ITEMS.map(x=>'<option value="'+esc(x.code+'｜'+x.name)+'">'+esc(x.spec||'')+'</option>').join('');
+}
+let LOADING=false;
 async function loadAll(quiet){
+  if(LOADING) return; LOADING=true;
+  const sub=$('#hdrSub'); if(OT.me && sub) sub.textContent+='　更新中…';
   try{
-    const [d, it] = await Promise.all([apiPost('otLoad',null),
-                                       ITEMS.length?Promise.resolve(null):apiPost('loadItems',null)]);
-    if(d.error){ if(d.needLogin) openGate('login', d.error); else toast(d.error); return; }
-    OT = d;
-    if(it && it.items){ ITEMS = it.items; ITEM_MAP = {}; ITEMS.forEach(x=>ITEM_MAP[x.code]=x); }
+    const d = await apiPost('otLoad',null);
+    if(d.error){ if(d.needLogin){ ME=null; openGate('login', d.error); } else toast(d.error); return; }
+    OT = d; setMeFrom(d.me);
+    cacheSet(OTC_KEY, {who:d.me&&d.me.name, at:Date.now(), ot:d});
     renderAll();
     if(!quiet) openFromHash();
+    if(!ITEMS.length || !quiet) loadItems();
   }catch(e){ toast('讀取失敗：'+(e.message||'連不上伺服器')); }
+  finally{ LOADING=false; const s=$('#hdrSub'); if(s) s.textContent=s.textContent.replace('　更新中…',''); }
+}
+async function loadItems(){
+  try{ const it = await apiPost('loadItems',null);
+       if(it && it.items){ setItems(it.items); cacheSet(ITC_KEY, it.items); if($('#dlg').open && FORM) {} } }
+  catch(e){}
 }
 function upsert(o){ const i = OT.orders.findIndex(x=>x.no===o.no); if(i>=0) OT.orders[i]=o; else OT.orders.push(o); }
 
@@ -858,8 +885,16 @@ window.addEventListener('hashchange', openFromHash);
 setInterval(()=>{ if(OT.me && !document.hidden && !$('#dlg').open) loadAll(true); }, 90000);
 (async function init(){
   if(!TOKEN && !PW){ renderAll(); openGate('login'); return; }
-  if(await whoAmI()) await loadAll();
-  else renderAll();
+  /* 先用上次的資料把畫面畫出來（同一位使用者才用），再到雲端更新 */
+  const c = cacheGet(OTC_KEY), ci = cacheGet(ITC_KEY);
+  if(ci && ci.length) setItems(ci);
+  if(c && c.ot && c.ot.me && (!WHO || c.who===WHO)){
+    OT = c.ot; setMeFrom(c.ot.me); renderAll(); openFromHash();
+    loadItems();                 /* 料號清單與訂單同時在背景更新 */
+    await loadAll(true);
+  } else {
+    await loadAll();
+  }
 })();
 </script>
 </body>
