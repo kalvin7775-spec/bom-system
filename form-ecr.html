@@ -96,7 +96,7 @@ col.c3{width:10.0%} col.c4{width:26.1%} col.c5{width:27.9%}
 .content .top .ver{margin-left:auto;white-space:nowrap}
 .content .top .ver .in{min-width:70px}
 .remark td{vertical-align:top;padding:4px 6px}
-.remark .lb{display:flex;align-items:baseline}
+.remark .lb{display:flex;align-items:flex-start}
 .remark .lb .in{flex:1 1 auto}
 
 .signttl{margin:9px 0 3px}
@@ -176,6 +176,21 @@ col.s0{width:20%} col.s1{width:13.33%}
   .sign .box{height:1.5cm}
   table,tr,td{page-break-inside:avoid}
 }
+
+/* ---------- 系統直接產生 PDF（不經瀏覽器列印） ----------
+   在畫面外排一份固定 A4 寬（21cm）、邊界同 Word 範本（上下 1.4cm、左右 1cm）的表單，
+   字型固定用網路字型「霞鶩文楷 TC」，所以每台電腦產出的 PDF 都一樣。 */
+.pdfhost{position:absolute;left:-12000px;top:0;width:21cm;background:#fff;pointer-events:none}
+.sheet.pdfmode{width:21cm;margin:0;box-shadow:none;padding:1.4cm 1cm;font-size:11pt;
+  font-family:"LXGW WenKai TC","標楷體","BiauKai","DFKai-SB",serif}
+.pdfmode .in{background:transparent !important;box-shadow:none !important;min-height:1.25em;border-radius:0}
+.pdfmode .in:empty::before{content:"" !important}
+.pdfmode .in.area{min-height:3cm}
+.pdfmode .in.area2{min-height:1.4cm}
+.pdfmode .ck .bx{font-family:"LXGW WenKai TC","標楷體","BiauKai",serif}
+.pdfmode .ck .bx.fix::before{content:none}
+.pdfmode .hdr .qs{font-family:"LXGW WenKai TC",serif}
+.pdfmode .in.nw{font-size:10pt;letter-spacing:-.3px;padding:1px 1px}
 </style>
 <script>/* JSZip 3.10.1（內嵌，離線也能用） */
 /*!
@@ -205,7 +220,7 @@ https://github.com/nodeca/pako/blob/main/LICENSE
   <span class="box" id="meBox"></span>
   <button class="btn" onclick="loadSample()">載入範例</button>
   <button class="btn" onclick="newForm()">新表單</button>
-  <button class="btn" onclick="printPdf()">匯出 PDF（列印另存）</button>
+  <button class="btn" onclick="downloadPdf()">匯出 PDF</button>
   <button class="btn" onclick="exportWord()">匯出 Word</button>
   <button class="btn pri" id="btnSubmit" onclick="submitEcr()">送出存檔</button>
 </div>
@@ -330,7 +345,8 @@ const LOGO_B64="iVBORw0KGgoAAAANSUhEUgAAAjAAAACUCAIAAAACgYTpAABiAklEQVR42u1ddUBU
    文件/工程變更審查表 — 本地測試版
    Word：以公司原表做成的 .docx 範本（base64 內嵌），用 JSZip 把
          {{佔位符}} 換掉後輸出，版面、logo、頁首與正式表單完全一致。
-   PDF ：用瀏覽器列印 →「另存為 PDF」，中文字型與版面最準。
+   PDF ：系統直接產生 A4 PDF（固定字型與尺寸，每台電腦結果一致），
+         載入失敗時才退回瀏覽器列印。
    可填欄位一律用 contenteditable，會自動長高，列印時不會被切掉。
    ============================================================ */
 
@@ -439,6 +455,111 @@ function printPdf(){
   window.addEventListener('afterprint', restore);
   setTimeout(restore, 60000);
   window.print();
+}
+
+/* ---------- 系統直接產生 PDF ----------
+   不用 window.print()：各瀏覽器／作業系統的列印縮放、頁首頁尾、字型都不同，
+   Mac Safari 會跑成 2 頁、Windows Chrome 會縮小並印上網址。
+   改成：在畫面外排一份固定 A4 版面 → html2canvas 拍成高解析圖 → jsPDF 放進 A4 頁面。 */
+const PDF_LIB_URLS = {
+  html2canvas: 'https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js',
+  jspdf:       'https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js',
+  font:        'https://fonts.googleapis.com/css2?family=LXGW+WenKai+TC:wght@400;700&display=block'
+};
+const PDF_FONT_FAMILY = 'LXGW WenKai TC';
+
+function loadScriptOnce(src){
+  return new Promise((ok, ng) => {
+    if(document.querySelector('script[data-src="' + src + '"]')) return ok();
+    const s = document.createElement('script');
+    s.src = src; s.dataset.src = src;
+    s.onload = ok; s.onerror = () => ng(new Error('元件載入失敗，請確認網路'));
+    document.head.appendChild(s);
+  });
+}
+function loadCssOnce(href){
+  return new Promise(ok => {
+    if(document.querySelector('link[data-href="' + href + '"]')) return ok();
+    const l = document.createElement('link');
+    l.rel = 'stylesheet'; l.href = href; l.dataset.href = href;
+    l.onload = ok; l.onerror = ok;          // 字型抓不到就用電腦內的標楷體，不擋產出
+    document.head.appendChild(l);
+  });
+}
+async function ensurePdfLibs(){
+  const jobs = [loadCssOnce(PDF_LIB_URLS.font)];
+  if(!window.html2canvas) jobs.push(loadScriptOnce(PDF_LIB_URLS.html2canvas));
+  if(!(window.jspdf && window.jspdf.jsPDF)) jobs.push(loadScriptOnce(PDF_LIB_URLS.jspdf));
+  await Promise.all(jobs);
+}
+
+/* 複製目前表單成「PDF 專用版」：勾選框換成固定的 ■／□ 字元、拿掉輸入框底色與提示字 */
+function buildPdfSheet(){
+  const src = $('sheet');
+  const clone = src.cloneNode(true);
+  const srcInputs = src.querySelectorAll('.ck input');
+  clone.querySelectorAll('.ck input').forEach((inp, i) => {
+    const bx = inp.parentNode.querySelector('.bx');
+    if(bx){ bx.textContent = (srcInputs[i] && srcInputs[i].checked) ? '■' : '□'; bx.classList.add('fix'); }
+    inp.remove();                            // 移除 radio，避免和原表單互相取消勾選
+  });
+  clone.querySelectorAll('[contenteditable]').forEach(e => e.removeAttribute('contenteditable'));
+  clone.querySelectorAll('[id]').forEach(e => e.removeAttribute('id'));
+  clone.removeAttribute('id');
+  clone.classList.add('pdfmode');
+  return clone;
+}
+
+async function downloadPdf(){
+  const name = pdfName(buildMap());
+  toast('PDF 產生中…');
+  let host = null;
+  try{
+    await ensurePdfLibs();
+    const sheet = buildPdfSheet();
+    host = document.createElement('div');
+    host.className = 'pdfhost';
+    host.appendChild(sheet);
+    document.body.appendChild(host);
+
+    /* 等字型把這張表用到的字都下載完，否則會拍到備用字型 */
+    if(document.fonts && document.fonts.load){
+      const txt = sheet.textContent + '■□●';
+      try{
+        await Promise.all([
+          document.fonts.load('400 16px "' + PDF_FONT_FAMILY + '"', txt),
+          document.fonts.load('700 16px "' + PDF_FONT_FAMILY + '"', txt)
+        ]);
+      }catch(e){}
+      await document.fonts.ready;
+    }
+    const imgs = Array.from(sheet.querySelectorAll('img'));
+    await Promise.all(imgs.map(im => im.complete ? 0 : new Promise(r => { im.onload = im.onerror = r; })));
+
+    const canvas = await window.html2canvas(sheet, {
+      scale: 3, backgroundColor: '#ffffff', logging: false, useCORS: true,
+      windowWidth: sheet.scrollWidth, windowHeight: sheet.scrollHeight
+    });
+
+    const { jsPDF } = window.jspdf;
+    const pdf = new jsPDF({ unit: 'mm', format: 'a4', orientation: 'portrait', compress: true });
+    const PW = 210, PH = 297;                         // A4，與 Word 範本相同
+    let w = PW, h = canvas.height * PW / canvas.width;
+    if(h > PH){ w = w * PH / h; h = PH; }             // 內容太長時等比縮成一頁
+    pdf.addImage(canvas.toDataURL('image/jpeg', 0.92), 'JPEG', (PW - w) / 2, 0, w, h);
+    pdf.setProperties({ title: name, subject: 'QA-2-01-01-A 文件/工程變更審查表', creator: '安德斯 BOM 系統' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(pdf.output('blob'));
+    a.download = name + '.pdf';
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+    toast('已產出 ' + name + '.pdf');
+  }catch(e){
+    console.error(e);
+    if(confirm('PDF 產生失敗（' + (e.message || e) + '）。\n要改用瀏覽器列印另存 PDF 嗎？')) printPdf();
+  }finally{
+    if(host) host.remove();
+  }
 }
 
 async function exportWord(){ return exportWordMap(buildMap()); }
