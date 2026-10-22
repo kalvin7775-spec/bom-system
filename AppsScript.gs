@@ -1128,6 +1128,63 @@ function postPr(auth, p){
   } finally { lock.releaseLock(); }
 }
 
+/* ============================================================
+   管理用：更改已送出請購單的單號（在 Apps Script 編輯器執行，不需重新部署）
+   用法：改下面 prRenameRun() 裡的舊號／新號 → 上方選 prRenameRun → 執行
+   會同時改「請購單」表的請購單號欄與資料JSON 裡的單號；
+   單位成本、無品號採購紀錄、編號總表都由這張表即時計算，會自動跟著變。
+   新號若已被網頁單、舊編號總表或作廢號用過就拒絕。舊號不列為作廢。
+   ============================================================ */
+function prRenameRun(){
+  const OLD_NO = 'PR-2610004';
+  const NEW_NO = 'PR-2610005';
+  const r = prRenameNo(OLD_NO, NEW_NO, '依使用者要求改號');
+  Logger.log(JSON.stringify(r));
+  return r;
+}
+function prRenameNo(oldNo, newNo, why){
+  oldNo = String(oldNo||'').trim(); newNo = String(newNo||'').trim();
+  if(!oldNo || !newNo) throw new Error('舊號、新號都要填');
+  if(!/^PR-\d{7}$/.test(newNo)) throw new Error('新號格式需為 PR-YYMMNNN：' + newNo);
+  if(oldNo === newNo) throw new Error('新舊單號相同');
+  const lock = LockService.getScriptLock();
+  lock.waitLock(25000);
+  try{
+    const sh = sheet('pr');
+    const last = sh.getLastRow(), lastC = sh.getLastColumn();
+    if(last < 2) throw new Error('「請購單」沒有紀錄');
+    const head = sh.getRange(1,1,1,lastC).getValues()[0].map(String);
+    const cNo = head.indexOf('請購單號'), cJ = head.indexOf('資料JSON');
+    if(cNo < 0 || cJ < 0) throw new Error('「請購單」缺少請購單號或資料JSON欄');
+    const body = sh.getRange(2,1,last-1,lastC).getValues();
+    const hit = [];
+    body.forEach(function(r,i){ if(String(r[cNo]).trim() === oldNo) hit.push(i); });
+    if(hit.length !== 1) throw new Error('找到 ' + hit.length + ' 張 ' + oldNo + '（應為 1 張）');
+    const dup = body.some(function(r){ return String(r[cNo]).trim() === newNo; })
+      || readPrReg().some(function(x){ return x.no === newNo; })
+      || prVoidNos().indexOf(newNo) >= 0;
+    if(dup) throw new Error(newNo + ' 已經用過，不能改成這個號碼');
+
+    const row = hit[0] + 2;
+    let data = {};
+    try{ data = JSON.parse(String(body[hit[0]][cJ]||'{}')); }catch(e){ throw new Error('資料JSON 解析失敗'); }
+    data.no = newNo;
+    markTextCol(sh, row, cNo+1, 1);
+    sh.getRange(row, cNo+1).setValue(newNo);
+    sh.getRange(row, cJ+1).setValue(JSON.stringify(data));
+
+    const now = nowTS();
+    const who = (Session.getActiveUser().getEmail() || '管理員');
+    sheet('hist').appendRow([now, '請購單改號 ' + oldNo + ' → ' + newNo + (why ? '（' + why + '）' : ''),
+      0, 0, 0, 1, 0, who]);
+    const rev = (Number(sysGet('prRev',0))||0) + 1;
+    sysSet('prRev', rev); sysSet('prAt', now); sysSet('prBy', '改號 ' + oldNo + ' → ' + newNo);
+    sysFlush();
+    SpreadsheetApp.flush();
+    return {ok:true, oldNo:oldNo, newNo:newNo, row:row, rev:rev};
+  } finally { lock.releaseLock(); }
+}
+
 /* 刪除一張請購單（僅管理員）；送出後不能改，打錯只能刪掉重開 */
 function voidPr(auth, p){
   if(!isAdmin(auth.role))
