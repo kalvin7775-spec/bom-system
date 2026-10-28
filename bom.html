@@ -167,6 +167,32 @@ input[type=file]{display:none}
 .navlink{display:inline-flex;align-items:center;padding:7px 13px;border-radius:6px;
   font-size:13.5px;color:var(--mut);text-decoration:none;white-space:nowrap}
 .navlink:hover{background:var(--line2);color:var(--txt)}
+/* 物料卡（料帳卡 PP-2-03-07-A） */
+.sc-sum{display:flex;flex-wrap:wrap;gap:8px 18px;margin-bottom:10px;font-size:13.5px}
+.sc-sum b{font-size:16px;font-variant-numeric:tabular-nums}
+.sc-wrap{overflow:auto;border:1px solid var(--line);border-radius:8px;padding:14px;background:#fff}
+.sc-sheet{font-family:"LXGW WenKai TC","BiauKai","DFKai-SB","標楷體","Kaiti TC",serif;color:#000;min-width:720px}
+.sc-sheet table{border-collapse:collapse;width:100%;table-layout:fixed}
+.sc-sheet td,.sc-sheet th{border:1px solid #000;text-align:center;vertical-align:middle;padding:3px 5px;font-weight:400;word-break:break-all}
+.sc-head .sc-title{font-size:26px;font-weight:700;letter-spacing:8px}
+.sc-head .sc-k,.sc-head .sc-v{font-family:"Times New Roman","LXGW WenKai TC",serif;font-size:11px;font-weight:700;height:20px}
+.sc-id{margin-top:-1px}
+.sc-id th,.sc-tbl th{background:#ddebf7;font-size:14px}
+.sc-id td{height:34px;font-size:14px}
+.sc-id .mono{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:12.5px}
+.sc-sheet td.sc-blank{border:0;text-align:left;font-size:12px;color:#444;padding-left:10px}
+.sc-tbl{margin-top:14px}
+.sc-tbl th{height:40px;line-height:1.25}
+.sc-tbl td{height:30px;font-size:13px}
+.sc-tbl td.n{text-align:right;font-variant-numeric:tabular-nums}
+.sc-tbl td.b{font-weight:700}
+.sc-tbl td.nt{text-align:left;font-size:11.5px;line-height:1.3}
+.sc-tbl tr.adj td{background:#fff6da}
+.sc-tbl tr.open td{color:#444}
+.sc-pg{text-align:right;font-size:11px;margin-top:6px;color:#333}
+.sc-pdfhost{position:fixed;left:-12000px;top:0;z-index:-1}
+.sc-pdfhost .sc-sheet{width:210mm;height:297mm;box-sizing:border-box;padding:9mm 9mm 8mm;background:#fff;min-width:0}
+.sc-pdfhost .sc-tbl td{height:7.45mm}
 </style>
 </head>
 <body>
@@ -1328,7 +1354,7 @@ function renderItems(){
     <th data-k="safety" class="num">安全庫存${arrow(itemSt,'safety')}</th>
     <th data-k="supplier">供應商${arrow(itemSt,'supplier')}</th>
     <th data-k="loc">儲位${arrow(itemSt,'loc')}</th>
-    <th class="nos">備註</th><th class="nos" style="width:150px">操作</th></tr></thead><tbody>
+    <th class="nos">備註</th><th class="nos" style="width:220px">操作</th></tr></thead><tbody>
     ${rows.map(i=>`<tr style="cursor:pointer" onclick="showItem('${esc(i.code)}')"
         class="${i.safety>0&&(i.stock||0)<i.safety?'lack':''}">
       <td class="mono">${esc(i.code)}</td><td>${esc(i.name)}</td><td class="mut">${esc(i.spec)}</td>
@@ -1338,6 +1364,7 @@ function renderItems(){
       <td class="num mut">${nf(i.safety)}</td><td class="mut">${esc(i.supplier)}</td>
       <td class="mut">${esc(i.loc)}</td><td class="mut">${esc(i.note)}</td>
       <td class="num" onclick="event.stopPropagation()">
+        <button class="btn sm" onclick="stockCard('${esc(i.code)}')" title="料帳卡：進出履歷，可匯出 Word／PDF">物料卡</button>
         <button class="btn sm" onclick="addMove('${esc(i.code)}')" title="入庫／領料／退料">異動</button>
         <button class="btn sm" onclick="editItem('${esc(i.code)}')">編輯</button>
         <button class="btn sm danger" onclick="delItem('${esc(i.code)}')">✕</button></td></tr>`).join('')
@@ -1346,6 +1373,232 @@ function renderItems(){
   bindSort($('#itbl'),itemSt);
   if(typeof applyReadonlyUI==='function') applyReadonlyUI();
 }
+/* ============================================================
+   物料卡（料帳卡 QS PP-2-03-07-A）
+   每個料號一張：依「庫存異動」的入庫／領料／退料單逐筆列出進出與結存。
+   單據之間若庫存對不上（手動修改、Excel 更新比對等非單據異動），
+   插一列「庫存調整」補差額，讓結存一定接得回目前主檔庫存。
+   ============================================================ */
+const CARD_QS = 'PP-2-03-07-A', CARD_PATH = 'Cloud/IS0 13485/製造部', CARD_ROWS = 31;
+const CARD_FONT_CSS = 'https://fonts.googleapis.com/css2?family=LXGW+WenKai+TC:wght@400;700&display=block';
+const CARD_FONT = 'LXGW WenKai TC';
+const CARD_LIBS = {
+  html2canvas: 'https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js',
+  jspdf:       'https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js'
+};
+function cardNum(v){ const n = parseFloat(v); return isNaN(n) ? 0 : n; }
+function cardRound(n){ return Math.round(n * 10000) / 10000; }
+function cardToday(){ const d = new Date();
+  return d.getFullYear() + '/' + String(d.getMonth()+1).padStart(2,'0') + '/' + String(d.getDate()).padStart(2,'0'); }
+
+/* 產生料帳卡各列：{date, out, inn, bal, lot, no, note, kind} */
+function cardRows(code){
+  const it = itemOf(code), cur = cardNum(it.stock);
+  /* 依實際過帳順序（建立時間）排，異動前／後庫存才接得起來 */
+  const ms = (S.moves || []).filter(m => m.code === code).slice().sort((a, b) =>
+    String(a.at || a.date).localeCompare(String(b.at || b.date)) ||
+    String(a.no).localeCompare(String(b.no)) || (cardNum(a.seq) - cardNum(b.seq)));
+  const rows = [];
+  const adj = (date, diff, bal, note) => rows.push({ date, out: diff < 0 ? -diff : '', inn: diff > 0 ? diff : '',
+    bal, lot: '', no: '', note, kind: 'adj' });
+  if(!ms.length){
+    rows.push({ date: cardToday(), out: '', inn: '', bal: cur, lot: '', no: '', note: '目前結存（尚無入庫／領料單）', kind: 'open' });
+    return rows;
+  }
+  let prev = cardNum(ms[0].before);
+  rows.push({ date: ms[0].date, out: '', inn: '', bal: prev, lot: '', no: '', note: '期初結存', kind: 'open' });
+  ms.forEach(m => {
+    const before = cardNum(m.before), after = cardNum(m.after), q = cardNum(m.qty);
+    if(cardRound(before - prev) !== 0)
+      adj(m.date, cardRound(before - prev), before, '庫存調整（非單據異動：手動修改／Excel 更新）');
+    const isOut = m.type === '領料';
+    const note = [m.type === '退料' ? '退料' : '', m.reason, m.taker ? '領用：' + m.taker : '', m.note]
+      .filter(Boolean).join('；');
+    rows.push({ date: m.date, out: isOut ? q : '', inn: isOut ? '' : q, bal: after, lot: m.lot || '',
+                no: m.no, note, kind: m.type });
+    prev = after;
+  });
+  if(cardRound(cur - prev) !== 0)
+    adj(cardToday(), cardRound(cur - prev), cur, '庫存調整（對齊目前主檔庫存 ' + nf(cur) + '）');
+  return rows;
+}
+function cardSum(rows){
+  let inn = 0, out = 0, n = 0;
+  rows.forEach(r => { if(r.kind === 'adj' || r.kind === 'open') return; n++; inn += cardNum(r.inn); out += cardNum(r.out); });
+  return { inn: cardRound(inn), out: cardRound(out), n };
+}
+function cardCell(v){ return v === '' || v === null || v === undefined ? '' : nf(v); }
+
+/* 一頁料帳卡的 HTML（畫面與 PDF 共用；pad=true 時補空白列到 31 列） */
+function cardPageHTML(it, rows, pad, page, pages){
+  const body = rows.map(r => `<tr class="${r.kind === 'adj' ? 'adj' : r.kind === 'open' ? 'open' : ''}">
+      <td>${esc(r.date)}</td><td class="n">${cardCell(r.out)}</td><td class="n">${cardCell(r.inn)}</td>
+      <td class="n b">${cardCell(r.bal)}</td><td>${esc(r.lot)}</td><td>${esc(r.no)}</td><td class="nt">${esc(r.note)}</td></tr>`).join('')
+    + (pad ? '<tr><td></td><td></td><td></td><td></td><td></td><td></td><td></td></tr>'.repeat(Math.max(0, CARD_ROWS - rows.length)) : '');
+  return `<div class="sc-sheet">
+    <table class="sc-head"><colgroup><col style="width:56.6%"><col style="width:12.3%"><col style="width:31.1%"></colgroup>
+      <tr><td rowspan="2" class="sc-title">料 帳 卡</td><td class="sc-k">QS文件編號</td><td class="sc-v">${CARD_QS}</td></tr>
+      <tr><td class="sc-k">存檔路徑</td><td class="sc-v">${esc(CARD_PATH)}</td></tr></table>
+    <table class="sc-id"><colgroup><col style="width:19%"><col style="width:33%"><col></colgroup>
+      <tr><th>料號</th><th>料件名稱</th><td class="sc-blank"></td></tr>
+      <tr><td class="mono">${esc(it.code)}</td><td>${esc(it.name || '')}</td><td class="sc-blank sc-spec">${it.spec ? '規格：' + esc(it.spec) : ''}${it.unit ? '　單位：' + esc(it.unit) : ''}</td></tr></table>
+    <table class="sc-tbl"><colgroup><col style="width:12.7%"><col style="width:11.3%"><col style="width:11.3%"><col style="width:10.7%">
+        <col style="width:9.5%"><col style="width:16.2%"><col style="width:28.3%"></colgroup>
+      <thead><tr><th>日期</th><th>領料數量</th><th>入庫數量</th><th>結存</th><th>批號</th><th>入庫/領料/退料<br>表單編號</th><th>備註</th></tr></thead>
+      <tbody>${body}</tbody></table>
+    ${pages > 1 ? `<div class="sc-pg">第 ${page} / ${pages} 頁</div>` : ''}
+  </div>`;
+}
+
+function stockCard(code){
+  const it = itemOf(code);
+  if(!it || !it.code) return toast('找不到料號 ' + code);
+  const rows = cardRows(code), s = cardSum(rows), last = rows[rows.length - 1];
+  const adjN = rows.filter(r => r.kind === 'adj').length;
+  dialog(`物料卡　${code}　${it.name || ''}`, `
+    <div class="sc-sum">
+      <span>期初結存 <b>${nf(rows[0].bal)}</b></span>
+      <span>入庫＋退料 <b>${nf(s.inn)}</b></span>
+      <span>領料 <b>${nf(s.out)}</b></span>
+      <span>目前結存 <b>${nf(last.bal)}</b> ${esc(it.unit || '')}</span>
+      <span class="mut">單據 ${s.n} 筆${adjN ? '・庫存調整 ' + adjN + ' 列' : ''}</span>
+    </div>
+    <div class="hint" style="margin:0 0 10px">依「庫存異動」的入庫／領料／退料單自動產生，送出或刪除單據後會跟著更新。
+      淡黃色「庫存調整」列＝兩張單據之間庫存對不上（例如手動改庫存或 Excel 更新比對），補上差額讓結存與主檔一致。批號欄：異動單目前沒有批號欄位，先留白。</div>
+    <div class="sc-wrap">${cardPageHTML(it, rows, false, 1, 1)}</div>`,
+    `<button class="btn pri" type="button" onclick="stockCardWord('${esc(code)}')">匯出 Word</button>
+     <button class="btn pri" type="button" onclick="stockCardPdf('${esc(code)}')">匯出 PDF</button>
+     <button class="btn" value="x">關閉</button>`);
+}
+function cardFileName(it){ return ('物料卡_' + it.code + '_' + String(it.name || '').slice(0, 30) + '_' + cardToday().replace(/\//g, ''))
+  .replace(/[\\/:*?"<>|\s]+/g, '_'); }
+
+/* ---------- 匯出 Word（直接組 WordprocessingML，A4 直式，表頭每頁重複） ---------- */
+function cardX(s){ return String(s === null || s === undefined ? '' : s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+function cardRun(t, o){ o = o || {};
+  const rpr = `<w:rPr><w:rFonts w:ascii="${o.font || 'Times New Roman'}" w:hAnsi="${o.font || 'Times New Roman'}" w:eastAsia="標楷體"/>${o.b ? '<w:b/>' : ''}<w:sz w:val="${o.sz || 22}"/><w:szCs w:val="${o.sz || 22}"/></w:rPr>`;
+  return String(t).split('\n').map((ln, i) => (i ? `<w:r>${rpr}<w:br/></w:r>` : '') + `<w:r>${rpr}<w:t xml:space="preserve">${cardX(ln)}</w:t></w:r>`).join(''); }
+function cardTc(w, t, o){ o = o || {};
+  return `<w:tc><w:tcPr><w:tcW w:w="${w}" w:type="dxa"/>${o.span ? `<w:gridSpan w:val="${o.span}"/>` : ''}${o.vm ? `<w:vMerge${o.vm === 'start' ? ' w:val="restart"' : ''}/>` : ''}${o.fill ? `<w:shd w:val="clear" w:color="auto" w:fill="${o.fill}"/>` : ''}<w:vAlign w:val="center"/></w:tcPr><w:p><w:pPr><w:spacing w:before="0" w:after="0"/><w:jc w:val="${o.jc || 'center'}"/></w:pPr>${t === '' ? '' : cardRun(t, o)}</w:p></w:tc>`; }
+function cardTbl(widths, rowsXml){
+  const b = '<w:top w:val="single" w:sz="6" w:color="000000"/><w:left w:val="single" w:sz="6" w:color="000000"/><w:bottom w:val="single" w:sz="6" w:color="000000"/><w:right w:val="single" w:sz="6" w:color="000000"/><w:insideH w:val="single" w:sz="4" w:color="000000"/><w:insideV w:val="single" w:sz="4" w:color="000000"/>';
+  return `<w:tbl><w:tblPr><w:tblW w:w="${widths.reduce((a, c) => a + c, 0)}" w:type="dxa"/><w:tblBorders>${b}</w:tblBorders><w:tblLayout w:type="fixed"/><w:tblCellMar><w:left w:w="60" w:type="dxa"/><w:right w:w="60" w:type="dxa"/></w:tblCellMar></w:tblPr><w:tblGrid>${widths.map(x => `<w:gridCol w:w="${x}"/>`).join('')}</w:tblGrid>${rowsXml}</w:tbl>`; }
+function cardTr(cells, h, o){ o = o || {};
+  return `<w:tr><w:trPr>${o.header ? '<w:tblHeader/>' : ''}<w:cantSplit/><w:trHeight w:val="${h}"/></w:trPr>${cells}</w:tr>`; }
+async function stockCardWord(code){
+  if(typeof JSZip === 'undefined') return toast('Word 元件尚未載入，請重新整理頁面後再試');
+  const it = itemOf(code), rows = cardRows(code);
+  const W = [1330, 1180, 1180, 1120, 1000, 1700, 2965];          /* 合計 10475；備註欄加寬，避免說明文字把列撐高 */
+  const FILL = 'DDEBF7';
+  const H = [5900, 1500, 3075];                                 /* 表頭：標題｜欄名｜內容 */
+  const head = cardTbl(H,
+      cardTr(cardTc(H[0], '料 帳 卡', {vm:'start', b:1, sz:48}) + cardTc(H[1], 'QS文件編號', {b:1, sz:18}) +
+             cardTc(H[2], CARD_QS, {b:1, sz:18}), 480) +
+      cardTr(cardTc(H[0], '', {vm:'cont'}) + cardTc(H[1], '存檔路徑', {b:1, sz:18}) +
+             cardTc(H[2], CARD_PATH, {b:1, sz:18}), 345));
+  const id = cardTbl([2000, 3400],
+      cardTr(cardTc(2000, '料號', {fill:FILL, sz:24}) + cardTc(3400, '料件名稱', {fill:FILL, sz:24}), 300) +
+      cardTr(cardTc(2000, it.code, {sz:20}) + cardTc(3400, it.name || '', {sz:20}), 480));
+  const hdr = ['日期','領料數量','入庫數量','結存','批號','入庫/領料/退料\n表單編號','備註'];
+  let body = cardTr(hdr.map((t, i) => cardTc(W[i], t, {fill:FILL, sz:22})).join(''), 600, {header:true});
+  const all = rows.slice();
+  while(all.length < CARD_ROWS) all.push(null);
+  all.forEach(r => {
+    if(!r){ body += cardTr(W.map(w => cardTc(w, '')).join(''), 380); return; }
+    const fill = r.kind === 'adj' ? 'FFF6DA' : '';
+    body += cardTr([
+      cardTc(W[0], r.date, {sz:20, fill}), cardTc(W[1], cardCell(r.out), {sz:20, jc:'right', fill}),
+      cardTc(W[2], cardCell(r.inn), {sz:20, jc:'right', fill}), cardTc(W[3], cardCell(r.bal), {sz:20, jc:'right', b:1, fill}),
+      cardTc(W[4], r.lot, {sz:20, fill}), cardTc(W[5], r.no, {sz:20, fill}), cardTc(W[6], r.note, {sz:16, jc:'left', fill})].join(''), 380);
+  });
+  const ledger = cardTbl(W, body);
+  const spec = (it.spec ? '規格：' + it.spec : '') + (it.unit ? '　單位：' + it.unit : '');
+  const doc = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><w:body>
+${head}
+${id}
+<w:p><w:pPr><w:spacing w:before="40" w:after="120"/></w:pPr>${spec ? cardRun(spec, {sz:18}) : ''}</w:p>
+${ledger}
+<w:p><w:pPr><w:spacing w:before="60" w:after="0"/></w:pPr>${cardRun('列印日期：' + cardToday() + '　資料來源：BOM 管理系統 庫存異動', {sz:16})}</w:p>
+<w:sectPr><w:footerReference w:type="default" r:id="rIdFt"/><w:pgSz w:w="11906" w:h="16838"/><w:pgMar w:top="567" w:right="680" w:bottom="567" w:left="680" w:header="283" w:footer="283" w:gutter="0"/></w:sectPr>
+</w:body></w:document>`;
+  const footer = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<w:ftr xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:p><w:pPr><w:jc w:val="right"/></w:pPr>${cardRun(CARD_QS + '　第 ', {sz:16})}<w:r><w:rPr><w:sz w:val="16"/></w:rPr><w:fldChar w:fldCharType="begin"/></w:r><w:r><w:rPr><w:sz w:val="16"/></w:rPr><w:instrText xml:space="preserve"> PAGE </w:instrText></w:r><w:r><w:rPr><w:sz w:val="16"/></w:rPr><w:fldChar w:fldCharType="end"/></w:r>${cardRun(' 頁', {sz:16})}</w:p></w:ftr>`;
+  const zip = new JSZip();
+  zip.file('[Content_Types].xml', `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/><Override PartName="/word/footer1.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.footer+xml"/><Override PartName="/docProps/core.xml" ContentType="application/vnd.openxmlformats-package.core-properties+xml"/></Types>`);
+  zip.file('_rels/.rels', `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/><Relationship Id="rId2" Type="http://schemas.openxmlformats.org/package/2006/relationships/metadata/core-properties" Target="docProps/core.xml"/></Relationships>`);
+  zip.file('word/_rels/document.xml.rels', `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rIdFt" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/footer" Target="footer1.xml"/></Relationships>`);
+  zip.file('word/document.xml', doc);
+  zip.file('word/footer1.xml', footer);
+  zip.file('docProps/core.xml', `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<cp:coreProperties xmlns:cp="http://schemas.openxmlformats.org/package/2006/metadata/core-properties" xmlns:dc="http://purl.org/dc/elements/1.1/"><dc:title>料帳卡 ${cardX(it.code)}</dc:title><dc:creator>安德斯 BOM 系統</dc:creator></cp:coreProperties>`);
+  const blob = await zip.generateAsync({type:'blob', compression:'DEFLATE', mimeType:'application/vnd.openxmlformats-officedocument.wordprocessingml.document'});
+  cardDownload(blob, cardFileName(it) + '.docx');
+}
+function cardDownload(blob, name){
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob); a.download = name;
+  document.body.appendChild(a); a.click();
+  setTimeout(() => { a.remove(); URL.revokeObjectURL(a.href); }, 4000);
+  toast('已匯出 ' + name);
+}
+
+/* ---------- 匯出 PDF（固定 A4：畫面外排版 → html2canvas → jsPDF，每 31 列一頁） ---------- */
+function cardLoadScript(src){
+  return new Promise((ok, ng) => {
+    if(document.querySelector('script[data-src="' + src + '"]')) return ok();
+    const s = document.createElement('script'); s.src = src; s.dataset.src = src;
+    s.onload = ok; s.onerror = () => ng(new Error('PDF 元件載入失敗，請確認網路'));
+    document.head.appendChild(s);
+  });
+}
+function cardLoadCss(href){
+  return new Promise(ok => {
+    if(document.querySelector('link[data-href="' + href + '"]')) return ok();
+    const l = document.createElement('link'); l.rel = 'stylesheet'; l.href = href; l.dataset.href = href;
+    l.onload = ok; l.onerror = ok; document.head.appendChild(l);
+  });
+}
+async function stockCardPdf(code){
+  const it = itemOf(code), rows = cardRows(code);
+  const pages = Math.max(1, Math.ceil(rows.length / CARD_ROWS));
+  toast('PDF 產生中…');
+  let host = null;
+  try{
+    const jobs = [cardLoadCss(CARD_FONT_CSS)];
+    if(!window.html2canvas) jobs.push(cardLoadScript(CARD_LIBS.html2canvas));
+    if(!(window.jspdf && window.jspdf.jsPDF)) jobs.push(cardLoadScript(CARD_LIBS.jspdf));
+    await Promise.all(jobs);
+    host = document.createElement('div'); host.className = 'sc-pdfhost';
+    for(let p = 0; p < pages; p++)
+      host.insertAdjacentHTML('beforeend', cardPageHTML(it, rows.slice(p * CARD_ROWS, (p + 1) * CARD_ROWS), true, p + 1, pages));
+    document.body.appendChild(host);
+    if(document.fonts && document.fonts.load){
+      const txt = host.textContent;
+      try{ await Promise.all([document.fonts.load('400 16px "' + CARD_FONT + '"', txt), document.fonts.load('700 16px "' + CARD_FONT + '"', txt)]); }catch(e){}
+      await document.fonts.ready;
+    }
+    const { jsPDF } = window.jspdf;
+    const pdf = new jsPDF({ unit: 'mm', format: 'a4', orientation: 'portrait', compress: true });
+    const sheets = host.querySelectorAll('.sc-sheet');
+    for(let p = 0; p < sheets.length; p++){
+      const cv = await window.html2canvas(sheets[p], { scale: 2.5, backgroundColor: '#ffffff', logging: false,
+        windowWidth: sheets[p].scrollWidth, windowHeight: sheets[p].scrollHeight });
+      if(p) pdf.addPage();
+      let w = 210, h = cv.height * 210 / cv.width;
+      if(h > 297){ w = w * 297 / h; h = 297; }
+      pdf.addImage(cv.toDataURL('image/jpeg', 0.92), 'JPEG', (210 - w) / 2, 0, w, h);
+    }
+    pdf.setProperties({ title: '料帳卡 ' + it.code, subject: 'QS ' + CARD_QS + ' 料帳卡', creator: '安德斯 BOM 系統' });
+    cardDownload(pdf.output('blob'), cardFileName(it) + '.pdf');
+  }catch(e){
+    console.error(e); toast('PDF 產生失敗：' + (e.message || e));
+  }finally{ if(host) host.remove(); }
+}
+
 /* ---------- 請購價格紀錄（由請購單送出時自動累積，單位成本 = 台幣紀錄單價平均） ---------- */
 function prPricesOf(code){
   return (S.prPrices||[]).filter(x=>x.code===code)
@@ -1748,6 +2001,7 @@ function renderBom(){
                 : money((it.cost||0)*(+n.qty||0))}</td>
           <td class="mut">${isKeyPart(n.note)?'<span class="tag keytag">關鍵零組件</span> ':''}${esc(String(n.note||'').split(KEYPART).join('').trim()||it.supplier||'')}</td>
           <td class="num"><button class="btn sm" onclick="showItem('${esc(n.code)}')">明細</button>
+            <button class="btn sm" onclick="stockCard('${esc(n.code)}')" title="料帳卡：進出履歷，可匯出 Word／PDF">物料卡</button>
             <button class="btn sm" onclick="addMove('${esc(n.code)}')" title="入庫／領料／退料">異動</button>
             <button class="btn sm" onclick="editItem('${esc(n.code)}')">編輯</button>
             ${(kids.length&&!ref&&!BIDX[n.code])
