@@ -3,7 +3,7 @@
  *  綁定於 Google 試算表（工具 → Apps Script）
  *
  *  資料表（沒有會自動建立）：
- *    料號主檔 / BOM主檔 / BOM明細 / 異動紀錄 / 系統 / 使用者 / 庫存異動 / 產品批序號 / 訂單追蹤
+ *    料號主檔 / BOM主檔 / BOM明細 / 異動紀錄 / 系統 / 使用者 / 庫存異動 / 產品批序號 / 訂單追蹤 / 檢收單
  *
  *  部署：部署 → 新增部署作業 → 類型「網頁應用程式」
  *        執行身分：我　　存取權：擁有 Google 帳戶的任何人 或 所有人
@@ -26,7 +26,7 @@ const LEGACY_PW_ENABLED = true;                 // 全部同事都註冊完後�
 
 const SH = {items:'料號主檔', boms:'BOM主檔', lines:'BOM明細', hist:'異動紀錄', sys:'系統',
             users:'使用者', moves:'庫存異動', serial:'產品批序號', ecr:'文件變更審查',
-            pr:'請購單', prReg:'請購單編號'};
+            pr:'請購單', prReg:'請購單編號', gr:'檢收單'};
 
 const HEAD = {
   items:['品號','品名','規格','單位','庫存數量','單位成本','安全庫存','供應商','交期','儲位','MSB','備註'],
@@ -48,7 +48,10 @@ const HEAD = {
       '項數','數量合計','單位','金額合計(未稅)','品項摘要','總經理','採購承辦人','主管','請購人',
       '填表人','建立時間','資料JSON'],
   /* 請購單編號總表：沿用原本 Excel「請購單編號」的欄位，存系統上線前已用掉的單號 */
-  prReg:['請購單號','廠商','請購人','專案代碼','轉採購單號','備註']
+  prReg:['請購單號','廠商','請購人','專案代碼','轉採購單號','備註'],
+  /* 檢收單 PP-2-03-01-A：一張單一列，最後一欄存完整品項供還原 Word／PDF */
+  gr:['檢收單號','進料日期','廠商','類別','採購單號','登帳日期','項數','進料量合計','入庫量合計',
+      '判定','品項摘要','行政管理部','品管檢驗員','製造部','填表人','建立時間','資料JSON']
 };
 
 /* 角色權限：admin 全部；editor 可讀可寫；viewer 只能讀 */
@@ -64,7 +67,7 @@ function ss(){
 
 /* 首次使用：在編輯器選這個函式按「執行」，建立所有工作表並完成授權 */
 function setup(){
-  ['items','boms','lines','hist','sys','users','moves','serial','ecr','pr','prReg'].forEach(sheet);
+  ['items','boms','lines','hist','sys','users','moves','serial','ecr','pr','prReg','gr'].forEach(sheet);
   if(String(sysGet('rev',''))==='') { sysSet('rev', 0); sysFlush(); }
   const s = ss();
   const d = s.getSheetByName('工作表1');
@@ -1239,6 +1242,102 @@ function voidPr(auth, p){
 }
 
 /* ============================================================
+   檢收單 PP-2-03-01-A（form-gr.html 使用）
+   一張檢收單一列；「資料JSON」存完整品項，前端才能原樣還原成 Word／PDF。
+   單號：GR-年(2碼)月(2碼)流水號(3碼)，例 GR-2611001，依「進料日期」年月、每月從 001 重新編。
+   版本號存在「系統」表的 grRev；作廢號存 grVoidNos（不再發出）。
+   檢收單只做紀錄，不異動庫存、不改單位成本。
+   ============================================================ */
+function readGr(){
+  return rows('gr').map(function(r){
+    let data = {};
+    try{ data = JSON.parse(String(r['資料JSON']||'{}')); }catch(e){ data = {}; }
+    return {no:String(r['檢收單號']||''), date:fmtDate(r['進料日期']),
+      vendor:String(r['廠商']||''), kind:String(r['類別']||''),
+      po:String(r['採購單號']||''), post:fmtDate(r['登帳日期']),
+      count:String(r['項數']||''), tqty:String(r['進料量合計']||''), tin:String(r['入庫量合計']||''),
+      judge:String(r['判定']||''), brief:String(r['品項摘要']||''),
+      admin:String(r['行政管理部']||''), qc:String(r['品管檢驗員']||''), mfg:String(r['製造部']||''),
+      by:String(r['填表人']||''), at:fmtTS(r['建立時間']), data:data};
+  });
+}
+function grVoidNos(){
+  return String(sysGet('grVoidNos','')||'').split(',').map(function(x){ return x.trim(); }).filter(Boolean);
+}
+function grNextNo(ym){
+  let max = 0;
+  const re = new RegExp('^GR-' + ym + '(\\d{3})$');
+  const take = function(no){ const m = String(no||'').trim().toUpperCase().match(re); if(m) max = Math.max(max, parseInt(m[1],10)); };
+  rows('gr').forEach(function(r){ take(r['檢收單號']); });
+  grVoidNos().forEach(take);
+  return 'GR-' + ym + String(max + 1).padStart(3,'0');
+}
+function postGr(auth, p){
+  if(!canWrite(auth.role))
+    return {error: auth.legacy ? '共用密碼為唯讀模式，無法送出檢收單。'
+                              : '你的權限為「唯讀」，無法送出檢收單。', denied:true};
+  const rec = (p && p.rec) || {};
+  const sum = (p && p.summary) || {};
+  const items = rec.items || [];
+  if(!String(rec.vendor||'').trim()) return {error:'「廠商」必填'};
+  if(!items.length) return {error:'請至少填一項檢收品項'};
+  const lock = LockService.getScriptLock();
+  lock.waitLock(25000);
+  try{
+    const asked = String(rec.no||'').trim();
+    const no = grNextNo(prYmOf(rec.date));          /* 在鎖裡取號，兩人同時送出也不會撞號 */
+    rec.no = no;
+    const now = nowTS();
+    const dateStr = String(rec.date||'').trim() || Utilities.formatDate(new Date(),'Asia/Taipei','yyyy.MM.dd');
+    const row = [no, dateStr, String(rec.vendor||'').trim(), (rec.kinds||[]).join('、'), String(rec.po||''),
+      String(rec.post||''), Number(sum.count||items.length)||items.length, String(sum.tqty||''),
+      String(sum.tin||''), String(sum.judge||''), String(sum.brief||''),
+      String(rec.admin||''), String(rec.qc||''), String(rec.mfg||''), auth.name||'', now, JSON.stringify(rec)];
+    const sh = sheet('gr');
+    const at0 = sh.getLastRow()+1;
+    ['檢收單號','進料日期','採購單號','登帳日期','建立時間'].forEach(function(h){
+      markTextCol(sh, at0, HEAD.gr.indexOf(h)+1, 1); });
+    sh.getRange(at0, 1, 1, HEAD.gr.length).setValues([row]);
+    const rev = (Number(sysGet('grRev',0))||0) + 1;
+    sysSet('grRev', rev); sysSet('grAt', now); sysSet('grBy', (auth.name||'') + '（送出 ' + no + '）');
+    sysFlush();
+    SpreadsheetApp.flush();
+    return {ok:true, no:no, asked:asked, rev:rev, date:dateStr, at:now, by:auth.name||''};
+  } finally { lock.releaseLock(); }
+}
+/* 刪除一張檢收單（僅管理員）；單號記為作廢，不再發出 */
+function voidGr(auth, p){
+  if(!isAdmin(auth.role)) return {error:'只有管理員可以刪除已送出的檢收單。', denied:true};
+  const no  = String((p && p.no)  || '').trim();
+  const why = String((p && p.why) || '').trim();
+  if(!no) return {error:'沒有指定要刪除的單號'};
+  const lock = LockService.getScriptLock();
+  lock.waitLock(25000);
+  try{
+    const sh = sheet('gr');
+    const last = sh.getLastRow(), lastC = sh.getLastColumn();
+    if(last < 2) return {error:'「檢收單」還沒有任何紀錄'};
+    const head = sh.getRange(1,1,1,lastC).getValues()[0].map(String);
+    const cNo = head.indexOf('檢收單號'), cJ = head.indexOf('資料JSON');
+    const body = sh.getRange(2,1,last-1,lastC).getValues();
+    const hit = [];
+    for(let i=0;i<body.length;i++) if(String(body[i][cNo]).trim() === no) hit.push(i);
+    if(!hit.length) return {error:'找不到單號 '+no+'，可能已經被別人刪掉了，請按 ↻ 重新讀取'};
+    const saved = hit.map(function(i){ return String(body[i][cJ]||''); });
+    for(let k=hit.length-1;k>=0;k--) sh.deleteRow(hit[k]+2);
+    const now = nowTS();
+    sheet('hist').appendRow([now, '刪除檢收單 '+no+(why?'（'+why+'）':''), 0, hit.length, 0, 0, 0,
+      auth.name||'', JSON.stringify({gr:saved})]);
+    const vn = grVoidNos(); if(vn.indexOf(no) < 0){ vn.push(no); sysSet('grVoidNos', vn.join(',')); }
+    const rev = (Number(sysGet('grRev',0))||0) + 1;
+    sysSet('grRev', rev); sysSet('grAt', now); sysSet('grBy', (auth.name||'') + '（刪除 ' + no + '）');
+    sysFlush();
+    SpreadsheetApp.flush();
+    return {ok:true, no:no, rev:rev, removed:hit.length};
+  } finally { lock.releaseLock(); }
+}
+
+/* ============================================================
    使用者與登入
    ============================================================ */
 
@@ -1503,6 +1602,13 @@ function doPost(e){
   if(action === 'postPr')     return out(postPr(auth, body));
   if(action === 'voidPr')     return out(voidPr(auth, body));
   if(action === 'importPrReg') return out(importPrReg(auth, body));
+
+  if(action === 'loadGr')
+    return out({ok:true, records:readGr(), voidNos:grVoidNos(),
+                rev:Number(sysGet('grRev',0))||0,
+                updatedAt:fmtTS(sysGet('grAt','')), updatedBy:String(sysGet('grBy',''))});
+  if(action === 'postGr')     return out(postGr(auth, body));
+  if(action === 'voidGr')     return out(voidGr(auth, body));
 
   if(action === 'loadSerial') return out(readSerial());
 
