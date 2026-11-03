@@ -4,6 +4,7 @@
  *
  *  資料表（沒有會自動建立）：
  *    料號主檔 / BOM主檔 / BOM明細 / 異動紀錄 / 系統 / 使用者 / 庫存異動 / 產品批序號 / 訂單追蹤 / 檢收單
+ *    製造命令單 / 工單成套發
  *
  *  部署：部署 → 新增部署作業 → 類型「網頁應用程式」
  *        執行身分：我　　存取權：擁有 Google 帳戶的任何人 或 所有人
@@ -26,7 +27,7 @@ const LEGACY_PW_ENABLED = true;                 // 全部同事都註冊完後�
 
 const SH = {items:'料號主檔', boms:'BOM主檔', lines:'BOM明細', hist:'異動紀錄', sys:'系統',
             users:'使用者', moves:'庫存異動', serial:'產品批序號', ecr:'文件變更審查',
-            pr:'請購單', prReg:'請購單編號', gr:'檢收單'};
+            pr:'請購單', prReg:'請購單編號', gr:'檢收單', mo:'製造命令單', kit:'工單成套發'};
 
 const HEAD = {
   items:['品號','品名','規格','單位','庫存數量','單位成本','安全庫存','供應商','交期','儲位','MSB','備註'],
@@ -51,7 +52,14 @@ const HEAD = {
   prReg:['請購單號','廠商','請購人','專案代碼','轉採購單號','備註'],
   /* 檢收單 PP-2-03-01-A：一張單一列，最後一欄存完整品項供還原 Word／PDF */
   gr:['檢收單號','進料日期','廠商','類別','採購單號','登帳日期','項數','進料量合計','入庫量合計',
-      '判定','品項摘要','行政管理部','品管檢驗員','製造部','填表人','建立時間','資料JSON']
+      '判定','品項摘要','行政管理部','品管檢驗員','製造部','填表人','建立時間','資料JSON'],
+  /* 製造命令單 BU-2-01-04-A：一張單一列 */
+  mo:['製令單號','開單日','料號','品名','型號','數量','序號','訂單單號','交期','客戶訂單號','客戶編號',
+      '備註','嘜頭','總經理','製造部','營運銷售部','填表人','建立時間','資料JSON'],
+  /* 工單成套發 PP-2-01-02-A：一張單一列；確認扣帳時另開一張「領料」庫存異動單（領料單號） */
+  kit:['發料單號','製令單號','製造部門','扣帳日期','作業序','扣帳否','生產料號','生產品名','生產數量',
+       '項數','品項摘要','領料單號','製表','核准','領料','製造','備註','填表人','建立時間',
+       '確認人','確認時間','資料JSON']
 };
 
 /* 角色權限：admin 全部；editor 可讀可寫；viewer 只能讀 */
@@ -529,7 +537,8 @@ function readMoves(){
 }
 
 /* 送出一張單：配單號 → 加減庫存 → 逐列寫入庫存異動 */
-function postOrder(auth, p){
+function postOrder(auth, p, opt){
+  opt = opt || {};
   if(!canWrite(auth.role))
     return {error: auth.legacy ? '共用密碼為唯讀模式，無法送出單據。'
                               : '你的權限為「唯讀」，無法送出單據。', denied:true};
@@ -539,8 +548,9 @@ function postOrder(auth, p){
     return String(l.code||'').trim() !== '' && Number(l.qty) > 0; });
   if(!lines.length) return {error:'單據沒有有效明細（品號與數量都要填）'};
   /* 規範：一張單最多 24 個品項（Word 模板固定 24 列，不可多頁） */
-  if(lines.length > 24)
-    return {error:'一張單最多 24 個品項，目前 '+lines.length+' 項，請拆成多張單'};
+  const maxLines = opt.maxLines || 24;      /* 工單成套發一張可能超過 24 項，由 confirmKit 放寬 */
+  if(lines.length > maxLines)
+    return {error:'一張單最多 '+maxLines+' 個品項，目前 '+lines.length+' 項，請拆成多張單'};
   if(!String(o.reason||'').trim()) return {error:'「異動原因」必填，會印在 Word 單的表頭'};
   /* 申請部門沒填就依填表人查人員部門對照表 */
   let dept = String(o.dept||'').trim();
@@ -552,8 +562,9 @@ function postOrder(auth, p){
   if(!dept) return {error:'找不到「'+(auth.name||'')+'」的申請部門，請先在「使用者管理 → 人員部門對照表」補上'};
   o = Object.assign({}, o, {dept:dept});
 
-  const lock = LockService.getScriptLock();
-  lock.waitLock(25000);
+  /* opt.locked：呼叫端（工單成套發）已經拿到鎖，這裡就不再鎖一次 */
+  const lock = opt.locked ? null : LockService.getScriptLock();
+  if(lock) lock.waitLock(25000);
   try{
     /* --- 取單號 --- */
     /* 單據日期一律以送出當下的伺服器時間為準；
@@ -632,19 +643,21 @@ function postOrder(auth, p){
     return {ok:true, no:no, rev:rev, date:dateStr, moves:wrote,
             updatedAt:String(sysGet('updatedAt','')), updatedBy:String(sysGet('updatedBy','')),
             stock: Object.keys(touched).map(function(c){ return {code:c, stock:touched[c]}; })};
-  } finally { lock.releaseLock(); }
+  } finally { if(lock) lock.releaseLock(); }
 }
 
 /* 刪除一張已送出的單（僅管理員）：回沖庫存 → 移除該單在「庫存異動」的所有列 */
-function voidOrder(auth, p){
+function voidOrder(auth, p, opt){
+  opt = opt || {};
   if(!isAdmin(auth.role))
     return {error:'只有管理員可以刪除已送出的單據。', denied:true};
   const no  = String((p && p.no)  || '').trim();
   const why = String((p && p.why) || '').trim();
   if(!no) return {error:'沒有指定要刪除的單號'};
 
-  const lock = LockService.getScriptLock();
-  lock.waitLock(25000);
+  /* opt.locked：呼叫端（工單成套發）已經拿到鎖，這裡就不再鎖一次 */
+  const lock = opt.locked ? null : LockService.getScriptLock();
+  if(lock) lock.waitLock(25000);
   try{
     const msh  = sheet('moves');
     const last = msh.getLastRow(), lastC = msh.getLastColumn();
@@ -731,7 +744,7 @@ function voidOrder(auth, p){
     return {ok:true, no:no, rev:rev, removed:hit.length, missing:missing,
             updatedAt:String(sysGet('updatedAt','')), updatedBy:String(sysGet('updatedBy','')),
             stock: Object.keys(touched).map(function(c){ return {code:c, stock:touched[c]}; })};
-  } finally { lock.releaseLock(); }
+  } finally { if(lock) lock.releaseLock(); }
 }
 
 /* ============================================================
@@ -1338,6 +1351,304 @@ function voidGr(auth, p){
 }
 
 /* ============================================================
+   製造命令單 BU-2-01-04-A（form-mo.html）
+   工單成套發 PP-2-01-02-A（form-kit.html）
+   單號：製令 P + 西元年4碼 + 月2碼 + 流水2碼（例 P20261101）
+         發料 F + 西元年4碼 + 月2碼 + 流水2碼（例 F20261101）
+   年月取「開單日」／「扣帳日期」，送出時在鎖內取號；刪掉的號碼記在系統表，不再發出。
+   工單成套發「確認扣帳」時，另開一張「領料」庫存異動單（PP 單號）扣掉每個料，
+   物料卡、庫存異動都看得到；刪除或取消扣帳時，連同那張領料單一起回沖庫存。
+   版本號 mfgRev（兩張表共用），與 BOM 的 rev 分開。
+   ============================================================ */
+function mfgJSON(s, d){ try{ const v = JSON.parse(String(s||'')); return (v===null||v===undefined) ? d : v; }catch(e){ return d; } }
+function mfgVoidNos(key){
+  return String(sysGet(key,'')||'').split(',').map(function(x){ return x.trim(); }).filter(Boolean);
+}
+function mfgYm(dateStr){
+  const m = String(dateStr||'').match(/(\d{4})\D*(\d{1,2})/);
+  if(m) return m[1] + ('0' + m[2]).slice(-2);
+  return Utilities.formatDate(new Date(),'Asia/Taipei','yyyyMM');
+}
+function mfgToday(){ return Utilities.formatDate(new Date(),'Asia/Taipei','yyyy/MM/dd'); }
+/* 取下一號：pfx + yyyyMM + 2 碼流水（超過 99 自動變 3 碼） */
+function mfgNextNo(pfx, ym, used){
+  let max = 0;
+  const re = new RegExp('^' + pfx + ym + '(\\d{2,})$');
+  used.forEach(function(no){ const m = String(no||'').trim().toUpperCase().match(re); if(m) max = Math.max(max, parseInt(m[1],10)); });
+  return pfx + ym + String(max + 1).padStart(2,'0');
+}
+function mfgStr(v){ return (v === null || v === undefined) ? '' : (v instanceof Date ? fmtDate(v) : String(v)); }
+
+function readMo(){
+  return rows('mo').map(function(r){
+    return {no:String(r['製令單號']||''), date:mfgStr(r['開單日']), code:String(r['料號']||''),
+      name:String(r['品名']||''), model:String(r['型號']||''), qty:mfgStr(r['數量']),
+      serial:String(r['序號']||''), order:String(r['訂單單號']||''), due:mfgStr(r['交期']),
+      custPo:String(r['客戶訂單號']||''), custNo:String(r['客戶編號']||''),
+      memo:String(r['備註']||''), mark:String(r['嘜頭']||''),
+      gm:String(r['總經理']||''), mfg:String(r['製造部']||''), sales:String(r['營運銷售部']||''),
+      by:String(r['填表人']||''), at:fmtTS(r['建立時間']), data:mfgJSON(r['資料JSON'], {})};
+  });
+}
+function readKit(){
+  return rows('kit').map(function(r){
+    return {no:String(r['發料單號']||''), mo:String(r['製令單號']||''), dept:String(r['製造部門']||''),
+      postDate:mfgStr(r['扣帳日期']), opSeq:String(r['作業序']||''), posted:String(r['扣帳否']||''),
+      pcode:String(r['生產料號']||''), pname:String(r['生產品名']||''), pqty:mfgStr(r['生產數量']),
+      count:mfgStr(r['項數']), brief:String(r['品項摘要']||''), ppNo:String(r['領料單號']||''),
+      maker:String(r['製表']||''), approver:String(r['核准']||''), taker:String(r['領料']||''),
+      worker:String(r['製造']||''), memo:String(r['備註']||''),
+      by:String(r['填表人']||''), at:fmtTS(r['建立時間']),
+      confirmBy:String(r['確認人']||''), confirmAt:fmtTS(r['確認時間']),
+      data:mfgJSON(r['資料JSON'], {})};
+  });
+}
+function loadMfg(){
+  return {ok:true, mos:readMo(), kits:readKit(),
+    moVoid:mfgVoidNos('moVoidNos'), kitVoid:mfgVoidNos('kitVoidNos'),
+    rev:Number(sysGet('mfgRev',0))||0, bomRev:Number(sysGet('rev',0))||0,
+    updatedAt:fmtTS(sysGet('mfgAt','')), updatedBy:String(sysGet('mfgBy',''))};
+}
+/* 料號（含庫存）＋BOM 結構：工單成套發帶入下一階材料用 */
+function loadBomLite(){
+  const items = rows('items').map(function(r){
+    return {code:String(r['品號']||'').trim(), name:String(r['品名']||''), spec:String(r['規格']||''),
+            unit:String(r['單位']||''), stock:num(r['庫存數量']), supplier:String(r['供應商']||'')};
+  }).filter(function(x){ return x.code; });
+  const meta = {};
+  rows('boms').forEach(function(r){
+    const c = String(r['BOM品號']).trim();
+    meta[c] = {name:String(r['產品名稱']||''), spec:String(r['規格']||'')};
+  });
+  const grp = {}, order = [];
+  rows('lines').forEach(function(r, i){
+    const bc = String(r['BOM品號']).trim(), code = String(r['品號']).trim();
+    if(!bc || !code) return;
+    if(!grp[bc]){ grp[bc] = []; order.push(bc); }
+    grp[bc].push({_seq: r['項次']==='' ? i : num(r['項次']), level: Math.max(1, num(r['階層'])||1),
+      code:code, name:String(r['品名']||''), spec:String(r['規格']||''),
+      qty: r['用量']==='' ? 1 : num(r['用量']), unit:String(r['單位']||'pcs'), note:String(r['備註']||'')});
+  });
+  const boms = order.map(function(bc){
+    const m = meta[bc] || {};
+    return {code:bc, name:m.name||'', spec:m.spec||'',
+      lines: grp[bc].sort(function(a,b){ return a._seq - b._seq; }).map(function(x){
+        return {level:x.level, code:x.code, name:x.name, spec:x.spec, qty:x.qty, unit:x.unit, note:x.note}; })};
+  });
+  return {ok:true, items:items, boms:boms, rev:Number(sysGet('rev',0))||0};
+}
+
+/* 找某單號所在列：回傳 {sh, head, row(試算表列號), vals} */
+function mfgFind(key, col, no){
+  const sh = sheet(key);
+  const last = sh.getLastRow(), lastC = sh.getLastColumn();
+  if(last < 2) return null;
+  const head = sh.getRange(1,1,1,lastC).getValues()[0].map(String);
+  const c = head.indexOf(col);
+  const body = sh.getRange(2,1,last-1,lastC).getValues();
+  for(let i=0;i<body.length;i++)
+    if(String(body[i][c]).trim() === no) return {sh:sh, head:head, row:i+2, vals:body[i]};
+  return null;
+}
+function mfgBump(auth, what){
+  const now = nowTS();
+  const rev = (Number(sysGet('mfgRev',0))||0) + 1;
+  sysSet('mfgRev', rev); sysSet('mfgAt', now); sysSet('mfgBy', (auth.name||'') + '（' + what + '）');
+  return rev;
+}
+function mfgDeny(auth, what){
+  return {error: auth.legacy ? '共用密碼為唯讀模式，無法' + what + '。'
+                            : '你的權限為「唯讀」，無法' + what + '。', denied:true};
+}
+function mfgWriteRow(sh, row, key, arr, textCols){
+  textCols.forEach(function(h){ markTextCol(sh, row, HEAD[key].indexOf(h)+1, 1); });
+  sh.getRange(row, 1, 1, arr.length).setValues([arr]);
+}
+
+/* ---------- 製造命令單 ---------- */
+function postMo(auth, p){
+  if(!canWrite(auth.role)) return mfgDeny(auth, '送出製造命令單');
+  const rec = (p && p.rec) || {};
+  if(!String(rec.code||'').trim()) return {error:'「料號」必填'};
+  if(!(Number(String(rec.qty||'').replace(/,/g,'')) > 0)) return {error:'「數量」要大於 0'};
+  const lock = LockService.getScriptLock();
+  lock.waitLock(25000);
+  try{
+    const asked = String(rec.no||'').trim();
+    const used = rows('mo').map(function(r){ return r['製令單號']; }).concat(mfgVoidNos('moVoidNos'));
+    const no = mfgNextNo('P', mfgYm(rec.date), used);
+    rec.no = no;
+    const now = nowTS();
+    const dateStr = String(rec.date||'').trim() || mfgToday();
+    rec.date = dateStr;
+    const row = [no, dateStr, String(rec.code||'').trim(), rec.name||'', rec.model||'', String(rec.qty||''),
+      rec.serial||'', rec.order||'', rec.due||'', rec.custPo||'', rec.custNo||'', rec.memo||'', rec.mark||'',
+      rec.gm||'', rec.mfg||'', rec.sales||'', auth.name||'', now, JSON.stringify(rec)];
+    const sh = sheet('mo');
+    mfgWriteRow(sh, sh.getLastRow()+1, 'mo', row, ['製令單號','開單日','料號','數量','交期','建立時間']);
+    const rev = mfgBump(auth, '送出製令 ' + no);
+    sysFlush(); SpreadsheetApp.flush();
+    return {ok:true, no:no, asked:asked, rev:rev, at:now};
+  } finally { lock.releaseLock(); }
+}
+function voidMo(auth, p){
+  if(!isAdmin(auth.role)) return {error:'只有管理員可以刪除已送出的製造命令單。', denied:true};
+  const no = String((p && p.no) || '').trim(), why = String((p && p.why) || '').trim();
+  if(!no) return {error:'沒有指定要刪除的單號'};
+  const lock = LockService.getScriptLock();
+  lock.waitLock(25000);
+  try{
+    const f = mfgFind('mo', '製令單號', no);
+    if(!f) return {error:'找不到製令單號 ' + no + '，可能已經被別人刪掉了，請按 ↻ 重新讀取'};
+    const saved = String(f.vals[f.head.indexOf('資料JSON')]||'');
+    f.sh.deleteRow(f.row);
+    const now = nowTS();
+    sheet('hist').appendRow([now, '刪除製造命令單 '+no+(why?'（'+why+'）':''), 0, 1, 0, 0, 0,
+      auth.name||'', JSON.stringify({mo:saved})]);
+    const vn = mfgVoidNos('moVoidNos'); if(vn.indexOf(no) < 0){ vn.push(no); sysSet('moVoidNos', vn.slice(-800).join(',')); }
+    const rev = mfgBump(auth, '刪除製令 ' + no);
+    sysFlush(); SpreadsheetApp.flush();
+    return {ok:true, no:no, rev:rev};
+  } finally { lock.releaseLock(); }
+}
+
+/* ---------- 工單成套發 ---------- */
+function kitClean(rec){
+  rec = rec || {};
+  rec.items = (rec.items || []).map(function(it){
+    return {code:String(it.code||'').trim(), name:String(it.name||''), qty:String(it.qty||'').trim(),
+            unit:String(it.unit||''), memo:String(it.memo||''), per:it.per === undefined ? '' : it.per};
+  }).filter(function(it){ return it.code || it.name || it.qty; });
+  return rec;
+}
+function kitRow(no, rec, auth, now, keep){
+  keep = keep || {};
+  const its = rec.items || [];
+  const brief = its.map(function(it){ return (it.code||it.name) + '×' + it.qty + (it.unit||''); }).join('；');
+  return [no, rec.mo||'', rec.dept||'', rec.postDate||'', rec.opSeq||'', keep.posted || '否',
+    String(rec.pcode||'').trim(), rec.pname||'', String(rec.pqty||''), its.length,
+    brief.length > 45000 ? brief.slice(0,45000) + '…' : brief, keep.ppNo || '',
+    rec.maker||'', rec.approver||'', rec.taker||'', rec.worker||'', rec.memo||'',
+    keep.by || auth.name || '', keep.at || now, keep.confirmBy || '', keep.confirmAt || '', JSON.stringify(rec)];
+}
+const KIT_TEXT = ['發料單號','製令單號','扣帳日期','生產料號','生產數量','領料單號','建立時間','確認時間'];
+/* 送出（新單）或修改（尚未扣帳的單，p.editNo） */
+function postKit(auth, p){
+  if(!canWrite(auth.role)) return mfgDeny(auth, '送出工單成套發');
+  const rec = kitClean(p && p.rec);
+  if(!String(rec.pcode||'').trim()) return {error:'「生產品名/料號」必填'};
+  if(!(Number(String(rec.pqty||'').replace(/,/g,'')) > 0)) return {error:'「生產數量」要大於 0'};
+  if(!rec.items.length) return {error:'請至少有一項發料品項'};
+  const bad = rec.items.filter(function(it){ return !it.code || !(Number(it.qty) > 0); });
+  if(bad.length) return {error:'每一項都要有料號與大於 0 的數量（第 ' + bad.map(function(it){ return rec.items.indexOf(it)+1; }).join('、') + ' 項）'};
+  const lock = LockService.getScriptLock();
+  lock.waitLock(25000);
+  try{
+    const now = nowTS();
+    const editNo = String((p && p.editNo) || '').trim();
+    const sh = sheet('kit');
+    if(editNo){
+      const f = mfgFind('kit', '發料單號', editNo);
+      if(!f) return {error:'找不到發料單號 ' + editNo + '，可能已經被刪掉了'};
+      if(String(f.vals[f.head.indexOf('扣帳否')]) === '是') return {error:editNo + ' 已經確認扣帳，不能再修改；要改請管理員先「取消扣帳」'};
+      rec.no = editNo;
+      const keep = {by:String(f.vals[f.head.indexOf('填表人')]||''), at:mfgStr(f.vals[f.head.indexOf('建立時間')])};
+      mfgWriteRow(sh, f.row, 'kit', kitRow(editNo, rec, auth, now, keep), KIT_TEXT);
+      const rev = mfgBump(auth, '修改發料 ' + editNo);
+      sysFlush(); SpreadsheetApp.flush();
+      return {ok:true, no:editNo, edited:true, rev:rev, at:now};
+    }
+    const asked = String(rec.no||'').trim();
+    const used = rows('kit').map(function(r){ return r['發料單號']; }).concat(mfgVoidNos('kitVoidNos'));
+    const no = mfgNextNo('F', mfgYm(rec.postDate), used);
+    rec.no = no;
+    mfgWriteRow(sh, sh.getLastRow()+1, 'kit', kitRow(no, rec, auth, now), KIT_TEXT);
+    const rev = mfgBump(auth, '送出發料 ' + no);
+    sysFlush(); SpreadsheetApp.flush();
+    return {ok:true, no:no, asked:asked, rev:rev, at:now};
+  } finally { lock.releaseLock(); }
+}
+/* 確認成套發：開一張「領料」單扣掉每個料的庫存，並把這張發料單標成已扣帳 */
+function confirmKit(auth, p){
+  if(!canWrite(auth.role)) return mfgDeny(auth, '確認扣帳');
+  const no = String((p && p.no) || '').trim();
+  if(!no) return {error:'沒有指定發料單號'};
+  const lock = LockService.getScriptLock();
+  lock.waitLock(25000);
+  try{
+    const f = mfgFind('kit', '發料單號', no);
+    if(!f) return {error:'找不到發料單號 ' + no};
+    const H = function(h){ return f.head.indexOf(h); };
+    if(String(f.vals[H('扣帳否')]) === '是')
+      return {error:no + ' 已經扣帳過了（領料單 ' + f.vals[H('領料單號')] + '），不會重複扣'};
+    const rec = mfgJSON(f.vals[H('資料JSON')], {});
+    const lines = (rec.items || []).filter(function(it){ return String(it.code||'').trim() && Number(it.qty) > 0; })
+      .map(function(it){ return {code:String(it.code).trim(), qty:Number(it.qty), unit:it.unit||'', note:it.memo||''}; });
+    if(!lines.length) return {error:no + ' 沒有可扣帳的品項'};
+    const reason = '工單成套發 ' + no + (rec.mo ? '（製令 ' + rec.mo + '）' : '');
+    const res = postOrder(auth, {order:{type:'領料', reason:reason, dept:'製造部', house:'',
+      taker: rec.taker || rec.dept || '', memo:'生產 ' + (rec.pcode||'') + ' × ' + (rec.pqty||'') + (rec.dept ? '，' + rec.dept : ''),
+      lines:lines}}, {locked:true, maxLines:1000});
+    if(res.error) return res;
+    const now = nowTS(), today = mfgToday();
+    rec.posted = '是'; rec.postDate = today; rec.ppNo = res.no;
+    const row = f.vals.slice(0, HEAD.kit.length);
+    while(row.length < HEAD.kit.length) row.push('');
+    row[H('扣帳否')] = '是'; row[H('扣帳日期')] = today; row[H('領料單號')] = res.no;
+    row[H('確認人')] = auth.name || ''; row[H('確認時間')] = now; row[H('資料JSON')] = JSON.stringify(rec);
+    for(let i=0;i<row.length;i++) if(row[i] instanceof Date) row[i] = mfgStr(row[i]);
+    mfgWriteRow(f.sh, f.row, 'kit', row, KIT_TEXT);
+    const mrev = mfgBump(auth, '確認扣帳 ' + no + ' → ' + res.no);
+    sysFlush(); SpreadsheetApp.flush();
+    return Object.assign({}, res, {ok:true, kitNo:no, ppNo:res.no, mfgRev:mrev, postDate:today});
+  } finally { lock.releaseLock(); }
+}
+/* 刪除工單成套發（僅管理員）；p.keep=true 只「取消扣帳」：回沖領料單、單子留著改回未扣帳 */
+function voidKit(auth, p){
+  if(!isAdmin(auth.role)) return {error:'只有管理員可以刪除或取消扣帳。', denied:true};
+  const no = String((p && p.no) || '').trim(), why = String((p && p.why) || '').trim();
+  const keep = !!(p && p.keep);
+  if(!no) return {error:'沒有指定發料單號'};
+  const lock = LockService.getScriptLock();
+  lock.waitLock(25000);
+  try{
+    const f = mfgFind('kit', '發料單號', no);
+    if(!f) return {error:'找不到發料單號 ' + no + '，可能已經被別人刪掉了，請按 ↻ 重新讀取'};
+    const H = function(h){ return f.head.indexOf(h); };
+    const ppNo = String(f.vals[H('領料單號')]||'').trim();
+    const posted = String(f.vals[H('扣帳否')]) === '是';
+    if(keep && !posted) return {error:no + ' 還沒扣帳，不需要取消'};
+    let vres = null;
+    if(posted && ppNo){
+      vres = voidOrder(auth, {no:ppNo, why:(keep ? '取消扣帳 ' : '刪除工單成套發 ') + no + (why ? '：' + why : '')}, {locked:true});
+      if(vres.error && !/找不到單號/.test(vres.error)) return vres;
+    }
+    const now = nowTS();
+    if(keep){
+      const rec = mfgJSON(f.vals[H('資料JSON')], {});
+      rec.posted = '否'; rec.ppNo = '';
+      const row = f.vals.slice(0, HEAD.kit.length);
+      while(row.length < HEAD.kit.length) row.push('');
+      row[H('扣帳否')] = '否'; row[H('領料單號')] = ''; row[H('確認人')] = ''; row[H('確認時間')] = '';
+      row[H('資料JSON')] = JSON.stringify(rec);
+      for(let i=0;i<row.length;i++) if(row[i] instanceof Date) row[i] = mfgStr(row[i]);
+      mfgWriteRow(f.sh, f.row, 'kit', row, KIT_TEXT);
+      sheet('hist').appendRow([now, '取消扣帳 工單成套發 '+no+'（回沖領料單 '+ppNo+'）'+(why?'：'+why:''), 0, 0, 0, 0, 1, auth.name||'', '']);
+    }else{
+      const saved = String(f.vals[H('資料JSON')]||'');
+      f.sh.deleteRow(f.row);
+      sheet('hist').appendRow([now, '刪除工單成套發 '+no+(ppNo&&posted?'（並回沖領料單 '+ppNo+'）':'')+(why?'（'+why+'）':''),
+        0, 1, 0, 0, 0, auth.name||'', JSON.stringify({kit:saved})]);
+      const vn = mfgVoidNos('kitVoidNos'); if(vn.indexOf(no) < 0){ vn.push(no); sysSet('kitVoidNos', vn.slice(-800).join(',')); }
+    }
+    const rev = mfgBump(auth, (keep ? '取消扣帳 ' : '刪除發料 ') + no);
+    sysFlush(); SpreadsheetApp.flush();
+    return {ok:true, no:no, kept:keep, rev:rev, ppNo:ppNo, reversed: !!(vres && vres.ok),
+      stock: vres && vres.stock ? vres.stock : []};
+  } finally { lock.releaseLock(); }
+}
+
+/* ============================================================
    使用者與登入
    ============================================================ */
 
@@ -1609,6 +1920,15 @@ function doPost(e){
                 updatedAt:fmtTS(sysGet('grAt','')), updatedBy:String(sysGet('grBy',''))});
   if(action === 'postGr')     return out(postGr(auth, body));
   if(action === 'voidGr')     return out(voidGr(auth, body));
+
+  /* 製造命令單／工單成套發（form-mo.html、form-kit.html） */
+  if(action === 'loadMfg')     return out(loadMfg());
+  if(action === 'loadBomLite') return out(loadBomLite());
+  if(action === 'postMo')      return out(postMo(auth, body));
+  if(action === 'voidMo')      return out(voidMo(auth, body));
+  if(action === 'postKit')     return out(postKit(auth, body));
+  if(action === 'confirmKit')  return out(confirmKit(auth, body));
+  if(action === 'voidKit')     return out(voidKit(auth, body));
 
   if(action === 'loadSerial') return out(readSerial());
 
