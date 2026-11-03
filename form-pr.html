@@ -163,8 +163,8 @@ col.n4{width:9.5%} col.n5{width:11%} col.n6{width:12.5%} col.n7{width:11%}
 @media print{
   html,body{background:#fff}
   .bar,.toast{display:none !important}
-  .sheet{width:auto;margin:0;padding:0 2px 0 1px;box-shadow:none;font-size:10.5pt}
-  /* 右邊留 2px：表格框線若剛好貼齊可列印範圍，Safari 會把最右邊那條線切掉一半而變淺 */
+  .sheet{width:auto;margin:0;padding:0 1mm;box-shadow:none;font-size:10.5pt}
+  /* 左右各留 1mm：表格外框若貼齊可列印範圍，Safari 會把最右邊那條線切掉（預覽圖也看不到） */
   .in{background:transparent !important;box-shadow:none !important;min-height:1.25em}
   .in:empty::before{content:"" !important}
   table,tr,td{page-break-inside:avoid}
