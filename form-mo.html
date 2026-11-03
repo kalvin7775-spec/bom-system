@@ -192,6 +192,7 @@ https://github.com/nodeca/pako/blob/main/LICENSE
   <span class="sub">BU-2-01-04-A</span>
   <span class="box" id="itemBox"></span>
   <span class="box" id="meBox"></span>
+  <button class="btn" onclick="loadSample()" title="套入附件 BU-2-01-04-A 製造命令單（P20250301 盒裝插管鏡主機）的內容">載入範例</button>
   <button class="btn" onclick="newForm()">新表單</button>
   <button class="btn" onclick="downloadPdf()">匯出 PDF</button>
   <button class="btn" onclick="exportWord()">匯出 Word</button>
@@ -866,6 +867,17 @@ function exportMoXlsx(){
     '客戶編號':m.custNo, '備註':m.memo, '嘜頭':m.mark, '總經理':m.gm, '製造部':m.mfg, '營運銷售部':m.sales,
     '工單成套發':kitsOf(m.no).map(k => k.no + (k.posted === '是' ? '(已扣帳)' : '(未扣帳)')).join('、'), '填表人':m.by, '建立時間':m.at})) ]],
     '製造命令單_' + stamp() + '.xlsx');
+}
+
+/* ---------- 範例（附件 BU-2-01-04-A P20250301） ---------- */
+function loadSample(){
+  if(MODE !== 'new') return toast('這是已送出的表單，請先按「回到新表單」');
+  const r = buildRec();
+  if((r.code || r.memo) && !confirm('目前填的內容會被範例取代，確定？')) return;
+  applyRec({date:todayStr(), code:'F01-NEO0001-1', name:'盒裝插管鏡主機', model:'NEOMN01', qty:'10',
+    serial:'', order:'', due:'', custPo:'', custNo:'', memo:'啓鑫插管鏡主機第一批試產', mark:'無', gm:'', mfg:'', sales:''});
+  fillNo();
+  toast('已載入範例（附件 P20250301：F01-NEO0001-1 盒裝插管鏡主機 × 10）');
 }
 
 (function init(){
