@@ -1879,8 +1879,8 @@ function vBoms(){
     ${[['max','取較高者'],['buy','自身單價'],['sum','下階加總']]
       .map(([k,t])=>`<span class="chip ${costMode()===k?'on':''}" onclick="setCostMode('${k}')">${t}</span>`).join('')}
     <label class="chip ${bomFlat?'on':''}" onclick="bomFlat=!bomFlat;vBoms()">展開後總用量</label>
-    <button class="btn pri" onclick="exportBomForm()" ${curBom?'':'disabled'} title="公司「材料清單-BOM」表單格式（QS RD-2-01-17-A）">匯出表單</button>
-    <button class="btn" onclick="exportBom()" ${curBom?'':'disabled'} title="明細＋展開總用量兩張分頁">匯出明細</button>
+    <button class="btn pri" onclick="exportBomForm()" ${curBom?'':'disabled'} title="公司「材料清單-BOM」表單格式（QS RD-2-01-17-A）：封面／文件履歷表／BOM">匯出 BOM 表單</button>
+    <button class="btn" onclick="exportBom()" ${curBom?'':'disabled'} title="純資料清單（不是公司表單格式）：BOM階層＋展開總用量兩張分頁，含庫存、單位成本">匯出明細（純資料）</button>
     <button class="btn danger" onclick="delBom()" ${curBom?'':'disabled'}>刪除</button>
   </div></div>
   <div id="bomBody"></div>`;
