@@ -305,7 +305,7 @@ function buildTree(bom){
   });
   return root.children;
 }
-/* 由平面明細算出階層編號：1 / 1.1 / 1.1.1 ... */
+/* 由平面明細算出階層編號：產品本身算 1，直屬下階 1.1、1.2…，再下一階 1.1.1…（全系統統一格式） */
 function lineNos(lines){
   const c=[], out=[];
   (lines||[]).forEach(l=>{
@@ -313,7 +313,7 @@ function lineNos(lines){
     c.length=lv;
     for(let i=0;i<lv-1;i++) if(!c[i]) c[i]=1;
     c[lv-1]=(c[lv-1]||0)+1;
-    out.push(c.slice(0,lv).join('.'));
+    out.push('1.'+c.slice(0,lv).join('.'));
   });
   return out;
 }
@@ -1979,7 +1979,7 @@ function renderBom(){
     (function walk(nodes,path,pkey,under,pre){
       nodes.forEach((n,ix)=>{
         const key=pkey+'/'+ix;
-        const no=pre?pre+'.'+(ix+1):String(ix+1);   // 階層編號 1 / 1.1 / 1.1.1
+        const no=(pre||'1')+'.'+(ix+1);   // 階層編號：產品＝1，直屬下階 1.1，再下一階 1.1.1（與 lineNos 一致）
         const {kids,ref}=kidsOf(n,path,true);      // 結構下階，供顯示
         const it=itemOf(n.code), open=!collapsed[key];
         const buy=kids.length&&isBuyPoint(n.code); // 外購組件：以本身單價計，子件僅供參考
@@ -2217,7 +2217,7 @@ function editBom(code){
       <div style="width:200px"><div class="fld" style="margin:0"><label>規格</label>
         <input id="eb_spec" value="${esc(ED.spec)}"></div></div>
     </div>
-    <div class="hint" style="margin-bottom:8px">左側「階層」欄為自動編號（1、1.1、1.1.1…）；用 ◀▶ 升降階即可調整位置。
+    <div class="hint" style="margin-bottom:8px">左側「階層」欄為自動編號（產品本身＝1，直屬下階 1.1、1.2…，再下一階 1.1.1…）；用 ◀▶ 升降階即可調整位置。
       階層 1 為產品直屬下階，階層 2 掛在上一個階層 1 之下，依此類推。
       若某行品號本身另有獨立 BOM 且未展開下階，展開時會自動引用該子 BOM。</div>
     <div id="edRows"></div>
