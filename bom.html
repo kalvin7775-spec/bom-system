@@ -2207,7 +2207,7 @@ let ED=null;
 function editBom(code){
   const src=code?BIDX[code]:null;
   ED={orig:code||null,code:src?src.code:'',name:src?src.name:'',spec:src?src.spec:'',
-      lines:src?JSON.parse(JSON.stringify(src.lines)):[]};
+      lines:src?edFreshLines(JSON.parse(JSON.stringify(src.lines)),[src.code]):[]};
   dialog(code?`編輯 BOM　${code}`:'新增 BOM',`
     <div class="row" style="margin-bottom:12px">
       <div style="width:220px"><div class="fld" style="margin:0"><label>產品品號 *</label>
@@ -2246,7 +2246,7 @@ function edRender(){
         <button class="btn sm" onclick="edLv(${i},1)">▶</button></td>
       <td class="ac"><input class="mono" id="ac_${i}" value="${esc(l.code)}" autocomplete="off"
           oninput="edAC(${i})" onblur="setTimeout(()=>edACClose(${i}),180)"></td>
-      <td class="mini" id="nm_${i}">${esc(mName(l.code,l.name))}${it._ghost&&l.code?
+      <td class="mini" id="nm_${i}">${esc(mName(l.code,l.name))}${(l.code&&BIDX[l.code]&&l.code!==ED.orig)?' <span class="tag info" title="此品號有自己的 BOM；下階以該 BOM 為準，在這裡改下階，儲存時會詢問是否一併更新">獨立BOM</span>':''}${it._ghost&&l.code?
         ` <span class="tag warn">未建檔</span> <button class="btn sm" onclick="edNewMasterItem('${esc(l.code)}',${i})">建檔</button>`:''}</td>
       <td><input type="number" step="any" value="${l.qty}" oninput="ED.lines[${i}].qty=parseFloat(this.value)||0;edSum()"></td>
       <td class="mut" id="un_${i}" title="單位以料號主檔為準，要修改請到「料號主檔」">${esc(l.code?mUnit(l.code,l.unit):'')}</td>
@@ -2368,6 +2368,83 @@ async function edSaveMasterItem(rowIx){
   else if(ED) ED.lines.push({level:1,code,name:o.name,spec:o.spec,qty:1,unit:o.unit,note:''});
   closeDlg2(); edRender(); vItems(); toast('已建立料號 '+code);
 }
+/* ---------- 獨立子 BOM 的下階同步 ----------
+   顯示與展開時，品號只要有自己的 BOM，就以那張 BOM 為準（rawKids），父 BOM 裡內嵌的那份下階會被忽略。
+   以前在父 BOM 編輯器裡替這種品號加／改下階，儲存後畫面看不到（例：F01-URS0101 裡 F01-URS0001 下加 MP0300014）。
+   現在：開編輯器時先用子 BOM 現況刷新內嵌下階；儲存時若下階被改過，詢問是否一併寫回子 BOM。 */
+function edFreshLines(lines,path){
+  const out=[];
+  for(let i=0;i<lines.length;i++){
+    const l=lines[i], lv=Math.max(1,+l.level||1);
+    out.push(Object.assign({},l,{level:lv}));
+    const sub=BIDX[l.code];
+    if(sub && !path.includes(l.code)){
+      let j=i+1; while(j<lines.length && (+lines[j].level||1)>lv) j++;
+      edFreshLines(JSON.parse(JSON.stringify(sub.lines||[])),path.concat(l.code))
+        .forEach(x=>out.push(Object.assign({},x,{level:x.level+lv})));
+      i=j-1;
+    }
+  }
+  return out;
+}
+const edKey=l=>[String(l.code||'').trim(),+l.level||1,+l.qty||0,String(l.note||'').trim()].join('|');
+/* 找出這次編輯裡，哪些「有獨立 BOM 的品號」下階跟它自己的 BOM 不一樣 */
+function edSubChanges(lines,top){
+  const res=[], seen={};
+  lines.forEach((l,i)=>{
+    const sub=BIDX[l.code];
+    if(!sub || l.code===top || seen[l.code]) return;
+    const lv=+l.level||1, blk=[];
+    for(let j=i+1;j<lines.length&&(+lines[j].level||1)>lv;j++)
+      blk.push(Object.assign({},lines[j],{level:(+lines[j].level||1)-lv}));
+    if(!blk.length) return;                     /* 沒展開下階：照常引用子 BOM */
+    const now=edFreshLines(JSON.parse(JSON.stringify(sub.lines||[])),[top,l.code]);
+    const A=blk.map(edKey), B=now.map(edKey);
+    if(A.join('\n')===B.join('\n')) return;
+    seen[l.code]=1;
+    const ca=blk.map(x=>x.code), cb=now.map(x=>x.code);
+    const add=[...new Set(ca.filter(c=>!cb.includes(c)))], del=[...new Set(cb.filter(c=>!ca.includes(c)))];
+    /* 只寫回子 BOM 本身那一層（巢狀的孫 BOM 自己也會被列出、各自寫回） */
+    const ownLines=[]; let sk=0;
+    blk.forEach(x=>{ if(sk&&x.level>sk) return; sk=0; ownLines.push({level:x.level,code:x.code,name:x.name||'',spec:x.spec||'',qty:x.qty,unit:x.unit||'pcs',note:x.note||''});
+      if(BIDX[x.code]&&!(x.code===top)) sk=x.level; });
+    res.push({code:l.code, name:sub.name||'', add, del, other:!add.length&&!del.length,
+      lines:edMergeSubLines(sub, ownLines),
+      users:S.boms.filter(b=>b.code!==top&&b.code!==l.code&&(b.lines||[]).some(x=>x.code===l.code)).map(b=>b.code)});
+  });
+  return res;
+}
+/* 子 BOM 裡原本內嵌的孫件（孫件本身有獨立 BOM 時）保留原樣，只換掉這一層 */
+function edMergeSubLines(sub, ownLines){
+  const old=sub.lines||[], out=[];
+  ownLines.forEach(x=>{
+    out.push(x);
+    if(BIDX[x.code]){
+      const k=old.findIndex(o=>o.code===x.code);
+      if(k>=0){ const lv=+old[k].level||1;
+        for(let j=k+1;j<old.length&&(+old[j].level||1)>lv;j++)
+          out.push(Object.assign({},old[j],{level:(+old[j].level||1)-lv+x.level})); }
+    }
+  });
+  return out;
+}
+function edAskSync(chg){
+  return new Promise(res=>{
+    window._edSyncRes=v=>{ window._edSyncRes=null; closeDlg2(); res(v); };
+    const li=chg.map(c=>`<li style="margin-bottom:6px"><b class="mono">${esc(c.code)}</b> ${esc(c.name)}：
+      ${c.add.length?'新增 <span class="mono">'+c.add.map(esc).join('、')+'</span>　':''}
+      ${c.del.length?'移除 <span class="mono">'+c.del.map(esc).join('、')+'</span>　':''}
+      ${c.other?'用量／階層／備註有變更':''}
+      ${c.users.length?'<div class="mini mut">這張子 BOM 也被 '+c.users.map(esc).join('、')+' 引用，會一起變。</div>':''}</li>`).join('');
+    dialog2('下階屬於獨立 BOM',`
+      <div>以下品號有自己的 BOM，系統顯示、展開、試算都以那張 BOM 為準。你在這裡改的下階，要一併寫回去才會看得到：</div>
+      <ul style="margin:10px 0 0 18px;padding:0">${li}</ul>`,
+      `<button class="btn pri" type="button" onclick="_edSyncRes('sync')">一併更新子 BOM 並儲存</button>
+       <button class="btn" type="button" onclick="_edSyncRes('cancel')">返回修改</button>`);
+    const d=document.getElementById('dlg2');
+    d.addEventListener('close',function h(){ d.removeEventListener('close',h); if(window._edSyncRes) window._edSyncRes('cancel'); });
+  });
+}
 async function saveBom(){
   const code=document.getElementById('eb_code').value.trim();
   if(!code) return toast('產品品號必填');
@@ -2375,6 +2452,13 @@ async function saveBom(){
   const lines=ED.lines.filter(l=>l.code);
   if(!lines.length) return toast('至少需要一行明細');
   if(lines[0].level!==1) lines[0].level=1;
+  const chg=edSubChanges(lines,code);
+  if(chg.length){
+    const ans=await edAskSync(chg);
+    if(ans!=='sync') return;
+    chg.forEach(c=>{ const ix=S.boms.findIndex(b=>b.code===c.code);
+      if(ix>=0) S.boms[ix]=Object.assign({},S.boms[ix],{lines:c.lines,source:'網頁編輯'}); });
+  }
   const bom={id:code,code,name:document.getElementById('eb_name').value.trim(),
     spec:document.getElementById('eb_spec').value.trim(),source:'網頁編輯',lines};
   lines.forEach(l=>{if(!IDX[l.code])S.items.push({code:l.code,name:l.name||'',spec:l.spec||'',
@@ -2382,7 +2466,8 @@ async function saveBom(){
   const ix=ED.orig?S.boms.findIndex(b=>b.code===ED.orig):-1;
   if(ix>=0)S.boms[ix]=bom; else S.boms.push(bom);
   if(!(await save())) return;
-  closeDlg(); curBom=code; collapsed={}; vBoms(); toast('BOM 已儲存');
+  closeDlg(); curBom=code; collapsed={}; vBoms();
+  toast(chg.length?'BOM 已儲存，並更新子 BOM：'+chg.map(c=>c.code).join('、'):'BOM 已儲存');
 }
 </script>
 <script>
