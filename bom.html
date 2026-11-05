@@ -276,9 +276,20 @@ function toast(m){const t=$('#toast');t.textContent=m;t.classList.add('on');
 
 function reindex(){IDX={};S.items.forEach(i=>IDX[i.code]=i);
                    BIDX={};S.boms.forEach(b=>BIDX[b.code]=b);
+                   syncBomHeads();
                    if(typeof rebuildVBom==='function') rebuildVBom();}
 async function save(){reindex(); return await push();}
 const itemOf=c=>IDX[c]||{code:c,name:'（未建檔）',spec:'',unit:'',stock:0,cost:null,supplier:'',note:'',_ghost:1};
+/* BOM 主檔的「產品名稱／規格」也以料號主檔為準：品號在主檔有資料，就用主檔的品名與規格
+   （主檔沒有這個品號、或主檔品名空白時，才保留 BOM 自己存的值）。
+   以前 BOM 標頭存的是建 BOM 當下自己打的字，主檔改了不會跟著變（例：F01-URT0101）。 */
+function syncBomHeads(){
+  (S.boms||[]).forEach(b=>{
+    const it=IDX[b.code];
+    if(!it || !String(it.name||'').trim()) return;
+    b.name=it.name; b.spec=it.spec||'';
+  });
+}
 /* ---------- 單一資料來源：品名／規格／單位一律以「料號主檔」為準 ----------
    BOM 明細裡也存了一份品名/規格/單位，但那只是建 BOM 當下的複本，
    料號主檔改版後不會跟著變，因此顯示與匯出一律改讀主檔，
@@ -2229,6 +2240,16 @@ function editBom(code){
     `<button class="btn pri" type="button" onclick="saveBom()">儲存 BOM</button>
      <button class="btn" value="x">取消</button>`);
   edRender();
+  edHeadLock();
+  const ci=document.getElementById('eb_code'); if(ci) ci.addEventListener('input',edHeadLock);
+}
+/* 產品名稱／規格跟料號主檔走：主檔有這個品號時，欄位帶主檔的值、不給手改 */
+function edHeadLock(){
+  const c=(document.getElementById('eb_code')||{}).value, it=IDX[String(c||'').trim()];
+  const lock=!!(it&&String(it.name||'').trim());
+  [['eb_name','name'],['eb_spec','spec']].forEach(([id,k])=>{ const e=document.getElementById(id); if(!e) return;
+    if(lock){ e.value=it[k]||''; e.readOnly=true; e.style.background='var(--bg)'; e.title='以料號主檔為準，要修改請到「料號主檔」編輯這個品號'; }
+    else if(e.readOnly){ e.readOnly=false; e.style.background=''; e.title=''; } });
 }
 function edRender(){
   const box=document.getElementById('edRows');
