@@ -267,7 +267,7 @@ let IDX={}, BIDX={};
 /* ---------- 版本檢查：瀏覽器常把舊版 bom.html 暫存住（重新整理也一樣），
    開頁時抓線上最新版比對 BUILD，不同就自動換成新版網址（加 ?v= 讓暫存失效）；
    用一陣子回到這個分頁時，若有新版就在上方提示 ---------- */
-const BUILD='20261106-1600';
+const BUILD='20261106-1610';
 async function bomLatestBuild(){
   try{ const t=await fetch(location.pathname+'?build='+Date.now(),{cache:'no-store'}).then(r=>r.text());
        const m=t.match(/const BUILD='([^']+)'/); return m?m[1]:null; }catch(e){ return null; }
@@ -333,10 +333,52 @@ function mUnit(code,fb){const it=IDX[code];
 /* ---------- 發行狀態：匯出 BOM 表單時勾「已發行」，BOM 管理右上角顯示「已發行＋版次」 ---------- */
 function bomRel(code){ const f=code&&SET().bomForms&&SET().bomForms[code]; return f&&f.released?f:null; }
 function bomRelBadge(code){
-  const f=bomRel(code); if(!f) return '';
-  const d=String(f.date||'').slice(0,10).replace(/-/g,'/');
-  const tip=['文件編號 '+(f.docNo||'—'),'發行日期 '+(d||'—')].join('　');
-  return `<span class="tag ok" style="font-size:13px;padding:4px 12px;font-weight:600;margin-right:6px" title="${esc(tip)}">✔ 已發行　版次 ${esc(f.rev||'—')}</span>`;
+  if(!code||!BIDX[code]) return '';
+  const f=bomRel(code);
+  if(f){
+    const d=String(f.date||'').slice(0,10).replace(/-/g,'/');
+    const tip='文件編號 '+(f.docNo||'—')+'　發行日期 '+(d||'—')+'　（點一下可修改）';
+    return `<span class="tag ok" style="font-size:13.5px;padding:6px 14px;font-weight:600;cursor:pointer" title="${esc(tip)}" onclick="bomRelEdit()">✔ 已發行　版次 ${esc(f.rev||'—')}</span>`;
+  }
+  return `<span class="tag gray" style="font-size:13.5px;padding:6px 14px;font-weight:600;cursor:pointer" title="點一下可設定為已發行" onclick="bomRelEdit()">未發行</span>`;
+}
+/* 點狀態標籤：選「已發行／未發行」，已發行要填版次（文件編號、發行日期可順便填） */
+function bomRelEdit(){
+  const code=curBom; if(!code||!BIDX[code]) return;
+  if(!canWrite()) return denyWrite();
+  const f=(SET().bomForms&&SET().bomForms[code])||{};
+  const rel=!!f.released;
+  dialog2('發行狀態　'+code,`
+    <div style="display:flex;gap:18px;margin-bottom:10px">
+      <label><input type="radio" name="rl_s" value="1" ${rel?'checked':''} onchange="bomRelUi()"> 已發行</label>
+      <label><input type="radio" name="rl_s" value="0" ${rel?'':'checked'} onchange="bomRelUi()"> 未發行</label></div>
+    <div id="rl_box" class="row" style="gap:10px;flex-wrap:wrap">
+      <div class="fld" style="flex:0.8"><label>版次</label><input id="rl_rev" value="${esc(f.rev||'')}" placeholder="例：A"></div>
+      <div class="fld" style="flex:1.6"><label>文件編號</label><input id="rl_doc" value="${esc(f.docNo||'')}"></div>
+      <div class="fld" style="flex:1.4"><label>發行日期</label><input id="rl_date" type="date" value="${esc(String(f.date||'').slice(0,10))}"></div>
+    </div>
+    <div class="hint">版次、文件編號、發行日期與「匯出 BOM 表單」共用同一份資料。</div>`,
+    `<button class="btn pri" type="button" onclick="bomRelSave()">儲存</button>
+     <button class="btn" value="x">取消</button>`);
+  bomRelUi();
+}
+function bomRelUi(){ const r=document.querySelector('input[name=rl_s]:checked'); const b=document.getElementById('rl_box');
+  if(b) b.style.display=(r&&r.value==='1')?'':'none'; }
+async function bomRelSave(){
+  const code=curBom; if(!code) return;
+  const on=(document.querySelector('input[name=rl_s]:checked')||{}).value==='1';
+  const rev=String((document.getElementById('rl_rev')||{}).value||'').trim();
+  if(on&&!rev){ toast('已發行請填版次'); return; }
+  const st=SET(); st.bomForms=st.bomForms||{};
+  const f=st.bomForms[code]=Object.assign({},st.bomForms[code]||{});
+  f.released=on;
+  if(on){ f.rev=rev;
+    const d=String((document.getElementById('rl_doc')||{}).value||'').trim(); if(d) f.docNo=d;
+    const dt=String((document.getElementById('rl_date')||{}).value||'').trim(); if(dt) f.date=dt; }
+  closeDlg2();
+  const ok=await save();
+  vBoms();
+  toast(ok===false?'沒有存到雲端，請稍後再試':(on?code+' 已設為已發行，版次 '+rev:code+' 已設為未發行'));
 }
 
 /* ---------- BOM 樹狀結構 ---------- */
@@ -1920,8 +1962,8 @@ function vBoms(){
     <button class="btn" onclick="importBomFile()">匯入 BOM Excel</button>
     <button class="btn" onclick="masterAdd()">＋ 新增料號主檔品號</button>
     <button class="btn danger" onclick="masterDel()">刪減料號主檔品號</button>
-    <div class="grow"></div>
     ${bomRelBadge(curBom)}
+    <div class="grow"></div>
     <span class="mini mut">成本規則</span>
     ${[['max','取較高者'],['buy','自身單價'],['sum','下階加總']]
       .map(([k,t])=>`<span class="chip ${costMode()===k?'on':''}" onclick="setCostMode('${k}')">${t}</span>`).join('')}
