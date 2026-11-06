@@ -4476,28 +4476,95 @@ function bfHistSheet(hist){
   return ws;
 }
 
+/* ============ 版型二：「封面＋修改歷史」（比照 R2302D3006 F01-URS1101、R2302D3007 F01-URT0101） ============ */
+function bfXlDate(iso){ /* 轉成 Excel 日期序號，儲存格顯示 yy/m/d */
+  const m=String(iso||'').match(/(\d{4})\D?(\d{1,2})\D?(\d{1,2})/); if(!m) return null;
+  return (Date.UTC(+m[1],+m[2]-1,+m[3])-Date.UTC(1899,11,30))/86400000;
+}
+function bfCoverSheetH(bom,info){
+  const K=bfKit(), area=K.area, M='medium';
+  /* 頁框：第 4 列底線到第 31 列底線，B 欄左線、U 欄右線 */
+  for(let c=2;c<=21;c++) area(c,4,c,4,'',{},{b:M});
+  for(let r=5;r<=31;r++){ area(2,r,2,r,'',{},{l:M,b:r===31?M:null}); area(21,r,21,r,'',{},{r:M,b:r===31?M:null}); }
+  for(let c=3;c<=20;c++) area(c,31,c,31,'',{},{b:M});
+  area(2,6,21,8,'安德斯醫學科技股份有限公司',{font:bfFont(F_KAI,36,true),alignment:bfAl('center')},{l:M,r:M});
+  area(2,9,21,10,'EndoSemio Co., Ltd.',{font:bfFont(F_TNR,22,true),alignment:bfAl('center')},{l:M,r:M});
+  area(2,14,21,17,String(bom.code||'')+'  BOM',{font:{name:F_TNR,sz:26,bold:true,italic:true},alignment:bfAl('center')},{l:M,r:M});
+  const L={font:bfFont(F_KAI2,10,true),alignment:bfAl('left')};
+  const V={font:bfFont(F_TNR,13),alignment:bfAl('left')};
+  [['產品名稱：',info.coverName||bom.name||''],['料件號碼：',String(bom.code||'')],['文件編號：',info.docNo],
+   ['日期：',bfDateText(info.date)],['版本：',info.rev]]
+    .forEach((x,i)=>{ const r=25+i; area(9,r,10,r,x[0],L); area(11,r,15,r,x[1]||'',V); });
+  for(let r=1;r<=16;r++) K.H(r,18.75);
+  for(let r=17;r<=32;r++) K.H(r,19.5);
+  const ws=K.ws;
+  ws['!ref']='A1:V32'; ws['!merges']=K.merges; ws['!rows']=K.rows;
+  ws['!cols']=bfCols([1.66].concat(new Array(13).fill(5.16),[9.83,5.16,5.83],new Array(4).fill(5.16),[1.66]));
+  ws['!margins']={left:0.2,right:0.2,top:0.2,bottom:0.2,header:0,footer:0};
+  return ws;
+}
+function bfHistSheetH(bom,info){
+  const K=bfKit(), area=K.area, T='thin', M='medium', hist=info.hist||[];
+  area(2,1,8,1,'',{});
+  area(2,2,8,2,'安德斯醫學科技股份有限公司',{font:bfFont(F_KAI,18,true),alignment:bfAl('center')});
+  area(2,3,8,3,'EndoSemio Co., Ltd.',{font:bfFont(F_KAI,18),alignment:bfAl('center',true)});
+  const gray={fgColor:{rgb:'D8D8D8'},patternType:'solid'};
+  area(2,5,2,5,'標題',{font:bfFont(F_KAI,11,true),alignment:bfAl('center'),fill:gray},{l:M,r:T,t:M,b:M});
+  area(3,5,8,5,info.title||'',{font:bfFont(F_KAI2,11),alignment:bfAl('left')},{l:T,r:M,t:M,b:M});
+  const HC=[[2,'項次'],[3,'內容和更新項目'],[4,'版本'],[5,'日期'],[6,'修訂'],[7,'核准'],[8,'備註']];
+  HC.forEach(([c,t])=>area(c,6,c,6,t,{font:bfFont(F_KAI,11,true),alignment:bfAl('center'),fill:gray},
+    {l:c===2?M:T,r:c===8?M:T,t:T,b:M}));
+  const n=Math.max(15,hist.length), last=6+n;
+  for(let i=0;i<n;i++){
+    const r=7+i, h=hist[i]||null, g=k=>h?(h[k]||''):'', bot=r===last?M:T;
+    const ob=c=>({l:c===2?M:T,r:c===8?M:T,t:T,b:bot});
+    area(2,r,2,r,i+1,{font:bfFont(F_TNR,11),alignment:bfAl('center')},ob(2));
+    area(3,r,3,r,g('content'),{font:bfFont(F_KAI2,10),alignment:bfAl('left',true)},ob(3));
+    area(4,r,4,r,g('ver'),{font:bfFont(F_TNR,10),alignment:bfAl('center')},ob(4));
+    const dv=h?bfXlDate(h.date):null;
+    area(5,r,5,r,dv==null?(h?String(h.date||''):''):dv,{font:bfFont(F_TNR,10),alignment:bfAl('center'),numFmt:'yy/m/d'},ob(5));
+    if(dv!=null) K.ws[A1(5,r)].z='yy/m/d';
+    area(6,r,6,r,g('by'),{font:bfFont(F_KAI2,10),alignment:bfAl('center','fit')},ob(6));
+    area(7,r,7,r,g('approver'),{font:bfFont(F_KAI2,10),alignment:bfAl('center','fit')},ob(7));
+    area(8,r,8,r,g('remark'),{font:bfFont(F_KAI2,10),alignment:bfAl('left',true)},ob(8));
+    K.H(r, h ? Math.max(30, bfLines(h.content,128)*14+6) : 30);
+  }
+  K.H(1,18.75); K.H(2,18.75); K.H(3,18); K.H(4,9.75); K.H(5,19.5); K.H(6,18.75); K.H(last+1,20.25);
+  const ws=K.ws;
+  ws['!ref']='A1:I'+(last+1); ws['!merges']=K.merges; ws['!rows']=K.rows;
+  ws['!cols']=bfCols([1.66,4.33,73.33,6,7,6.83,6.83,18.83,1.66]);
+  ws['!margins']={left:0.2,right:0.2,top:0.2,bottom:0.2,header:0,footer:0};
+  return ws;
+}
+
 /* ---------- 產出活頁簿，補上 logo 與列印設定 ---------- */
 async function bfBuildXlsx(X,bom,info,ZIP){
   const lines=bomFormData(bom);
   const wb=X.utils.book_new();
-  X.utils.book_append_sheet(wb,bfCoverSheet(bom,info),'封面');
-  X.utils.book_append_sheet(wb,bfHistSheet(info.hist||[]),'文件履歷表');
+  const H2=info.tpl==='hist';   /* 版型二：封面＋修改歷史 */
+  const s2name=H2?'修改歷史':'文件履歷表';
+  X.utils.book_append_sheet(wb,H2?bfCoverSheetH(bom,info):bfCoverSheet(bom,info),'封面');
+  X.utils.book_append_sheet(wb,H2?bfHistSheetH(bom,info):bfHistSheet(info.hist||[]),s2name);
   X.utils.book_append_sheet(wb,bfBomSheet(bom,lines),'BOM');
-  const histLast=5+Math.max(25,(info.hist||[]).length);
+  const histLast=H2?7+Math.max(15,(info.hist||[]).length):5+Math.max(25,(info.hist||[]).length);
   wb.Workbook={Names:[
     {Name:'_xlnm.Print_Area',Sheet:0,Ref:"'封面'!$A$1:$V$32"},
-    {Name:'_xlnm.Print_Area',Sheet:1,Ref:"'文件履歷表'!$A$1:$V$"+histLast},
+    {Name:'_xlnm.Print_Area',Sheet:1,Ref:"'"+s2name+"'!$A$1:$"+(H2?'I':'V')+"$"+histLast},
     {Name:'_xlnm.Print_Titles',Sheet:2,Ref:'BOM!$1:$7'}]};
   const raw=X.write(wb,{bookType:'xlsx',type:'array',cellStyles:true});
   const zip=await ZIP.loadAsync(raw);
   zip.file('xl/media/bf_logo.png',BF_LOGO,{base64:true});
   const EMU=9525;
   /* 依範本位置放 logo：文件履歷表左上 B1:G2、BOM 右上 */
-  const pics={
+  const pics=H2?{
+    1:`<xdr:oneCellAnchor><xdr:from><xdr:col>17</xdr:col><xdr:colOff>419100</xdr:colOff><xdr:row>0</xdr:row><xdr:rowOff>95250</xdr:rowOff></xdr:from><xdr:ext cx="1323975" cy="523875"/>__PIC__<xdr:clientData/></xdr:oneCellAnchor>`,
+    2:`<xdr:oneCellAnchor><xdr:from><xdr:col>7</xdr:col><xdr:colOff>19050</xdr:colOff><xdr:row>0</xdr:row><xdr:rowOff>85725</xdr:rowOff></xdr:from><xdr:ext cx="1609725" cy="428625"/>__PIC__<xdr:clientData/></xdr:oneCellAnchor>`,
+    3:'BOMLOGO'}:{
     2:`<xdr:twoCellAnchor editAs="oneCell"><xdr:from><xdr:col>1</xdr:col><xdr:colOff>43815</xdr:colOff><xdr:row>0</xdr:row><xdr:rowOff>0</xdr:rowOff></xdr:from><xdr:to><xdr:col>6</xdr:col><xdr:colOff>401955</xdr:colOff><xdr:row>2</xdr:row><xdr:rowOff>17780</xdr:rowOff></xdr:to>__PIC__<xdr:clientData/></xdr:twoCellAnchor>`,
     3:`<xdr:oneCellAnchor><xdr:from><xdr:col>11</xdr:col><xdr:colOff>769470</xdr:colOff><xdr:row>0</xdr:row><xdr:rowOff>52294</xdr:rowOff></xdr:from><xdr:ext cx="1581150" cy="504825"/>__PIC__<xdr:clientData/></xdr:oneCellAnchor>`};
+  if(pics[3]==='BOMLOGO') pics[3]=`<xdr:oneCellAnchor><xdr:from><xdr:col>11</xdr:col><xdr:colOff>769470</xdr:colOff><xdr:row>0</xdr:row><xdr:rowOff>52294</xdr:rowOff></xdr:from><xdr:ext cx="1581150" cy="504825"/>__PIC__<xdr:clientData/></xdr:oneCellAnchor>`;
   const picXml=(cx,cy)=>`<xdr:pic><xdr:nvPicPr><xdr:cNvPr id="2" name="logo"/><xdr:cNvPicPr><a:picLocks noChangeAspect="1"/></xdr:cNvPicPr></xdr:nvPicPr><xdr:blipFill><a:blip r:embed="rId1"/><a:stretch><a:fillRect/></a:stretch></xdr:blipFill><xdr:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="${cx}" cy="${cy}"/></a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom></xdr:spPr></xdr:pic>`;
-  const setup={1:{o:'landscape',h:1,c:1},2:{o:'landscape',h:1,c:1},3:{o:'portrait',h:0,c:1}};
+  const setup={1:{o:'landscape',h:1,c:1,v:H2},2:{o:'landscape',h:1,c:1,v:H2},3:{o:'portrait',h:0,c:1}};
   let ct=await zip.file('[Content_Types].xml').async('string');
   for(const n of [1,2,3]){
     const p='xl/worksheets/sheet'+n+'.xml';
@@ -4509,7 +4576,7 @@ async function bfBuildXlsx(X,bom,info,ZIP){
     let tail=`<pageSetup paperSize="9" orientation="${setup[n].o}" fitToWidth="1" fitToHeight="${setup[n].h}"/>`;
     if(pics[n]){
       const dn='bf_drawing'+n+'.xml';
-      zip.file('xl/drawings/'+dn,`<?xml version="1.0" encoding="UTF-8" standalone="yes"?><xdr:wsDr xmlns:xdr="http://schemas.openxmlformats.org/drawingml/2006/spreadsheetDrawing" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">${pics[n].replace('__PIC__',picXml(n===3?1581150:657*EMU,n===3?504825:173*EMU))}</xdr:wsDr>`);
+      zip.file('xl/drawings/'+dn,`<?xml version="1.0" encoding="UTF-8" standalone="yes"?><xdr:wsDr xmlns:xdr="http://schemas.openxmlformats.org/drawingml/2006/spreadsheetDrawing" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">${(()=>{ const ex=pics[n].match(/<xdr:ext cx="(\d+)" cy="(\d+)"/); return pics[n].replace('__PIC__',ex?picXml(+ex[1],+ex[2]):picXml(657*EMU,173*EMU)); })()}</xdr:wsDr>`);
       zip.file('xl/drawings/_rels/'+dn+'.rels',`<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="../media/bf_logo.png"/></Relationships>`);
       const rp='xl/worksheets/_rels/sheet'+n+'.xml.rels';
       const rel=`<Relationship Id="rIdBfLogo" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/drawing" Target="../drawings/${dn}"/>`;
@@ -4521,7 +4588,7 @@ async function bfBuildXlsx(X,bom,info,ZIP){
     }
     x=x.replace(/<pageSetup\b[^>]*\/>/,'');
     /* 水平置中列印 */
-    if(setup[n].c && !/<printOptions\b/.test(x)) x=x.replace(/<pageMargins\b/,'<printOptions horizontalCentered="1"/><pageMargins');
+    if(setup[n].c && !/<printOptions\b/.test(x)) x=x.replace(/<pageMargins\b/,'<printOptions horizontalCentered="1"'+(setup[n].v?' verticalCentered="1"':'')+'/><pageMargins');
     if(/<pageMargins\b[^>]*\/>/.test(x)) x=x.replace(/(<pageMargins\b[^>]*\/>)/,'$1'+tail);
     else x=x.replace('</worksheet>',tail+'</worksheet>');
     /* <drawing> 依規格要排在 ignoredErrors 之後、legacyDrawing／extLst 之前，順序錯 Excel 會要求修復 */
@@ -4544,10 +4611,24 @@ async function bfBuildXlsx(X,bom,info,ZIP){
 
 /* ---------- 匯出前的對話框：文件編號／版次／發行日期／文件履歷 ---------- */
 const BF_KEY='bom_form_v1:';
-let BF=null;   /* {code, hist:[{ver,date,content,by,remark,on}]} */
+let BF=null;   /* {code, hist:[{ver,date,content,by,approver,remark,on}]} */
 function bfToday(){ const d=new Date(), p=n=>(n<10?'0':'')+n; return d.getFullYear()+'-'+p(d.getMonth()+1)+'-'+p(d.getDate()); }
-function bfLoad(code){ try{ return JSON.parse(LS.get(BF_KEY+code)||'null'); }catch(e){ return null; } }
-function bfSave(code,o){ try{ LS.set(BF_KEY+code,JSON.stringify(o)); }catch(e){} }
+/* 每張 BOM 的表單資料（版型、文件編號、版次、封面品名、修改歷史）存在雲端 settings.bomForms，大家匯出都一樣；
+   舊版存在瀏覽器的資料當作備援 */
+function bfLoad(code){
+  const st=SET(); const o=st.bomForms&&st.bomForms[code];
+  if(o) return JSON.parse(JSON.stringify(o));
+  try{ return JSON.parse(LS.get(BF_KEY+code)||'null'); }catch(e){ return null; }
+}
+function bfSame(a,b){ return JSON.stringify(a||null)===JSON.stringify(b||null); }
+async function bfSave(code,o){
+  try{ LS.set(BF_KEY+code,JSON.stringify(o)); }catch(e){}
+  const st=SET(); st.bomForms=st.bomForms||{};
+  if(bfSame(st.bomForms[code],o)) return true;
+  if(typeof canWrite==='function' && !canWrite()) return false;   /* 唯讀帳號：只匯出、不寫雲端 */
+  st.bomForms[code]=o;
+  return await save();
+}
 const bfV=id=>{ const e=document.getElementById(id); return e?String(e.value||'').trim():''; };
 
 function exportBomForm(){
@@ -4557,40 +4638,54 @@ function exportBomForm(){
   const hist=(saved.hist||[]).map(h=>Object.assign({on:true},h));
   BF={code:bom.code, hist:hist, ecr:null};
   const lastVer=hist.length?hist[hist.length-1].ver:'';
-  const f=(id,l,v,t,w)=>`<div class="fld" style="${w?'flex:'+w:''}"><label>${l}</label>
-    <input id="${id}" type="${t||'text'}" value="${esc(v==null?'':v)}"></div>`;
+  const f=(id,l,v,t,w,ph)=>`<div class="fld" style="${w?'flex:'+w:''}"><label>${l}</label>
+    <input id="${id}" type="${t||'text'}" value="${esc(v==null?'':v)}" ${ph?'placeholder="'+esc(ph)+'"':''}></div>`;
+  const tpl=saved.tpl||'qa';
   dialog('匯出表單　'+bom.code+'　'+(bom.name||''),`
     <style>#dlgBody input[type=date]{padding:7px 10px;border:1px solid var(--line);border-radius:6px;background:#fff;color:var(--txt);width:100%}
       #bf_hist input,#bf_hist textarea{padding:5px 7px}</style>
     <div class="row" style="gap:10px;flex-wrap:wrap;align-items:flex-end">
-      ${f('bf_doc','文件編號',saved.docNo||'','text',2)}
-      ${f('bf_rev','版次',saved.rev||lastVer||'A','text',1)}
-      ${f('bf_date','發行日期',bfToday(),'date',1.4)}
-      ${f('bf_dept','製作單位',saved.dept||'研發部','text',1.4)}
+      <div class="fld" style="flex:2.4"><label>版型</label>
+        <select id="bf_tpl" onchange="bfTplUi()">
+          <option value="qa" ${tpl==='qa'?'selected':''}>封面＋文件履歷表（QA-2-01-06-A）</option>
+          <option value="hist" ${tpl==='hist'?'selected':''}>封面＋修改歷史</option></select></div>
+      ${f('bf_doc','文件編號',saved.docNo||'','text',1.6)}
+      ${f('bf_rev','版次',saved.rev||lastVer||'A','text',0.8)}
+      ${f('bf_date','發行日期',saved.date||bfToday(),'date',1.4)}
+      <div id="bf_deptBox" style="flex:1.2">${f('bf_dept','製作單位',saved.dept||'研發部','text')}</div>
     </div>
-    <div class="hint">檔名會是「文件編號-BOM_品號-版次.xlsx」。封面、文件履歷表、BOM 三頁，欄位與框線比照公司範本。</div>
+    <div class="row" style="gap:10px;flex-wrap:wrap;align-items:flex-end;margin-top:8px">
+      ${f('bf_cname','封面產品名稱',saved.coverName||'','text',2,'空白＝用料號主檔品名：'+(bom.name||''))}
+      <div id="bf_titleBox" style="flex:2">${f('bf_title','修改歷史「標題」',saved.title||'','text')}</div>
+    </div>
+    <div class="hint">檔名「文件編號-BOM_品號-版次.xlsx」。第三頁 BOM 一律依系統目前內容產生。以上設定與修改歷史會存到雲端，大家匯出同一張 BOM 會一樣。</div>
     <div style="margin-top:12px;display:flex;align-items:center;gap:8px">
-      <b>文件履歷</b><span class="mini mut" id="bf_ecrMsg"></span><div class="grow" style="flex:1"></div>
+      <b>修改歷史</b><span class="mini mut" id="bf_ecrMsg"></span><div class="grow" style="flex:1"></div>
       <button class="btn sm" type="button" onclick="bfPullEcr(true)">從文件變更審查帶入</button>
       <button class="btn sm" type="button" onclick="bfAddRow()">＋ 新增一列</button>
     </div>
-    <div style="overflow:auto;margin-top:6px"><table class="grid" style="width:100%;min-width:640px">
-      <thead><tr><th style="width:34px">印</th><th style="width:60px">版次</th><th style="width:130px">修訂日期</th>
-        <th>修正內容</th><th style="width:96px">起草人</th><th style="width:34px"></th></tr></thead>
-      <tbody id="bf_hist"></tbody></table></div>
-    <div class="hint">勾選的列會印在「文件履歷表」。內容會記在這台電腦的瀏覽器，下次匯出同一張 BOM 會自動帶出。</div>`,
+    <div style="overflow:auto;margin-top:6px"><table class="grid" style="width:100%;min-width:720px">
+      <thead><tr><th style="width:34px">印</th><th style="width:56px">版次</th><th style="width:130px">日期</th>
+        <th>內容和更新項目</th><th style="width:86px">修訂／起草人</th><th style="width:80px" class="bf_ap">核准</th><th style="width:34px"></th></tr></thead>
+      <tbody id="bf_hist"></tbody></table></div>`,
     `<button class="btn pri" type="button" onclick="bfGo()">匯出 Excel</button>
      <button class="btn" value="x">取消</button>`);
-  if(!BF.hist.length) BF.hist.push({on:true,ver:$('#bf_rev').value||'A',date:bfToday(),content:'第一版',by:(ME&&ME.name)||WHO||'',remark:'',_auto:true});
-  bfPaint();
+  if(!BF.hist.length) BF.hist.push({on:true,ver:$('#bf_rev').value||'A',date:bfToday(),content:'第一版',by:(ME&&ME.name)||WHO||'',approver:'',remark:'',_auto:true});
+  bfPaint(); bfTplUi();
   bfPullEcr(false);
+}
+function bfTplUi(){
+  const h=bfV('bf_tpl')==='hist';
+  const d=document.getElementById('bf_deptBox'); if(d) d.style.display=h?'none':'';
+  const t=document.getElementById('bf_titleBox'); if(t) t.style.display=h?'':'none';
+  document.querySelectorAll('.bf_ap').forEach(e=>e.style.display=h?'':'none');
 }
 function bfSync(){
   if(!BF) return;
   document.querySelectorAll('#bf_hist tr').forEach(tr=>{
     const h=BF.hist[+tr.dataset.i]; if(!h) return;
     h.on=tr.querySelector('[data-k=on]').checked;
-    ['ver','date','content','by'].forEach(k=>{ h[k]=tr.querySelector('[data-k='+k+']').value; });
+    ['ver','date','content','by','approver'].forEach(k=>{ const e=tr.querySelector('[data-k='+k+']'); if(e) h[k]=e.value; });
   });
 }
 function bfPaint(){
@@ -4601,9 +4696,12 @@ function bfPaint(){
     <td><input data-k="date" type="date" value="${esc(String(h.date||'').slice(0,10).replace(/\//g,'-'))}" style="width:100%"></td>
     <td><textarea data-k="content" rows="1" style="width:100%;resize:vertical">${esc(h.content||'')}</textarea></td>
     <td><input data-k="by" value="${esc(h.by||'')}" style="width:100%"></td>
+    <td class="bf_ap"><input data-k="approver" value="${esc(h.approver||'')}" style="width:100%"></td>
     <td><button class="btn sm" type="button" title="刪除這一列" onclick="bfDelRow(${i})">✕</button></td></tr>`).join('');
+  bfTplUi();
 }
-function bfAddRow(){ bfSync(); BF.hist.push({on:true,ver:bfV('bf_rev'),date:bfV('bf_date')||bfToday(),content:'',by:(ME&&ME.name)||WHO||''}); bfPaint(); }
+function bfAddRow(){ bfSync(); const p=BF.hist[BF.hist.length-1]||{};
+  BF.hist.push({on:true,ver:bfV('bf_rev'),date:bfV('bf_date')||bfToday(),content:'',by:(ME&&ME.name)||WHO||'',approver:p.approver||''}); bfPaint(); }
 function bfDelRow(i){ bfSync(); BF.hist.splice(i,1); bfPaint(); }
 
 /* 文件變更審查表（form-ecr）裡「文件/工程編號」＝文件編號，或名稱／編號含這個品號的紀錄，帶進履歷 */
@@ -4650,10 +4748,12 @@ async function bfGo(){
   const bom=BIDX[curBom];
   if(!bom||!BF) return;
   bfSync();
-  const info={docNo:bfV('bf_doc'), rev:bfV('bf_rev')||'A', date:bfV('bf_date')||bfToday(), dept:bfV('bf_dept'),
+  const info={tpl:bfV('bf_tpl')||'qa', docNo:bfV('bf_doc'), rev:bfV('bf_rev')||'A', date:bfV('bf_date')||bfToday(),
+    dept:bfV('bf_dept'), coverName:bfV('bf_cname'), title:bfV('bf_title'),
     hist:BF.hist.filter(h=>h.on!==false&&(h.ver||h.content||h.date))};
-  bfSave(bom.code,{docNo:info.docNo,rev:info.rev,dept:info.dept,
-    hist:BF.hist.filter(h=>h.ver||h.content).map(h=>({ver:h.ver,date:h.date,content:h.content,by:h.by,remark:h.remark||'',on:h.on!==false}))});
+  const keep={tpl:info.tpl,docNo:info.docNo,rev:info.rev,date:info.date,dept:info.dept,coverName:info.coverName,title:info.title,
+    hist:BF.hist.filter(h=>h.ver||h.content).map(h=>({ver:h.ver||'',date:h.date||'',content:h.content||'',by:h.by||'',
+      approver:h.approver||'',remark:h.remark||'',on:h.on!==false}))};
   let X;
   try{ X=await ensureStyledXlsx(); }
   catch(e){ return toast(e.message||'載入表單元件失敗'); }
@@ -4664,7 +4764,9 @@ async function bfGo(){
     dl(name,blob);
     closeDlg();
     toast('已匯出材料清單-BOM 表單');
-  }catch(e){ console.error(e); toast('匯出失敗：'+(e.message||e)); }
+  }catch(e){ console.error(e); return toast('匯出失敗：'+(e.message||e)); }
+  const ok=await bfSave(bom.code,keep);
+  if(ok===false) toast('表單已匯出；這次的封面／修改歷史設定沒有存到雲端（沒有寫入權限或存檔失敗）');
 }
 
 </script>
