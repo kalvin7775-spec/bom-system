@@ -4428,7 +4428,7 @@ function bfCoverSheet(bom,info){
   area(8,11,16,13,String(bom.code||'')+' BOM',{font:bfFont(F_TNR,32,true),alignment:bfAl('center')},bfAll('medium'));
   const L={font:bfFont(F_KAI2,12,true),alignment:bfAl('left')};
   const V={font:bfFont(F_KAI2,13,true),alignment:bfAl('center')};
-  [['產品名稱：',bom.name||''],['料件號碼：',String(bom.code||'')],['文件編號：',info.docNo],
+  [['產品名稱：',info.coverName||bom.name||''],['料件號碼：',String(bom.code||'')],['文件編號：',info.docNo],
    ['版　　次：',info.rev],['發行日期：',bfDateText(info.date,'zh')],
    ['製作單位：',info.dept],['文管中心：',''],['核　　准：','']]
     .forEach((x,i)=>{ const r=22+i; area(9,r,10,r,x[0],L); area(11,r,15,r,x[1]||'',V); });
