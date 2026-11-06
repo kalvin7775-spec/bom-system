@@ -267,7 +267,7 @@ let IDX={}, BIDX={};
 /* ---------- 版本檢查：瀏覽器常把舊版 bom.html 暫存住（重新整理也一樣），
    開頁時抓線上最新版比對 BUILD，不同就自動換成新版網址（加 ?v= 讓暫存失效）；
    用一陣子回到這個分頁時，若有新版就在上方提示 ---------- */
-const BUILD='20261106-1610';
+const BUILD='20261106-1615';
 async function bomLatestBuild(){
   try{ const t=await fetch(location.pathname+'?build='+Date.now(),{cache:'no-store'}).then(r=>r.text());
        const m=t.match(/const BUILD='([^']+)'/); return m?m[1]:null; }catch(e){ return null; }
@@ -1962,7 +1962,7 @@ function vBoms(){
     <button class="btn" onclick="importBomFile()">匯入 BOM Excel</button>
     <button class="btn" onclick="masterAdd()">＋ 新增料號主檔品號</button>
     <button class="btn danger" onclick="masterDel()">刪減料號主檔品號</button>
-    ${bomRelBadge(curBom)}
+    <span id="bomRelBox">${bomRelBadge(curBom)}</span>
     <div class="grow"></div>
     <span class="mini mut">成本規則</span>
     ${[['max','取較高者'],['buy','自身單價'],['sum','下階加總']]
@@ -2032,6 +2032,7 @@ function bomPickChoose(code){
   inp.value=curBom+'　'+(BIDX[curBom]?BIDX[curBom].name:''); inp.blur();
 }
 function renderBom(){
+  const rb=document.getElementById('bomRelBox'); if(rb) rb.innerHTML=bomRelBadge(curBom);
   const box=$('#bomBody');
   if(!curBom){box.innerHTML='<div class="card"><div class="empty">尚無 BOM，請新增或匯入。</div></div>';
     if(typeof applyReadonlyUI==='function') applyReadonlyUI(); return;}
