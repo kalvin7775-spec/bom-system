@@ -4652,7 +4652,7 @@ function exportBomForm(){
       ${f('bf_doc','文件編號',saved.docNo||'','text',1.6)}
       ${f('bf_rev','版次',saved.rev||lastVer||'A','text',0.8)}
       ${f('bf_date','發行日期',saved.date||bfToday(),'date',1.4)}
-      <div id="bf_deptBox" style="flex:1.2">${f('bf_dept','製作單位',saved.dept||'研發部','text')}</div>
+      <div id="bf_deptBox" style="flex:1.2">${f('bf_dept','製作單位',(saved.dept!=null?saved.dept:'研發部'),'text')}</div>
     </div>
     <div class="row" style="gap:10px;flex-wrap:wrap;align-items:flex-end;margin-top:8px">
       ${f('bf_cname','封面產品名稱',saved.coverName||'','text',2,'空白＝用料號主檔品名：'+(bom.name||''))}
