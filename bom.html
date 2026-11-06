@@ -264,6 +264,32 @@ const DB=(()=>{let p;
 let S={items:[],boms:[],history:[],meta:{},settings:{purchaseStop:true}};
 const SET=()=>(S.settings||(S.settings={purchaseStop:true}));
 let IDX={}, BIDX={};
+/* ---------- 版本檢查：瀏覽器常把舊版 bom.html 暫存住（重新整理也一樣），
+   開頁時抓線上最新版比對 BUILD，不同就自動換成新版網址（加 ?v= 讓暫存失效）；
+   用一陣子回到這個分頁時，若有新版就在上方提示 ---------- */
+const BUILD='20261106-1600';
+async function bomLatestBuild(){
+  try{ const t=await fetch(location.pathname+'?build='+Date.now(),{cache:'no-store'}).then(r=>r.text());
+       const m=t.match(/const BUILD='([^']+)'/); return m?m[1]:null; }catch(e){ return null; }
+}
+(async function(){
+  const nb=await bomLatestBuild();
+  if(nb && nb!==BUILD){
+    let tried=false; try{ tried=sessionStorage.getItem('bomBuildTry')===nb; sessionStorage.setItem('bomBuildTry',nb); }catch(e){}
+    if(!tried){ location.replace(location.pathname+'?v='+encodeURIComponent(nb)+location.hash); return; }
+  }
+})();
+let BUILD_WARNED=false;
+document.addEventListener('visibilitychange',async()=>{
+  if(document.visibilityState!=='visible'||BUILD_WARNED) return;
+  const nb=await bomLatestBuild();
+  if(!nb||nb===BUILD) return;
+  BUILD_WARNED=true;
+  const bar=document.createElement('div');
+  bar.style.cssText='position:fixed;top:0;left:0;right:0;z-index:9999;background:#1d4ed8;color:#fff;padding:8px 16px;text-align:center;font-size:14px';
+  bar.innerHTML='系統有新版本 <a href="'+location.pathname+'?v='+encodeURIComponent(nb)+'" style="color:#fff;font-weight:700;text-decoration:underline;margin-left:8px">點此更新</a>（請先存好正在編輯的資料）';
+  document.body.appendChild(bar);
+});
 const $=s=>document.querySelector(s);
 const esc=t=>String(t==null?'':t).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 const nf=n=>n==null||n===''||isNaN(n)?'':Number(n).toLocaleString('zh-TW',{maximumFractionDigits:4});
