@@ -304,6 +304,15 @@ function mUnit(code,fb){const it=IDX[code];
   if(it&&String(it.unit||'').trim()) return it.unit;
   return fb||'pcs';}
 
+/* ---------- 發行狀態：匯出 BOM 表單時勾「已發行」，BOM 管理右上角顯示「已發行＋版次」 ---------- */
+function bomRel(code){ const f=code&&SET().bomForms&&SET().bomForms[code]; return f&&f.released?f:null; }
+function bomRelBadge(code){
+  const f=bomRel(code); if(!f) return '';
+  const d=String(f.date||'').slice(0,10).replace(/-/g,'/');
+  const tip=['文件編號 '+(f.docNo||'—'),'發行日期 '+(d||'—')].join('　');
+  return `<span class="tag ok" style="font-size:13px;padding:4px 12px;font-weight:600;margin-right:6px" title="${esc(tip)}">✔ 已發行　版次 ${esc(f.rev||'—')}</span>`;
+}
+
 /* ---------- BOM 樹狀結構 ---------- */
 function buildTree(bom){
   const root={children:[]}, stack=[{lv:0,node:root}];
@@ -1886,6 +1895,7 @@ function vBoms(){
     <button class="btn" onclick="masterAdd()">＋ 新增料號主檔品號</button>
     <button class="btn danger" onclick="masterDel()">刪減料號主檔品號</button>
     <div class="grow"></div>
+    ${bomRelBadge(curBom)}
     <span class="mini mut">成本規則</span>
     ${[['max','取較高者'],['buy','自身單價'],['sum','下階加總']]
       .map(([k,t])=>`<span class="chip ${costMode()===k?'on':''}" onclick="setCostMode('${k}')">${t}</span>`).join('')}
@@ -4657,6 +4667,8 @@ function exportBomForm(){
     <div class="row" style="gap:10px;flex-wrap:wrap;align-items:flex-end;margin-top:8px">
       ${f('bf_cname','封面產品名稱',saved.coverName||'','text',2,'空白＝用料號主檔品名：'+(bom.name||''))}
       <div id="bf_titleBox" style="flex:2">${f('bf_title','修改歷史「標題」',saved.title||'','text')}</div>
+      <label style="display:flex;align-items:center;gap:6px;padding-bottom:8px;white-space:nowrap" title="勾選後，BOM 管理右上角會顯示「已發行＋版次」">
+        <input type="checkbox" id="bf_rel" ${saved.released?'checked':''}> 已發行</label>
     </div>
     <div class="hint">檔名「文件編號-BOM_品號-版次.xlsx」。第三頁 BOM 一律依系統目前內容產生。以上設定與修改歷史會存到雲端，大家匯出同一張 BOM 會一樣。</div>
     <div style="margin-top:12px;display:flex;align-items:center;gap:8px">
@@ -4751,7 +4763,8 @@ async function bfGo(){
   const info={tpl:bfV('bf_tpl')||'qa', docNo:bfV('bf_doc'), rev:bfV('bf_rev')||'A', date:bfV('bf_date')||bfToday(),
     dept:bfV('bf_dept'), coverName:bfV('bf_cname'), title:bfV('bf_title'),
     hist:BF.hist.filter(h=>h.on!==false&&(h.ver||h.content||h.date))};
-  const keep={tpl:info.tpl,docNo:info.docNo,rev:info.rev,date:info.date,dept:info.dept,coverName:info.coverName,title:info.title,
+  const relEl=document.getElementById('bf_rel');
+  const keep={released:!!(relEl&&relEl.checked),tpl:info.tpl,docNo:info.docNo,rev:info.rev,date:info.date,dept:info.dept,coverName:info.coverName,title:info.title,
     hist:BF.hist.filter(h=>h.ver||h.content).map(h=>({ver:h.ver||'',date:h.date||'',content:h.content||'',by:h.by||'',
       approver:h.approver||'',remark:h.remark||'',on:h.on!==false}))};
   let X;
@@ -4766,6 +4779,7 @@ async function bfGo(){
     toast('已匯出材料清單-BOM 表單');
   }catch(e){ console.error(e); return toast('匯出失敗：'+(e.message||e)); }
   const ok=await bfSave(bom.code,keep);
+  if(curBom===bom.code && typeof vBoms==='function' && document.getElementById('bomPick')) vBoms();
   if(ok===false) toast('表單已匯出；這次的封面／修改歷史設定沒有存到雲端（沒有寫入權限或存檔失敗）');
 }
 
