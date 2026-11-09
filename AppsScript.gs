@@ -27,7 +27,8 @@ const LEGACY_PW_ENABLED = true;                 // 全部同事都註冊完後�
 
 const SH = {items:'料號主檔', boms:'BOM主檔', lines:'BOM明細', hist:'異動紀錄', sys:'系統',
             users:'使用者', moves:'庫存異動', serial:'產品批序號', ecr:'文件變更審查',
-            pr:'請購單', prReg:'請購單編號', gr:'檢收單', mo:'製造命令單', kit:'工單成套發'};
+            pr:'請購單', prReg:'請購單編號', gr:'檢收單', mo:'製造命令單', kit:'工單成套發',
+            ship:'出貨單'};
 
 const HEAD = {
   items:['品號','品名','規格','單位','庫存數量','單位成本','安全庫存','供應商','交期','儲位','MSB','備註'],
@@ -59,7 +60,11 @@ const HEAD = {
   /* 工單成套發 PP-2-01-02-A：一張單一列；確認扣帳時另開一張「領料」庫存異動單（領料單號） */
   kit:['發料單號','製令單號','製造部門','扣帳日期','作業序','扣帳否','生產料號','生產品名','生產數量',
        '項數','品項摘要','領料單號','製表','核准','領料','製造','備註','填表人','建立時間',
-       '確認人','確認時間','資料JSON']
+       '確認人','確認時間','資料JSON'],
+  /* 出貨單 PP-2-03-03-A：一張單一列，最後一欄存完整內容供還原 Word／PDF */
+  ship:['出貨單號','出貨日期','項數','訂單號碼','產品料號','製令單號','箱數合計','總數量合計','品項摘要',
+        'S/O','航次','船名','貨櫃','報關行','船公司','貨運行',
+        '行政管理部主管','製造部倉庫管理人員','營運銷售部主管','營運銷售部承辦人','填表人','建立時間','資料JSON']
 };
 
 /* 角色權限：admin 全部；editor 可讀可寫；viewer 只能讀 */
@@ -1351,6 +1356,105 @@ function voidGr(auth, p){
 }
 
 /* ============================================================
+   出貨單 PP-2-03-03-A（form-ship.html 使用）
+   一張出貨單一列；「資料JSON」存完整內容，前端才能原樣還原成 Word／PDF。
+   單號：SH + 年(2碼) + 月(2碼) + 流水號(5碼)，例 SH261100001。
+         年月取「送出當天」（台北時間，即表單產出的月份），每月從 00001 重新編。
+   送出時在鎖內取號；刪掉的號碼記在系統表 shipVoidNos，不再發出。
+   版本號存在「系統」表的 shipRev。出貨單只做紀錄，不異動庫存。
+   ============================================================ */
+function readShip(){
+  return rows('ship').map(function(r){
+    let data = {};
+    try{ data = JSON.parse(String(r['資料JSON']||'{}')); }catch(e){ data = {}; }
+    return {no:String(r['出貨單號']||''), date:fmtDate(r['出貨日期']),
+      count:String(r['項數']||''), ord:String(r['訂單號碼']||''), code:String(r['產品料號']||''),
+      mo:String(r['製令單號']||''), tbox:String(r['箱數合計']||''), tqty:String(r['總數量合計']||''),
+      brief:String(r['品項摘要']||''), fwd:String(r['貨運行']||''),
+      by:String(r['填表人']||''), at:fmtTS(r['建立時間']), data:data};
+  });
+}
+function shipVoidNos(){
+  return String(sysGet('shipVoidNos','')||'').split(',').map(function(x){ return x.trim(); }).filter(Boolean);
+}
+function shipNextNo(ym){
+  let max = 0;
+  const re = new RegExp('^SH' + ym + '(\\d{5})$');
+  const take = function(no){ const m = String(no||'').trim().toUpperCase().match(re); if(m) max = Math.max(max, parseInt(m[1],10)); };
+  rows('ship').forEach(function(r){ take(r['出貨單號']); });
+  shipVoidNos().forEach(take);
+  return 'SH' + ym + String(max + 1).padStart(5,'0');
+}
+function postShip(auth, p){
+  if(!canWrite(auth.role))
+    return {error: auth.legacy ? '共用密碼為唯讀模式，無法送出出貨單。'
+                              : '你的權限為「唯讀」，無法送出出貨單。', denied:true};
+  const rec = (p && p.rec) || {};
+  const sum = (p && p.summary) || {};
+  const items = rec.items || [];
+  if(!String(rec.date||'').trim()) return {error:'「出貨日期」必填'};
+  if(!items.length) return {error:'請至少填一列出貨品項'};
+  const lock = LockService.getScriptLock();
+  lock.waitLock(25000);
+  try{
+    const asked = String(rec.no||'').trim();
+    const no = shipNextNo(Utilities.formatDate(new Date(),'Asia/Taipei','yyMM'));  /* 在鎖裡取號 */
+    rec.no = no;
+    const now = nowTS();
+    const uniq = function(k){ const o = []; items.forEach(function(it){ const v = String(it[k]||'').trim();
+      if(v && v !== '-' && o.indexOf(v) < 0) o.push(v); }); return o.join('、'); };
+    const row = [no, String(rec.date||'').trim(), Number(sum.count||items.length)||items.length,
+      uniq('ord'), uniq('code'), uniq('mo'),
+      String((rec.tot||{}).box||''), String((rec.tot||{}).qty||''), String(sum.brief||''),
+      String(rec.so||''), String(rec.voy||''), String(rec.vessel||''), String(rec.ctn||''),
+      String(rec.broker||''), String(rec.shipco||''), String(rec.fwd||''),
+      String(rec.sg1||''), String(rec.sg2||''), String(rec.sg3||''), String(rec.sg4||''),
+      auth.name||'', now, JSON.stringify(rec)];
+    const sh = sheet('ship');
+    const at0 = sh.getLastRow()+1;
+    ['出貨單號','出貨日期','訂單號碼','產品料號','製令單號','箱數合計','總數量合計','建立時間'].forEach(function(h){
+      markTextCol(sh, at0, HEAD.ship.indexOf(h)+1, 1); });
+    sh.getRange(at0, 1, 1, HEAD.ship.length).setValues([row]);
+    const rev = (Number(sysGet('shipRev',0))||0) + 1;
+    sysSet('shipRev', rev); sysSet('shipAt', now); sysSet('shipBy', (auth.name||'') + '（送出 ' + no + '）');
+    sysFlush();
+    SpreadsheetApp.flush();
+    return {ok:true, no:no, asked:asked, rev:rev, at:now, by:auth.name||''};
+  } finally { lock.releaseLock(); }
+}
+/* 刪除一張出貨單（僅管理員）；單號記為作廢，不再發出 */
+function voidShip(auth, p){
+  if(!isAdmin(auth.role)) return {error:'只有管理員可以刪除已送出的出貨單。', denied:true};
+  const no  = String((p && p.no)  || '').trim();
+  const why = String((p && p.why) || '').trim();
+  if(!no) return {error:'沒有指定要刪除的單號'};
+  const lock = LockService.getScriptLock();
+  lock.waitLock(25000);
+  try{
+    const sh = sheet('ship');
+    const last = sh.getLastRow(), lastC = sh.getLastColumn();
+    if(last < 2) return {error:'「出貨單」還沒有任何紀錄'};
+    const head = sh.getRange(1,1,1,lastC).getValues()[0].map(String);
+    const cNo = head.indexOf('出貨單號'), cJ = head.indexOf('資料JSON');
+    const body = sh.getRange(2,1,last-1,lastC).getValues();
+    const hit = [];
+    for(let i=0;i<body.length;i++) if(String(body[i][cNo]).trim() === no) hit.push(i);
+    if(!hit.length) return {error:'找不到單號 '+no+'，可能已經被別人刪掉了，請按 ↻ 重新讀取'};
+    const saved = hit.map(function(i){ return String(body[i][cJ]||''); });
+    for(let k=hit.length-1;k>=0;k--) sh.deleteRow(hit[k]+2);
+    const now = nowTS();
+    sheet('hist').appendRow([now, '刪除出貨單 '+no+(why?'（'+why+'）':''), 0, hit.length, 0, 0, 0,
+      auth.name||'', JSON.stringify({ship:saved})]);
+    const vn = shipVoidNos(); if(vn.indexOf(no) < 0){ vn.push(no); sysSet('shipVoidNos', vn.join(',')); }
+    const rev = (Number(sysGet('shipRev',0))||0) + 1;
+    sysSet('shipRev', rev); sysSet('shipAt', now); sysSet('shipBy', (auth.name||'') + '（刪除 ' + no + '）');
+    sysFlush();
+    SpreadsheetApp.flush();
+    return {ok:true, no:no, rev:rev, removed:hit.length};
+  } finally { lock.releaseLock(); }
+}
+
+/* ============================================================
    製造命令單 BU-2-01-04-A（form-mo.html）
    工單成套發 PP-2-01-02-A（form-kit.html）
    單號：製令 P + 西元年4碼 + 月2碼 + 流水2碼（例 P20261101）
@@ -1920,6 +2024,13 @@ function doPost(e){
                 updatedAt:fmtTS(sysGet('grAt','')), updatedBy:String(sysGet('grBy',''))});
   if(action === 'postGr')     return out(postGr(auth, body));
   if(action === 'voidGr')     return out(voidGr(auth, body));
+
+  if(action === 'loadShip')
+    return out({ok:true, records:readShip(), voidNos:shipVoidNos(),
+                rev:Number(sysGet('shipRev',0))||0,
+                updatedAt:fmtTS(sysGet('shipAt','')), updatedBy:String(sysGet('shipBy',''))});
+  if(action === 'postShip')   return out(postShip(auth, body));
+  if(action === 'voidShip')   return out(voidShip(auth, body));
 
   /* 製造命令單／工單成套發（form-mo.html、form-kit.html） */
   if(action === 'loadMfg')     return out(loadMfg());
