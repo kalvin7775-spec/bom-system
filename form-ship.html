@@ -285,7 +285,7 @@ https://github.com/nodeca/pako/blob/main/LICENSE
 
 <div class="histwrap" id="histWrap">
   <h2>已送出的出貨單 <span id="histCount" class="sub" style="font-weight:400"></span></h2>
-  <div class="sub">單號規則：SH＋年(2碼)＋月(2碼)＋流水號(5碼)，例 SH261100001＝2026 年 11 月產出的第 1 張；每月從 00001 重新編，送出時正式取號。<br>
+  <div class="sub">單號規則：SH＋年(2碼)＋月(2碼)＋流水號(3碼)，例 SH2611001＝2026 年 11 月產出的第 1 張；每月從 001 重新編，送出時正式取號。<br>
     送出後內容就鎖住不能改；打錯的話請管理員刪掉再重開一張（可用「複製成新單」帶入內容）。出貨單只做紀錄，不會異動庫存。</div>
   <div class="htools">
     <div class="grow"><input type="search" class="hsearch" id="hq" placeholder="搜尋單號 / 訂單號碼 / 產品料號 / 製令單號 / S/N / 貨運行…"></div>
@@ -883,14 +883,14 @@ function copyRec(){
   window.scrollTo({top:0, behavior:'smooth'});
 }
 
-/* ---------- 單號（規則同後端 shipNextNo）：SH＋yyMM（產出月份）＋5 碼流水號 ---------- */
+/* ---------- 單號（規則同後端 shipNextNo）：SH＋yyMM（產出月份）＋3 碼流水號 ---------- */
 let CURNO = '';
 function shipYm(){ const d = new Date(); return String(d.getFullYear()).slice(2) + pad2(d.getMonth()+1); }
 function nextNo(ym){
-  let max = 0; const re = new RegExp('^SH' + ym + '(\\d{5})$');
+  let max = 0; const re = new RegExp('^SH' + ym + '(\\d{3,})$');
   const take = no => { const m = String(no||'').trim().toUpperCase().match(re); if(m) max = Math.max(max, +m[1]); };
   RECS.forEach(r => take(r.no)); VOIDS.forEach(take);
-  return 'SH' + ym + String(max + 1).padStart(5, '0');
+  return 'SH' + ym + String(max + 1).padStart(3, '0');
 }
 function fillNo(){
   if(MODE !== 'new') return;

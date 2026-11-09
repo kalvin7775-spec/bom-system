@@ -1358,8 +1358,8 @@ function voidGr(auth, p){
 /* ============================================================
    出貨單 PP-2-03-03-A（form-ship.html 使用）
    一張出貨單一列；「資料JSON」存完整內容，前端才能原樣還原成 Word／PDF。
-   單號：SH + 年(2碼) + 月(2碼) + 流水號(5碼)，例 SH261100001。
-         年月取「送出當天」（台北時間，即表單產出的月份），每月從 00001 重新編。
+   單號：SH + 年(2碼) + 月(2碼) + 流水號(3碼)，例 SH2611001。
+         年月取「送出當天」（台北時間，即表單產出的月份），每月從 001 重新編。
    送出時在鎖內取號；刪掉的號碼記在系統表 shipVoidNos，不再發出。
    版本號存在「系統」表的 shipRev。出貨單只做紀錄，不異動庫存。
    ============================================================ */
@@ -1379,11 +1379,11 @@ function shipVoidNos(){
 }
 function shipNextNo(ym){
   let max = 0;
-  const re = new RegExp('^SH' + ym + '(\\d{5})$');
+  const re = new RegExp('^SH' + ym + '(\\d{3,})$');
   const take = function(no){ const m = String(no||'').trim().toUpperCase().match(re); if(m) max = Math.max(max, parseInt(m[1],10)); };
   rows('ship').forEach(function(r){ take(r['出貨單號']); });
   shipVoidNos().forEach(take);
-  return 'SH' + ym + String(max + 1).padStart(5,'0');
+  return 'SH' + ym + String(max + 1).padStart(3,'0');
 }
 function postShip(auth, p){
   if(!canWrite(auth.role))
