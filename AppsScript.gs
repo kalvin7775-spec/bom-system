@@ -61,8 +61,8 @@ const HEAD = {
   kit:['發料單號','製令單號','製造部門','扣帳日期','作業序','扣帳否','生產料號','生產品名','生產數量',
        '項數','品項摘要','領料單號','製表','核准','領料','製造','備註','填表人','建立時間',
        '確認人','確認時間','資料JSON'],
-  /* 出貨單 PP-2-03-03-A：一張單一列，最後一欄存完整內容供還原 Word／PDF */
-  ship:['出貨單號','出貨日期','項數','訂單號碼','產品料號','製令單號','箱數合計','總數量合計','品項摘要',
+  /* 出貨單 PP-2-03-03-A：一張單一列，最後一欄存完整內容供還原 Word／PDF；送出時開「領料」單扣庫存（領料單號） */
+  ship:['出貨單號','出貨日期','項數','訂單號碼','品號','製令單號','箱數合計','總數量合計','品項摘要','領料單號',
         'S/O','航次','船名','貨櫃','報關行','船公司','貨運行',
         '行政管理部主管','製造部倉庫管理人員','營運銷售部主管','營運銷售部承辦人','填表人','建立時間','資料JSON']
 };
@@ -1361,16 +1361,19 @@ function voidGr(auth, p){
    單號：SH + 年(2碼) + 月(2碼) + 流水號(3碼)，例 SH2611001。
          年月取「送出當天」（台北時間，即表單產出的月份），每月從 001 重新編。
    送出時在鎖內取號；刪掉的號碼記在系統表 shipVoidNos，不再發出。
-   版本號存在「系統」表的 shipRev。出貨單只做紀錄，不異動庫存。
+   扣庫存：送出時依每列「品號 × 總數量」另開一張「領料」庫存異動單（PP 單號，
+           異動原因「出貨單 SH…」），庫存扣掉、料帳卡（物料卡）也看得到；
+           刪除出貨單時連同那張領料單一起回沖庫存。
+   版本號存在「系統」表的 shipRev。
    ============================================================ */
 function readShip(){
   return rows('ship').map(function(r){
     let data = {};
     try{ data = JSON.parse(String(r['資料JSON']||'{}')); }catch(e){ data = {}; }
     return {no:String(r['出貨單號']||''), date:fmtDate(r['出貨日期']),
-      count:String(r['項數']||''), ord:String(r['訂單號碼']||''), code:String(r['產品料號']||''),
+      count:String(r['項數']||''), ord:String(r['訂單號碼']||''), code:String(r['品號']||''),
       mo:String(r['製令單號']||''), tbox:String(r['箱數合計']||''), tqty:String(r['總數量合計']||''),
-      brief:String(r['品項摘要']||''), fwd:String(r['貨運行']||''),
+      brief:String(r['品項摘要']||''), ppNo:String(r['領料單號']||''), fwd:String(r['貨運行']||''),
       by:String(r['填表人']||''), at:fmtTS(r['建立時間']), data:data};
   });
 }
@@ -1385,6 +1388,29 @@ function shipNextNo(ym){
   shipVoidNos().forEach(take);
   return 'SH' + ym + String(max + 1).padStart(3,'0');
 }
+/* 出貨單數量欄是手填文字：去掉千分位、全形數字轉半形；不是數字回傳 NaN */
+function shipQty(v){
+  const s = String(v==null?'':v).replace(/[，,\s　]/g,'')
+    .replace(/[０-９]/g, function(c){ return String.fromCharCode(c.charCodeAt(0) - 0xFEE0); })
+    .replace(/．/g,'.');
+  if(!s || s === '-' || s === '--') return 0;
+  const n = Number(s);
+  return isFinite(n) ? n : NaN;
+}
+/* 從出貨單明細整理出要扣庫存的列：有品號的列，總數量必須是大於 0 的數字 */
+function shipLines(items){
+  const lines = [], bad = [];
+  items.forEach(function(it, i){
+    const code = String(it.code||'').trim();
+    if(!code || code === '-' || code === '--') return;
+    const q = shipQty(it.qty);
+    if(!(q > 0)){ bad.push('第 ' + (i+1) + ' 列 ' + code + '（總數量「' + String(it.qty||'') + '」）'); return; }
+    const note = [it.ord && it.ord !== '-' ? '訂單 ' + it.ord : '', it.sn && it.sn !== '-' ? 'S/N ' + it.sn : '']
+      .filter(Boolean).join('，');
+    lines.push({code:code, qty:q, note:note});
+  });
+  return {lines:lines, bad:bad};
+}
 function postShip(auth, p){
   if(!canWrite(auth.role))
     return {error: auth.legacy ? '共用密碼為唯讀模式，無法送出出貨單。'
@@ -1394,35 +1420,46 @@ function postShip(auth, p){
   const items = rec.items || [];
   if(!String(rec.date||'').trim()) return {error:'「出貨日期」必填'};
   if(!items.length) return {error:'請至少填一列出貨品項'};
+  const sl = shipLines(items);
+  if(sl.bad.length) return {error:'下列品號的「總數量」要填大於 0 的數字才能扣庫存：' + sl.bad.join('、')};
+  if(!sl.lines.length) return {error:'請至少填一列「品號」與「總數量」，出貨單會依此扣庫存'};
   const lock = LockService.getScriptLock();
   lock.waitLock(25000);
   try{
     const asked = String(rec.no||'').trim();
     const no = shipNextNo(Utilities.formatDate(new Date(),'Asia/Taipei','yyMM'));  /* 在鎖裡取號 */
     rec.no = no;
-    const now = nowTS();
     const uniq = function(k){ const o = []; items.forEach(function(it){ const v = String(it[k]||'').trim();
       if(v && v !== '-' && o.indexOf(v) < 0) o.push(v); }); return o.join('、'); };
+    /* --- 先扣庫存（品號不在主檔會整張擋下，出貨單也不會存） --- */
+    const ords = uniq('ord');
+    const res = postOrder(auth, {order:{type:'領料', reason:'出貨單 ' + no + (ords ? '（訂單 ' + ords + '）' : ''),
+      dept:'業務部', house:'', taker:String(rec.sg4||'').trim(),
+      memo:'出貨日期 ' + String(rec.date||'').trim() + (rec.fwd ? '，貨運行 ' + String(rec.fwd).replace(/\s*\n\s*/g,' ') : ''),
+      lines:sl.lines}}, {locked:true, maxLines:1000});
+    if(res.error) return res;
+    rec.ppNo = res.no;
+    const now = nowTS();
     const row = [no, String(rec.date||'').trim(), Number(sum.count||items.length)||items.length,
-      uniq('ord'), uniq('code'), uniq('mo'),
-      String((rec.tot||{}).box||''), String((rec.tot||{}).qty||''), String(sum.brief||''),
+      ords, uniq('code'), uniq('mo'),
+      String((rec.tot||{}).box||''), String((rec.tot||{}).qty||''), String(sum.brief||''), res.no,
       String(rec.so||''), String(rec.voy||''), String(rec.vessel||''), String(rec.ctn||''),
       String(rec.broker||''), String(rec.shipco||''), String(rec.fwd||''),
       String(rec.sg1||''), String(rec.sg2||''), String(rec.sg3||''), String(rec.sg4||''),
       auth.name||'', now, JSON.stringify(rec)];
     const sh = sheet('ship');
     const at0 = sh.getLastRow()+1;
-    ['出貨單號','出貨日期','訂單號碼','產品料號','製令單號','箱數合計','總數量合計','建立時間'].forEach(function(h){
+    ['出貨單號','出貨日期','訂單號碼','品號','製令單號','箱數合計','總數量合計','領料單號','建立時間'].forEach(function(h){
       markTextCol(sh, at0, HEAD.ship.indexOf(h)+1, 1); });
     sh.getRange(at0, 1, 1, HEAD.ship.length).setValues([row]);
     const rev = (Number(sysGet('shipRev',0))||0) + 1;
     sysSet('shipRev', rev); sysSet('shipAt', now); sysSet('shipBy', (auth.name||'') + '（送出 ' + no + '）');
     sysFlush();
     SpreadsheetApp.flush();
-    return {ok:true, no:no, asked:asked, rev:rev, at:now, by:auth.name||''};
+    return {ok:true, no:no, asked:asked, rev:rev, at:now, by:auth.name||'', ppNo:res.no, stock:res.stock||[]};
   } finally { lock.releaseLock(); }
 }
-/* 刪除一張出貨單（僅管理員）；單號記為作廢，不再發出 */
+/* 刪除一張出貨單（僅管理員）；連同扣庫存的領料單一起回沖；單號記為作廢，不再發出 */
 function voidShip(auth, p){
   if(!isAdmin(auth.role)) return {error:'只有管理員可以刪除已送出的出貨單。', denied:true};
   const no  = String((p && p.no)  || '').trim();
@@ -1435,22 +1472,31 @@ function voidShip(auth, p){
     const last = sh.getLastRow(), lastC = sh.getLastColumn();
     if(last < 2) return {error:'「出貨單」還沒有任何紀錄'};
     const head = sh.getRange(1,1,1,lastC).getValues()[0].map(String);
-    const cNo = head.indexOf('出貨單號'), cJ = head.indexOf('資料JSON');
+    const cNo = head.indexOf('出貨單號'), cJ = head.indexOf('資料JSON'), cPP = head.indexOf('領料單號');
     const body = sh.getRange(2,1,last-1,lastC).getValues();
     const hit = [];
     for(let i=0;i<body.length;i++) if(String(body[i][cNo]).trim() === no) hit.push(i);
     if(!hit.length) return {error:'找不到單號 '+no+'，可能已經被別人刪掉了，請按 ↻ 重新讀取'};
+    /* --- 回沖扣庫存的領料單 --- */
+    const pps = [];
+    hit.forEach(function(i){ const pp = cPP >= 0 ? String(body[i][cPP]||'').trim() : ''; if(pp && pps.indexOf(pp) < 0) pps.push(pp); });
+    let stock = [];
+    for(let k=0;k<pps.length;k++){
+      const v = voidOrder(auth, {no:pps[k], why:'刪除出貨單 ' + no + (why ? '：' + why : '')}, {locked:true});
+      if(v.error && !/找不到單號/.test(v.error)) return v;
+      if(v.stock) stock = stock.concat(v.stock);
+    }
     const saved = hit.map(function(i){ return String(body[i][cJ]||''); });
     for(let k=hit.length-1;k>=0;k--) sh.deleteRow(hit[k]+2);
     const now = nowTS();
-    sheet('hist').appendRow([now, '刪除出貨單 '+no+(why?'（'+why+'）':''), 0, hit.length, 0, 0, 0,
-      auth.name||'', JSON.stringify({ship:saved})]);
+    sheet('hist').appendRow([now, '刪除出貨單 '+no+(pps.length?'（並回沖領料單 '+pps.join('、')+'）':'')+(why?'（'+why+'）':''),
+      0, hit.length, 0, 0, 0, auth.name||'', JSON.stringify({ship:saved})]);
     const vn = shipVoidNos(); if(vn.indexOf(no) < 0){ vn.push(no); sysSet('shipVoidNos', vn.join(',')); }
     const rev = (Number(sysGet('shipRev',0))||0) + 1;
     sysSet('shipRev', rev); sysSet('shipAt', now); sysSet('shipBy', (auth.name||'') + '（刪除 ' + no + '）');
     sysFlush();
     SpreadsheetApp.flush();
-    return {ok:true, no:no, rev:rev, removed:hit.length};
+    return {ok:true, no:no, rev:rev, removed:hit.length, ppNos:pps, stock:stock};
   } finally { lock.releaseLock(); }
 }
 
@@ -2007,7 +2053,8 @@ function doPost(e){
       items: rows('items').map(function(r){
         return {code:String(r['品號']||'').trim(), name:String(r['品名']||''),
                 spec:String(r['規格']||''), unit:String(r['單位']||''),
-                supplier:String(r['供應商']||''), cost:numOrNull(r['單位成本'])};
+                supplier:String(r['供應商']||''), cost:numOrNull(r['單位成本']),
+                stock:numOrNull(r['庫存數量'])};
       }).filter(function(x){ return x.code; })});
 
   if(action === 'loadPr')
