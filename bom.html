@@ -267,7 +267,7 @@ let IDX={}, BIDX={};
 /* ---------- 版本檢查：瀏覽器常把舊版 bom.html 暫存住（重新整理也一樣），
    開頁時抓線上最新版比對 BUILD，不同就自動換成新版網址（加 ?v= 讓暫存失效）；
    用一陣子回到這個分頁時，若有新版就在上方提示 ---------- */
-const BUILD='20261118-1215';
+const BUILD='20261118-1240';
 async function bomLatestBuild(){
   try{ const t=await fetch(location.pathname+'?build='+Date.now(),{cache:'no-store'}).then(r=>r.text());
        const m=t.match(/const BUILD='([^']+)'/); return m?m[1]:null; }catch(e){ return null; }
@@ -2576,7 +2576,7 @@ async function saveBom(){
 /* ============================================================
    需求試算（依數量查 BOM／缺料分析）
    ============================================================ */
-let ORD=[{code:'',qty:100}], OPT={netting:LS.get('mrpNetting')!=='0',keepSafety:false}, RES=null;
+let ORD=[{code:'',qty:100}], OPT={netting:LS.get('mrpNetting')!=='0',keepSafety:false,level:LS.get('mrpLevel')==='all'?'all':'one'}, RES=null;
 const mrpSt={key:'shortVal',dir:1,render:()=>renderMrp()};
 function vMrp(){
   if(!S.boms.length){
@@ -2592,7 +2592,9 @@ function vMrp(){
     <div class="row" style="margin-top:10px">
       <button class="btn" onclick="ordAdd()">＋ 增加產品</button>
       <div class="grow"></div>
-      <label class="chip ${OPT.netting?'on':''}" onclick="OPT.netting=!OPT.netting;LS.set('mrpNetting',OPT.netting?'1':'0');vMrp()">扣抵半成品既有庫存</label>
+      <span class="mini mut">展開層級</span>
+      ${[['one','只看下一階'],['all','展開到底層']].map(([k,t])=>`<span class="chip ${OPT.level===k?'on':''}" onclick="OPT.level='${k}';LS.set('mrpLevel','${k}');RES=null;vMrp()">${t}</span>`).join('')}
+      ${OPT.level==='all'?`<label class="chip ${OPT.netting?'on':''}" onclick="OPT.netting=!OPT.netting;LS.set('mrpNetting',OPT.netting?'1':'0');vMrp()">扣抵半成品既有庫存</label>`:''}
       <label class="chip ${OPT.keepSafety?'on':''}" onclick="OPT.keepSafety=!OPT.keepSafety;vMrp()">保留安全庫存</label>
       <span class="mini mut">成本規則</span>
       ${[['max','取較高者'],['buy','自身單價'],['sum','下階加總']]
@@ -2600,7 +2602,9 @@ function vMrp(){
       <button class="btn pri" onclick="runMrp()">開始試算</button>
     </div>
     <div class="hint">
-      <b>扣抵半成品既有庫存</b>：勾選後，若半成品（如 S03-ORL0001）本身有庫存，會先扣抵，只對不足部分往下展開零件需求；不勾選則一律展開到最底層零件。<br>
+      <b>只看下一階</b>（預設）：只列產品 BOM 的直屬下一階料號，半成品／組件以本身庫存判斷缺口，並標示其下階是否足夠製造缺口數量。<br>
+      <b>展開到底層</b>：展開到最底層零件計算需求。<br>
+      <b>扣抵半成品既有庫存</b>（展開到底層時）：勾選後，若半成品（如 S03-ORL0001）本身有庫存，會先扣抵，只對不足部分往下展開零件需求；不勾選則一律展開到最底層零件。<br>
       <b>保留安全庫存</b>：勾選後，可用量＝庫存－安全庫存。<br>
       <b>成本規則</b>：組件同時有自身單價與下階明細時要採用哪一邊。預設「取較高者」避免任一邊資料不全造成少算，
       可在「資料管理」頁看到兩者差異較大的組件清單。
@@ -2642,6 +2646,7 @@ function ordAdd(){ORD.push({code:S.boms[0]?.code||'',qty:100});ordRender();}
 function ordDel(i){ORD.splice(i,1);ordRender();}
 
 function runMrp(){
+  if(OPT.level!=='all') return runMrp1();
   const leaf={}, subs={}, cycles=[];
   const pool={};
   ORD.forEach(o=>{
@@ -2681,6 +2686,51 @@ function explodeShared(bomCode,qty,opt,pool){
   })(buildTree(bom),qty,[bomCode],1);
   return {leaf,sub,cycles};
 }
+/* 只看下一階：每個產品只取直屬下一階；有下階的半成品以本身庫存判斷，另檢查其下一階能否製造缺口 */
+function runMrp1(){
+  const leaf={}, asm={};
+  ORD.forEach(o=>{
+    if(!o.code||!(o.qty>0)) return;
+    const bom=bomOf(o.code); if(!bom) return;
+    buildTree(bom).forEach(n=>{
+      const q=(+n.qty||0)*o.qty; if(q<=0) return;
+      leaf[n.code]=(leaf[n.code]||0)+q;
+      const {kids}=kidsOf(n,[o.code],true);
+      if(kids.length && !asm[n.code]) asm[n.code]={kids,path:[o.code,n.code]};
+    });
+  });
+  const subs=[], subChk={};
+  Object.keys(asm).forEach(code=>{
+    const i=itemOf(code), need=leaf[code];
+    const avail=Math.max(0,(i.stock||0)-(OPT.keepSafety?(i.safety||0):0));
+    const net=Math.max(0,need-avail);
+    const lack=[];
+    if(net>0){
+      const per={};
+      asm[code].kids.forEach(k=>{per[k.code]=(per[k.code]||0)+(+k.qty||0)*net;});
+      Object.entries(per).forEach(([c,q])=>{const ci=itemOf(c);
+        const a=Math.max(0,(ci.stock||0)-(OPT.keepSafety?(ci.safety||0):0));
+        if(a<q) lack.push({code:c,name:ci.name,need:q,stock:ci.stock||0,gap:q-a});});
+    }
+    subChk[code]={net,lack,kidN:asm[code].kids.length};
+    subs.push({code,name:mName(code,i.name),unit:mUnit(code,i.unit),gross:need,fromStock:Math.min(avail,need),net,lack});
+  });
+  RES={leaf,subs,cycles:[],subChk,level:'one',
+       orders:ORD.filter(o=>o.code&&o.qty>0).map(o=>({...o,name:bomOf(o.code)?.name||''})),
+       opt:{...OPT},ts:nowts()};
+  renderMrp();
+}
+function subNote(code){
+  const c=RES&&RES.subChk&&RES.subChk[code]; if(!c) return '';
+  if(!c.net) return '';
+  return c.lack.length
+    ? `<span class="tag bad" title="${esc(c.lack.map(x=>x.code+' '+x.name+' 需 '+nf(x.need)+'，庫存 '+nf(x.stock)+'，缺 '+nf(x.gap)).join('\n'))}">下階缺 ${c.lack.length} 項</span>`
+    : `<span class="tag ok" title="下一階 ${c.kidN} 項料號庫存足夠製造 ${nf(c.net)}">下階足夠可製造</span>`;
+}
+function subNoteTxt(code){
+  const c=RES&&RES.subChk&&RES.subChk[code]; if(!c||!c.net) return '';
+  return c.lack.length?('下階缺：'+c.lack.map(x=>x.code+' 缺 '+x.gap).join('、')):'下階足夠可製造';
+}
 function mrpRows(){
   return Object.entries(RES.leaf).map(([code,need])=>{
     const i=itemOf(code);
@@ -2689,7 +2739,7 @@ function mrpRows(){
     return {code,name:i.name,spec:i.spec,unit:i.unit,need,stock:i.stock||0,safety:i.safety||0,
       avail:Math.max(0,avail),gap:Math.max(0,gap),cost:i.cost,supplier:i.supplier,lead:i.lead,
       needVal:(i.cost||0)*need, shortVal:(i.cost||0)*Math.max(0,gap),
-      ok:gap<=0, ghost:!!i._ghost||i.cost==null};
+      ok:gap<=0, ghost:!!i._ghost||i.cost==null, asm:!!(RES.subChk&&RES.subChk[code])};
   });
 }
 function renderMrp(){
@@ -2713,19 +2763,19 @@ function renderMrp(){
   ${RES.cycles.length?`<div class="card" style="border-color:#f0c3bd"><b style="color:var(--bad)">循環引用</b>
      <div class="hint">${[...new Set(RES.cycles)].map(esc).join('<br>')}</div></div>`:''}
   ${RES.subs.length?`<div class="card"><h2>半成品／模組需求
-     <span class="sub">${RES.opt.netting?'已扣抵既有庫存':'未扣抵庫存（全展開）'}</span></h2>
+     <span class="sub">${RES.level==='one'?'下一階的半成品／組件，以本身庫存扣抵':(RES.opt.netting?'已扣抵既有庫存':'未扣抵庫存（全展開）')}</span></h2>
     <div class="tblwrap" style="max-height:280px"><table><thead><tr>
       <th class="nos">品號</th><th class="nos">名稱</th><th class="nos num">毛需求</th>
-      <th class="nos num">庫存扣抵</th><th class="nos num">需製造</th><th class="nos num">現有庫存</th>
+      <th class="nos num">庫存扣抵</th><th class="nos num">需製造</th><th class="nos num">現有庫存</th>${RES.level==='one'?'<th class="nos">下階狀況</th>':''}
     </tr></thead><tbody>${RES.subs.map(s=>`<tr>
       <td class="mono">${esc(s.code)}</td><td>${esc(s.name)}</td>
       <td class="num">${nf(s.gross)}</td>
       <td class="num ${s.fromStock?'':'mut'}">${s.fromStock?nf(s.fromStock):'—'}</td>
       <td class="num"><b>${nf(s.net)}</b></td>
-      <td class="num mut">${nf(itemOf(s.code).stock)}</td></tr>`).join('')}
+      <td class="num mut">${nf(itemOf(s.code).stock)}</td>${RES.level==='one'?`<td>${subNote(s.code)||'<span class="mut">—</span>'}</td>`:''}</tr>`).join('')}
     </tbody></table></div></div>`:''}
   <div class="card"><div class="row">
-    <b style="flex:1">零件需求與缺料明細</b>
+    <b style="flex:1">${RES.level==='one'?'下一階需求與缺料明細':'零件需求與缺料明細'}</b>
     <span class="mini">${RES.orders.map(o=>`${esc(o.code)} × ${nf(o.qty)}`).join('　／　')}　@ ${RES.ts}</span>
     <button class="btn" onclick="exportMrp()">匯出 Excel</button></div></div>
   <div class="tblwrap"><table id="mtbl"><thead><tr>
@@ -2743,12 +2793,12 @@ function renderMrp(){
     <th data-k="supplier">供應商${arrow(mrpSt,'supplier')}</th>
   </tr></thead><tbody>
   ${rows.map(r=>`<tr class="${r.ok?'':'lack'}" style="cursor:pointer" onclick="showItem('${esc(r.code)}')">
-    <td class="mono">${esc(r.code)}</td><td>${esc(r.name)}</td>
+    <td class="mono">${esc(r.code)}${r.asm?' <span class="tag info">半成品</span>':''}</td><td>${esc(r.name)}</td>
     <td class="num"><b>${nf(r.need)}</b></td><td class="mut">${esc(r.unit)}</td>
     <td class="num">${nf(r.stock)}</td>
     ${RES.opt.keepSafety?`<td class="num mut">${nf(r.avail)}</td>`:''}
     <td class="num" style="${r.gap?'color:var(--bad);font-weight:600':''}">${r.gap?nf(r.gap):'—'}</td>
-    <td><span class="tag ${r.ok?'ok':(r.stock>0?'warn':'bad')}">${r.ok?'足夠':(r.stock>0?'不足':'無庫存')}</span></td>
+    <td><span class="tag ${r.ok?'ok':(r.stock>0?'warn':'bad')}">${r.ok?'足夠':(r.stock>0?'不足':'無庫存')}</span>${r.asm?' '+subNote(r.code):''}</td>
     <td class="num">${r.cost==null?'<span class="tag gray">未設</span>':nf(r.cost)}</td>
     <td class="num">${r.shortVal?money(r.shortVal):'—'}</td>
     <td class="num mut">${money(r.needVal)}</td>
@@ -2761,10 +2811,12 @@ function exportMrp(){
   xlsxOut([
     ['需求試算',rows.map(r=>({品號:r.code,品名:r.name,規格:r.spec,總需求:r.need,單位:r.unit,
       庫存:r.stock,安全庫存:r.safety,可用量:r.avail,缺口:r.gap,狀態:r.ok?'足夠':(r.stock>0?'不足':'無庫存'),
-      單價:r.cost,缺料金額:r.shortVal,需求金額:r.needVal,供應商:r.supplier,交期:r.lead}))],
+      單價:r.cost,缺料金額:r.shortVal,需求金額:r.needVal,供應商:r.supplier,交期:r.lead,
+      類別:r.asm?'半成品':'',下階狀況:r.asm?subNoteTxt(r.code):''}))],
     ['缺料清單',rows.filter(r=>!r.ok).map(r=>({品號:r.code,品名:r.name,需採購數量:r.gap,單位:r.unit,
       單價:r.cost,採購金額:r.shortVal,供應商:r.supplier,交期:r.lead}))],
-    ['半成品需求',RES.subs.map(s=>({品號:s.code,名稱:s.name,毛需求:s.gross,庫存扣抵:s.fromStock,需製造:s.net}))],
+    ['半成品需求',RES.subs.map(s=>({品號:s.code,名稱:s.name,毛需求:s.gross,庫存扣抵:s.fromStock,需製造:s.net,下階狀況:subNoteTxt(s.code)}))],
+    ['試算條件',[{展開層級:RES.level==='one'?'只看下一階':'展開到底層',扣抵半成品既有庫存:RES.level==='one'?'—':(RES.opt.netting?'是':'否'),保留安全庫存:RES.opt.keepSafety?'是':'否',試算時間:RES.ts}]],
     ['生產需求單',RES.orders.map(o=>({產品品號:o.code,產品名稱:o.name,生產數量:o.qty}))]
   ],`需求試算_${new Date().toISOString().slice(0,10).replace(/-/g,'')}.xlsx`);
 }
