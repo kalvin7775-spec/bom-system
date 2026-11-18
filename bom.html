@@ -267,7 +267,7 @@ let IDX={}, BIDX={};
 /* ---------- 版本檢查：瀏覽器常把舊版 bom.html 暫存住（重新整理也一樣），
    開頁時抓線上最新版比對 BUILD，不同就自動換成新版網址（加 ?v= 讓暫存失效）；
    用一陣子回到這個分頁時，若有新版就在上方提示 ---------- */
-const BUILD='20261106-1615';
+const BUILD='20261118-1215';
 async function bomLatestBuild(){
   try{ const t=await fetch(location.pathname+'?build='+Date.now(),{cache:'no-store'}).then(r=>r.text());
        const m=t.match(/const BUILD='([^']+)'/); return m?m[1]:null; }catch(e){ return null; }
@@ -2040,12 +2040,14 @@ function renderBom(){
   const tree=buildTree(bom);
   const RL=resolvedLines(bom);
   const leafVal=Object.entries(ex.leaf).reduce((s,[k,q])=>s+(itemOf(k).cost||0)*q,0);
-  const short=Object.entries(ex.leaf).filter(([k,q])=>(itemOf(k).stock||0)<q).length;
+  /* 缺料：先扣半成品／組件本身庫存，足夠就不往下展開（與需求試算預設一致） */
+  const exN=explode(curBom,1,{netting:true})||ex;
+  const short=Object.entries(exN.leaf).filter(([k,q])=>(itemOf(k).stock||0)<q).length;
   let head=`<div class="stats" style="margin-bottom:14px">
     <div class="stat"><div class="k">產品品號</div><div class="v" style="font-size:16px">${esc(bom.code)}</div></div>
     <div class="stat"><div class="k">BOM 行數 / 葉料號</div><div class="v"${RL.length!==bom.lines.length?` title="明細本身存了 ${bom.lines.length} 行；引用到的子 BOM 已改以子 BOM 為準，實際展開為 ${RL.length} 行"`:''}>${RL.length} / ${Object.keys(ex.leaf).length}</div></div>
     <div class="stat ok"><div class="k">單台材料成本</div><div class="v">${money(leafVal)}</div></div>
-    <div class="stat ${short?'bad':'ok'}"><div class="k">單台缺料項數</div><div class="v">${short}</div></div>
+    <div class="stat ${short?'bad':'ok'}" title="已扣抵半成品／組件本身庫存"><div class="k">單台缺料項數</div><div class="v">${short}</div></div>
     <div class="stat ${c.missing?'warn':''}"><div class="k">未設單價料號</div><div class="v">${c.missing}</div></div>
   </div>`;
   if(ex.cycles.length) head+=`<div class="card" style="border-color:#f0c3bd"><b style="color:var(--bad)">循環引用警告</b>
@@ -2081,7 +2083,7 @@ function renderBom(){
           <td class="mono">${esc(n.code)}${ref?' <span class="tag info">引用子BOM</span>':''}${buy?' <span class="tag warn">外購件</span>':''}${under?' <span class="tag gray">參考</span>':''}${(kids.length&&!buy&&!under&&!hasOwnCost(n.code))?' <span class="tag gray" title="料號主檔未設單價，成本以下階加總">主檔無價</span>':''}</td>
           <td>${esc(mName(n.code,n.name))}</td><td class="mut">${esc(mSpec(n.code,n.spec))}</td>
           <td class="num"><b>${nf(n.qty)}</b></td><td class="mut">${esc(mUnit(n.code,n.unit))}</td>
-          <td class="num">${(kids.length&&!buy)?'<span class="mut">—</span>':nf(it.stock)}</td>
+          <td class="num" ${(kids.length&&!buy)?'title="半成品／組件本身的庫存（料號主檔）"':''}>${nf(it.stock)}</td>
           <td class="num">${(kids.length&&!buy)
               ? (roll!=null?`<span class="mut" title="下階加總">${nf(roll/(+n.qty||1))}</span>`:'<span class="mut">—</span>')
               : (it.cost==null?'<span class="tag gray">未設</span>':nf(it.cost))}</td>
@@ -2574,7 +2576,7 @@ async function saveBom(){
 /* ============================================================
    需求試算（依數量查 BOM／缺料分析）
    ============================================================ */
-let ORD=[{code:'',qty:100}], OPT={netting:false,keepSafety:false}, RES=null;
+let ORD=[{code:'',qty:100}], OPT={netting:LS.get('mrpNetting')!=='0',keepSafety:false}, RES=null;
 const mrpSt={key:'shortVal',dir:1,render:()=>renderMrp()};
 function vMrp(){
   if(!S.boms.length){
@@ -2590,7 +2592,7 @@ function vMrp(){
     <div class="row" style="margin-top:10px">
       <button class="btn" onclick="ordAdd()">＋ 增加產品</button>
       <div class="grow"></div>
-      <label class="chip ${OPT.netting?'on':''}" onclick="OPT.netting=!OPT.netting;vMrp()">扣抵半成品既有庫存</label>
+      <label class="chip ${OPT.netting?'on':''}" onclick="OPT.netting=!OPT.netting;LS.set('mrpNetting',OPT.netting?'1':'0');vMrp()">扣抵半成品既有庫存</label>
       <label class="chip ${OPT.keepSafety?'on':''}" onclick="OPT.keepSafety=!OPT.keepSafety;vMrp()">保留安全庫存</label>
       <span class="mini mut">成本規則</span>
       ${[['max','取較高者'],['buy','自身單價'],['sum','下階加總']]
