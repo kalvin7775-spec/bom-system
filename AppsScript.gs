@@ -28,7 +28,7 @@ const LEGACY_PW_ENABLED = true;                 // 全部同事都註冊完後�
 const SH = {items:'料號主檔', boms:'BOM主檔', lines:'BOM明細', hist:'異動紀錄', sys:'系統',
             users:'使用者', moves:'庫存異動', serial:'產品批序號', ecr:'文件變更審查',
             pr:'請購單', prReg:'請購單編號', gr:'檢收單', mo:'製造命令單', kit:'工單成套發',
-            ship:'出貨單'};
+            ship:'出貨單', po:'採購單'};
 
 const HEAD = {
   items:['品號','品名','規格','單位','庫存數量','單位成本','安全庫存','供應商','交期','儲位','MSB','備註'],
@@ -64,7 +64,11 @@ const HEAD = {
   /* 出貨單 PP-2-03-03-A：一張單一列，最後一欄存完整內容供還原 Word／PDF；送出時開「領料」單扣庫存（領料單號） */
   ship:['出貨單號','出貨日期','項數','訂單號碼','品號','製令單號','箱數合計','總數量合計','品項摘要','領料單號',
         'S/O','航次','船名','貨櫃','報關行','船公司','貨運行',
-        '行政管理部主管','製造部倉庫管理人員','營運銷售部主管','營運銷售部承辦人','填表人','建立時間','資料JSON']
+        '行政管理部主管','製造部倉庫管理人員','營運銷售部主管','營運銷售部承辦人','填表人','建立時間','資料JSON'],
+  /* 採購單 MR-2-06-04-B：一張單一列，最後一欄存完整內容供還原 Excel／PDF */
+  po:['採購單號','採購日期','採購單別','請購單號','廠商代號','廠商全名','交易幣別','課稅別','營業稅率',
+      '付款條件','項數','數量合計','採購金額','稅額','金額合計','品項摘要','請購人員','採購承辦人',
+      '填表人','建立時間','資料JSON']
 };
 
 /* 角色權限：admin 全部；editor 可讀可寫；viewer 只能讀 */
@@ -1501,6 +1505,107 @@ function voidShip(auth, p){
 }
 
 /* ============================================================
+   採購單 MR-2-06-04-B（form-po.html，入口在「表格填寫 → 採購相關」）
+   一張採購單一列；「資料JSON」存完整內容，前端才能原樣還原成 Excel／PDF。
+   單號：PO-年(2碼)月(2碼)流水號(3碼)，例 PO-2611001；年月取「採購日期」，每月 001 起，
+   送出時在鎖內取號；刪掉的號碼記在系統表 poVoidNos，不再發出。
+   版本號存在「系統」表的 poRev，與 BOM、請購單各自獨立。
+   ============================================================ */
+function readPo(){
+  return rows('po').map(function(r){
+    let data = {};
+    try{ data = JSON.parse(String(r['資料JSON']||'{}')); }catch(e){ data = {}; }
+    return {no:String(r['採購單號']||''), date:fmtDate(r['採購日期']),
+      kind:String(r['採購單別']||''), prno:String(r['請購單號']||''),
+      vcode:String(r['廠商代號']||''), vname:String(r['廠商全名']||''),
+      cur:String(r['交易幣別']||''), count:String(r['項數']||''), tqty:String(r['數量合計']||''),
+      tamt:String(r['採購金額']||''), ttax:String(r['稅額']||''), ttot:String(r['金額合計']||''),
+      brief:String(r['品項摘要']||''), user:String(r['請購人員']||''), buyer:String(r['採購承辦人']||''),
+      by:String(r['填表人']||''), at:fmtTS(r['建立時間']), data:data};
+  });
+}
+function poVoidNos(){
+  return String(sysGet('poVoidNos','')||'').split(',').map(function(x){ return x.trim(); }).filter(Boolean);
+}
+function poNextNo(ym){
+  let max = 0;
+  const re = new RegExp('^PO-' + ym + '(\\d{3,})$');
+  const take = function(no){ const m = String(no||'').trim().toUpperCase().match(re); if(m) max = Math.max(max, parseInt(m[1],10)); };
+  rows('po').forEach(function(r){ take(r['採購單號']); });
+  poVoidNos().forEach(take);
+  return 'PO-' + ym + String(max + 1).padStart(3,'0');
+}
+function postPo(auth, p){
+  if(!canWrite(auth.role))
+    return {error: auth.legacy ? '共用密碼為唯讀模式，無法送出採購單。'
+                              : '你的權限為「唯讀」，無法送出採購單。', denied:true};
+  const rec = (p && p.rec) || {};
+  const sum = (p && p.summary) || {};
+  const items = rec.items || [];
+  if(!items.length) return {error:'請至少填一項採購品項'};
+  if(!String(rec.vname||'').trim()) return {error:'「廠商全名」必填'};
+  if(!/^\d{4}\D*\d{1,2}/.test(String(rec.date||''))) return {error:'採購日期格式要像 2026.11.19'};
+
+  const lock = LockService.getScriptLock();
+  lock.waitLock(25000);
+  try{
+    const asked = String(rec.no||'').trim();
+    const no = poNextNo(prYmOf(rec.date));          // 一律在鎖裡重新取號，兩個人同時送出也不會撞號
+    rec.no = no;
+    const now = nowTS();
+    const row = [no, String(rec.date||'').trim(), String(rec.kind||''), String(rec.prno||''),
+      String(rec.vcode||''), String(rec.vname||''), String(rec.cur||''), String(rec.taxt||''), String(rec.tax||''),
+      String(rec.pay||''), Number(sum.count||items.length)||items.length, String(sum.tqty||''),
+      String(sum.tamt||''), String(sum.ttax||''), String(sum.ttot||''), String(sum.brief||''),
+      String(rec.user||''), String(rec.buyer||''), auth.name||'', now, JSON.stringify(rec)];
+    const sh = sheet('po');
+    const at0 = sh.getLastRow()+1;
+    ['採購單號','採購日期','請購單號','廠商代號','建立時間'].forEach(function(h){
+      markTextCol(sh, at0, HEAD.po.indexOf(h)+1, 1); });
+    sh.getRange(at0, 1, 1, HEAD.po.length).setValues([row]);
+
+    const rev = (Number(sysGet('poRev',0))||0) + 1;
+    sysSet('poRev', rev); sysSet('poAt', now); sysSet('poBy', (auth.name||'') + '（送出 ' + no + '）');
+    sysFlush();
+    SpreadsheetApp.flush();
+    return {ok:true, no:no, asked:asked, rev:rev, at:now, by:auth.name||''};
+  } finally { lock.releaseLock(); }
+}
+/* 刪除一張採購單（僅管理員）；單號列入作廢，不再發出 */
+function voidPo(auth, p){
+  if(!isAdmin(auth.role))
+    return {error:'只有管理員可以刪除已送出的採購單。', denied:true};
+  const no  = String((p && p.no)  || '').trim();
+  const why = String((p && p.why) || '').trim();
+  if(!no) return {error:'沒有指定要刪除的單號'};
+  const lock = LockService.getScriptLock();
+  lock.waitLock(25000);
+  try{
+    const sh = sheet('po');
+    const last = sh.getLastRow(), lastC = sh.getLastColumn();
+    if(last < 2) return {error:'「採購單」還沒有任何紀錄'};
+    const head = sh.getRange(1,1,1,lastC).getValues()[0].map(String);
+    const cNo = head.indexOf('採購單號');
+    if(cNo < 0) return {error:'「採購單」缺少「採購單號」欄'};
+    const body = sh.getRange(2,1,last-1,lastC).getValues();
+    const hit = [];
+    for(let i=0;i<body.length;i++) if(String(body[i][cNo]).trim() === no) hit.push(i);
+    if(!hit.length) return {error:'找不到單號 '+no+'，可能已經被別人刪掉了，請按 ↻ 重新讀取'};
+    const gone = hit.map(function(i){ const o = {}; head.forEach(function(h,k){ o[h] = body[i][k]; }); return o; });
+    for(let k=hit.length-1;k>=0;k--) sh.deleteRow(hit[k]+2);
+    const now = nowTS();
+    sheet('hist').appendRow([now, '刪除採購單 '+no+(why?'（'+why+'）':''),
+      0, hit.length, 0, 0, 0, auth.name||'', JSON.stringify(gone)]);
+    const vn = poVoidNos(); if(vn.indexOf(no) < 0){ vn.push(no); sysSet('poVoidNos', vn.join(',')); }
+    const rev = (Number(sysGet('poRev',0))||0) + 1;
+    sysSet('poRev', rev); sysSet('poAt', now); sysSet('poBy', (auth.name||'') + '（刪除 ' + no + '）');
+    sysFlush();
+    SpreadsheetApp.flush();
+    return {ok:true, no:no, rev:rev, removed:hit.length};
+  } finally { lock.releaseLock(); }
+}
+
+/* ============================================================
    製造命令單 BU-2-01-04-A（form-mo.html）
    工單成套發 PP-2-01-02-A（form-kit.html）
    單號：製令 P + 西元年4碼 + 月2碼 + 流水2碼（例 P20261101）
@@ -2078,6 +2183,14 @@ function doPost(e){
                 updatedAt:fmtTS(sysGet('shipAt','')), updatedBy:String(sysGet('shipBy',''))});
   if(action === 'postShip')   return out(postShip(auth, body));
   if(action === 'voidShip')   return out(voidShip(auth, body));
+
+  /* 採購單（form-po.html） */
+  if(action === 'loadPo')
+    return out({ok:true, records:readPo(), voidNos:poVoidNos(),
+                rev:Number(sysGet('poRev',0))||0,
+                updatedAt:fmtTS(sysGet('poAt','')), updatedBy:String(sysGet('poBy',''))});
+  if(action === 'postPo')     return out(postPo(auth, body));
+  if(action === 'voidPo')     return out(voidPo(auth, body));
 
   /* 製造命令單／工單成套發（form-mo.html、form-kit.html） */
   if(action === 'loadMfg')     return out(loadMfg());
